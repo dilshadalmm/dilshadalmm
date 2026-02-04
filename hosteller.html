@@ -1,0 +1,3594 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimum-scale=1.0">
+    <title>Hostel Management System - Resident Portal</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Roboto+Condensed:wght@700&family=Oswald:wght@600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        /* CRITICAL: Ensure HTML and BODY are full height and non-scrollable */
+        html {
+            height: 100%;
+            overflow: hidden !important;
+        }
+
+        /* Use the Merriweather font family as default */
+        body {
+            font-family: 'Merriweather', serif;
+            font-optical-sizing: auto;
+            font-weight: 400;
+            font-style: normal;
+            font-variation-settings: "wdth" 100;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            
+            /* White background */
+            background-color: #ffffff !important;
+            color: #000000;
+            
+            /* CRITICAL: Prevent the main body from scrolling at all */
+            overflow: hidden !important; 
+            
+            user-select: none;
+            -webkit-user-select: none; 
+            -moz-user-select: none;
+            -ms-user-select: none; 
+            
+            /* Prevents elastic scrolling on iOS */
+            overscroll-behavior: none;
+            
+            /* Make body a fixed container occupying full screen */
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* App wrapper - uses dynamic viewport height for mobile keyboard stability */
+        #app-wrapper {
+            height: 100vh; /* Fallback */
+            height: 100dvh; /* Dynamic viewport height (best for mobile keyboard) */
+            width: 100%;
+            position: absolute; /* Relative to fixed body */
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden; /* Ensures only the chat container can scroll */
+            background: white !important;
+        }
+        
+        /* Style for the Hostel logo font */
+        .hostel-logo {
+            font-family: 'Anton', sans-serif;
+            font-weight: 400;
+            font-style: normal;
+            letter-spacing: -0.5px;
+            text-transform: uppercase;
+        }
+        
+        /* Brand font colors */
+        .concept-text {
+            color: #000000;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        
+        .blitz-text {
+            color: #F97316; /* Orange */
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* Strict No-Oval/No-Round Policy */
+        * {
+            border-radius: 0 !important;
+        }
+        
+        /* --- Hide Scrollbar on Chat Container --- */
+        #chat-container {
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #chat-container::-webkit-scrollbar {
+            display: none;
+        }
+        
+        /* ===== UPDATED: Section header moved to each container ===== */
+        .section-type-header-inline {
+            background: white;
+            margin: 0;
+            margin-bottom: 1rem;
+            width: 100%;
+        }
+
+        /* Container for the line and dots */
+        .header-bg {
+            background-color: black;
+            height: 45px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            padding: 0 20px;
+        }
+
+        /* The horizontal line that runs through the background */
+        .connector-line {
+            position: absolute;
+            left: 20px;
+            right: 20px;
+            height: 3px;
+            background-color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* The circular end-caps */
+        .dot {
+            width: 16px;
+            height: 16px;
+            background-color: white;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* The white box containing the text */
+        .title-box {
+            background-color: white;
+            color: black;
+            padding: 3px 20px;
+            font-size: 24px;
+            font-weight: bold;
+            text-transform: none;
+            position: relative;
+            z-index: 10;
+            border-radius: 0 !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            font-family: 'Roboto Condensed', sans-serif !important;
+            letter-spacing: -0.02em;
+        }
+
+        @media (max-width: 640px) {
+            .title-box {
+                font-size: 18px;
+                padding: 2px 10px;
+            }
+            .header-bg {
+                height: 38px;
+            }
+            .dot {
+                width: 12px;
+                height: 12px;
+            }
+        }
+
+        /* ===== HOSTELLER PORTAL STYLES ===== */
+        .portal-container {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            background: white !important;
+            padding-top: 48px;
+            transition: padding-top 0.3s ease;
+        }
+        
+        .portal-container.page-numbers-open {
+            padding-top: 100px;
+        }
+        
+        /* Page numbers navigation - REDUCED BY 20% - INITIALLY HIDDEN */
+        .page-numbers-container {
+            width: 100%;
+            background: white;
+            padding: 9.6px 12.8px;
+            border-bottom: 1px solid #e5e7eb;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+            position: fixed;
+            top: 48px;
+            left: 0;
+            right: 0;
+            z-index: 39;
+            display: none;
+        }
+        
+        .page-numbers-container.show {
+            display: block;
+        }
+        
+        .page-numbers-container::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .page-numbers {
+            display: inline-flex;
+            gap: 9.6px;
+            padding: 0 3.2px;
+        }
+        
+        .page-number-box {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            background: #f3f4f6;
+            border: 1.6px solid #d1d5db;
+            border-radius: 0;
+            font-weight: 600;
+            font-size: 12.8px;
+            color: #374151;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+        
+        .page-number-box:hover {
+            background: #e5e7eb;
+            border-color: #9ca3af;
+        }
+        
+        .page-number-box.active {
+            background: #3b82f6;
+            border-color: #2563eb;
+            color: white;
+        }
+        
+        /* Section container with light gray background */
+        .portal-section {
+            width: 100%;
+            padding: 1.5rem 1rem;
+            border-bottom: 1px solid #e5e7eb;
+            background: #f9fafb;
+            margin: 0;
+        }
+        
+        .portal-section:last-child {
+            border-bottom: none;
+        }
+        
+        .section-header {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Profile image styles */
+        .profile-image-large {
+            width: 150px;
+            height: 180px;
+            border: 3px solid #e5e7eb;
+            object-fit: cover;
+            margin: 1rem auto;
+            display: block;
+            background-color: #f9fafb;
+        }
+        
+        /* Dashboard cards */
+        .dashboard-card {
+            width: 100%;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-left: 4px solid #3b82f6;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+        }
+        
+        .dashboard-card:hover {
+            background: #f0f9ff;
+            border-color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .dashboard-card-icon {
+            font-size: 24px;
+            color: #3b82f6;
+            margin-bottom: 0.5rem;
+        }
+        
+        .dashboard-card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 0.25rem;
+        }
+        
+        .dashboard-card-subtitle {
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+        
+        /* Invoice table styles */
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+        
+        .invoice-table th {
+            background: #f3f4f6;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+            font-size: 0.9rem;
+        }
+        
+        .invoice-table td {
+            padding: 1rem;
+            border: 1px solid #e5e7eb;
+            color: #4b5563;
+            font-size: 0.9rem;
+        }
+        
+        .invoice-table tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-block;
+        }
+        
+        .status-paid {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+        
+        .status-unpaid {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border: 1px solid #ef4444;
+        }
+        
+        .status-partial {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #f59e0b;
+        }
+        
+        /* Payment form styles */
+        .payment-form {
+            background: white;
+            padding: 2rem;
+            border: 1px solid #e5e7eb;
+            margin: 1.5rem 0;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #374151;
+            font-size: 0.9rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e5e7eb;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+            font-family: 'Merriweather', serif;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .payment-button {
+            width: 100%;
+            padding: 1rem;
+            background: #10b981;
+            color: white;
+            border: none;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: 'Merriweather', serif;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .payment-button:hover {
+            background: #059669;
+        }
+        
+        .payment-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Alert messages */
+        .alert {
+            padding: 1rem;
+            margin: 1rem 0;
+            border: 1px solid transparent;
+            font-size: 0.9rem;
+        }
+        
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-color: #10b981;
+        }
+        
+        .alert-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border-color: #ef4444;
+        }
+        
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #f59e0b;
+        }
+        
+        /* Registration form styles */
+        .registration-form {
+            background: white;
+            padding: 2rem;
+            border: 1px solid #e5e7eb;
+            margin: 1.5rem 0;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        @media (min-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        
+        .form-full-width {
+            grid-column: 1 / -1;
+        }
+        
+        /* Profile display styles */
+        .profile-display {
+            background: white;
+            padding: 2rem;
+            border: 1px solid #e5e7eb;
+            margin: 1.5rem 0;
+        }
+        
+        .profile-field {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .profile-field:last-child {
+            border-bottom: none;
+        }
+        
+        .field-label {
+            font-weight: 600;
+            color: #374151;
+            min-width: 150px;
+        }
+        
+        .field-value {
+            color: #4b5563;
+            text-align: right;
+            flex: 1;
+        }
+        
+        /* Pagination styles */
+        .portal-pagination {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+        }
+        
+        .page-info {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+        
+        .pagination-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .page-button {
+            padding: 0.5rem 1rem;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 0;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: 'Merriweather', serif;
+        }
+        
+        .page-button:hover:not(:disabled) {
+            background: #2563eb;
+        }
+        
+        .page-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        /* ===== SIGN IN PROMPT STYLES ===== */
+        .signin-prompt-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .signin-icon {
+            font-size: 64px;
+            color: #6b7280;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .signin-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .signin-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        .signin-button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-top: 16px;
+            font-family: 'Merriweather', serif;
+        }
+        
+        .signin-button:hover {
+            background: #2563eb;
+        }
+        
+        .signin-button:active {
+            background: #1d4ed8;
+        }
+        
+        /* ===== ERROR MESSAGE STYLES ===== */
+        .error-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        /* ===== AUTH MODAL STYLES ===== */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .auth-modal {
+            background: white;
+            width: 40%;
+            min-width: 300px;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+            border-radius: 4px !important;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .auth-body {
+            padding: 20px;
+        }
+        
+        .auth-field {
+            margin-bottom: 16px;
+        }
+        
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            border-radius: 0 !important;
+            font-family: 'Merriweather', serif;
+        }
+        
+        .auth-input:focus {
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .auth-error.show {
+            display: block;
+        }
+        
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            font-family: 'Merriweather', serif;
+        }
+        
+        .auth-button:hover {
+            background: #2563eb;
+        }
+        
+        .auth-button:active {
+            background: #1d4ed8;
+        }
+        
+        .auth-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .auth-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        
+        .signup-link {
+            color: #3b82f6;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .signup-link:hover {
+            text-decoration: underline;
+        }
+        
+        /* ===== UPDATED: Reduced Top bar with menu and profile ===== */
+        .top-bar {
+            width: 100%;
+            background: white;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e5e7eb;
+            height: 48px;
+            box-sizing: border-box;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            transition: transform 0.3s ease;
+        }
+        
+        .top-bar.hidden {
+            transform: translateY(-100%);
+        }
+        
+        /* Back button */
+        .back-button {
+            width: 32px;
+            height: 32px;
+            background: #000000 !important;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            color: white;
+            padding: 0;
+            margin: 0;
+        }
+        
+        /* Portal Title */
+        .portal-title-container {
+            flex: 1;
+            max-width: 600px;
+            margin: 0 16px;
+            position: relative;
+        }
+        
+        .portal-title-button {
+            width: 100%;
+            height: 32px;
+            padding: 0 16px;
+            background: #000000 !important;
+            color: white;
+            border: none;
+            font-family: 'Oswald', sans-serif !important;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            line-height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .portal-title-button:hover {
+            background: #333333 !important;
+        }
+        
+        .portal-title-button:active {
+            background: #666666 !important;
+        }
+        
+        /* Profile image container */
+        .profile-container {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            border-radius: 0 !important;
+            overflow: hidden;
+            background: #f3f4f6;
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .profile-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        /* Signing in loading state */
+        .signing-in-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .signing-in-icon {
+            font-size: 64px;
+            color: #3b82f6;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .signing-in-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .signing-in-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        /* Modern loading indicator */
+        .modern-loading-spinner {
+            width: 50px;
+            height: 50px;
+            position: relative;
+        }
+        
+        .modern-loading-spinner::before,
+        .modern-loading-spinner::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            animation: modern-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+        }
+        
+        .modern-loading-spinner::before {
+            border: 3px solid rgba(59, 130, 246, 0.2);
+            border-top-color: #3b82f6;
+        }
+        
+        .modern-loading-spinner::after {
+            border: 3px solid transparent;
+            border-top-color: #3b82f6;
+            animation-delay: -0.6s;
+        }
+        
+        @keyframes modern-spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        
+        .modern-loading-content {
+            background: white;
+            padding: 2.5rem 2rem;
+            text-align: center;
+            max-width: 300px;
+            width: 90%;
+        }
+
+        .modern-loading-text {
+            margin-top: 1.5rem;
+            font-size: 1rem;
+            color: #4b5563;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        /* ===== SKELETON LOADING STYLES ===== */
+        .skeleton-container {
+            width: 100%;
+            padding-top: 48px;
+            background: white;
+            overflow: hidden;
+        }
+
+        .skeleton-section {
+            width: 100%;
+            padding: 1.5rem 1rem;
+            border-bottom: 1px solid #e5e7eb;
+            background: #f9fafb;
+        }
+
+        .skeleton-header {
+            background: black;
+            height: 45px;
+            margin-bottom: 1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .skeleton-title-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #e5e7eb;
+            height: 30px;
+            width: 200px;
+        }
+
+        .skeleton-card {
+            background: #e5e7eb;
+            height: 100px;
+            margin-bottom: 1rem;
+            width: 100%;
+        }
+
+        .skeleton-table {
+            background: #e5e7eb;
+            height: 200px;
+            margin-bottom: 1rem;
+            width: 100%;
+        }
+
+        .skeleton-pagination {
+            padding: 1rem;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .skeleton-page-info {
+            background: #e5e7eb;
+            width: 120px;
+            height: 20px;
+        }
+
+        .skeleton-pagination-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .skeleton-page-button {
+            background: #e5e7eb;
+            width: 80px;
+            height: 36px;
+        }
+
+        /* Skeleton animation */
+        .skeleton-shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .skeleton-shimmer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, 
+                transparent 0%, 
+                rgba(255, 255, 255, 0.4) 50%, 
+                transparent 100%);
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            0% {
+                transform: translateX(-100%);
+            }
+            100% {
+                transform: translateX(100%);
+            }
+        }
+
+        /* ===== NEW INVOICE CARD STYLES ===== */
+        .invoice-card-new {
+            width: 95%;
+            margin: 20px auto;
+            border-radius: 4px; 
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            background: white;
+            overflow: hidden;
+            border: 1px solid #e5e7eb;
+        }
+
+        .status-paid-new { 
+            background-color: #dcfce7; 
+            color: #166534; 
+            border: 1px solid #166534; 
+        }
+        .status-unpaid-new { 
+            background-color: #fee2e2; 
+            color: #991b1b; 
+            border: 1px solid #991b1b; 
+        }
+        .status-partial-new { 
+            background-color: #fef3c7; 
+            color: #92400e; 
+            border: 1px solid #92400e; 
+        }
+
+        .payment-section-new {
+            width: 95%;
+            margin: 2rem auto;
+            background: white;
+            border-top: 4px solid #1f2937;
+            padding: 1.5rem;
+            border: 1px solid #e5e7eb;
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .no-print { display: none; }
+            .invoice-card-new { 
+                width: 100%; 
+                box-shadow: none; 
+                border: 1px solid #ccc;
+                margin: 0;
+            }
+        }
+
+        /* Custom animation for success message */
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Recent invoice card clickable */
+        .recent-invoice-card {
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .recent-invoice-card:hover {
+            background: #f0f9ff !important;
+            border-color: #3b82f6 !important;
+            transform: translateY(-1px);
+        }
+
+        /* Invoice detail view */
+        .invoice-detail-container {
+            width: 100%;
+            background: white;
+            padding-top: 48px;
+        }
+
+        .invoice-detail-back {
+            margin-bottom: 1.5rem;
+        }
+    </style>
+</head>
+
+<body class="h-full">
+
+    <!-- Mobile App Container (Flex Column) -->
+    <div id="app-wrapper" class="flex flex-col overflow-hidden">
+        <!-- Top bar (common for all pages) -->
+        <div class="top-bar hidden">
+            <!-- Left button (hamburger menu) -->
+            <div id="left-button-container">
+                <button class="back-button" id="hamburger-menu">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            
+            <!-- Portal Title -->
+            <div class="portal-title-container">
+                <button class="portal-title-button" id="portal-title-button">
+                    HOSTELLER PORTAL
+                </button>
+            </div>
+            
+            <!-- Profile image -->
+            <div class="profile-container">
+                <div id="profile-image-container">
+                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:600;">H</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page numbers container - INITIALLY HIDDEN -->
+        <div class="page-numbers-container" id="page-numbers-container">
+            <div class="page-numbers" id="page-numbers">
+                <!-- Page numbers will be dynamically generated here -->
+            </div>
+        </div>
+        
+        <!-- Main content area - different pages will be loaded here -->
+        <main id="chat-container" class="flex-1 overflow-y-auto">
+            <!-- Content will be dynamically loaded here -->
+        </main>
+    </div>
+
+    <script>
+        // ===== CACHE MANAGER =====
+        class CacheManager {
+            constructor() {
+                this.hostellerCache = new Map(); // Key: `${year}-${userUid}`
+                this.invoicesCache = new Map();  // Key: `${year}-${userUid}`
+                this.paymentsCache = new Map();  // Key: `${year}-${userUid}`
+                this.feeSettingsCache = new Map(); // Key: `${year}`
+            }
+            
+            getHostellerKey(year, userUid) {
+                return `${year}-${userUid}`;
+            }
+            
+            getInvoicesKey(year, userUid) {
+                return `${year}-${userUid}`;
+            }
+            
+            getPaymentsKey(year, userUid) {
+                return `${year}-${userUid}`;
+            }
+            
+            getFeeSettingsKey(year) {
+                return `${year}`;
+            }
+            
+            // Hosteller cache methods
+            getHosteller(year, userUid) {
+                const key = this.getHostellerKey(year, userUid);
+                return this.hostellerCache.get(key);
+            }
+            
+            setHosteller(year, userUid, hostellerData) {
+                const key = this.getHostellerKey(year, userUid);
+                this.hostellerCache.set(key, hostellerData);
+            }
+            
+            clearHosteller(year, userUid) {
+                const key = this.getHostellerKey(year, userUid);
+                this.hostellerCache.delete(key);
+            }
+            
+            // Invoices cache methods
+            getInvoices(year, userUid) {
+                const key = this.getInvoicesKey(year, userUid);
+                return this.invoicesCache.get(key);
+            }
+            
+            setInvoices(year, userUid, invoices) {
+                const key = this.getInvoicesKey(year, userUid);
+                this.invoicesCache.set(key, invoices);
+            }
+            
+            clearInvoices(year, userUid) {
+                const key = this.getInvoicesKey(year, userUid);
+                this.invoicesCache.delete(key);
+            }
+            
+            // Payments cache methods
+            getPayments(year, userUid) {
+                const key = this.getPaymentsKey(year, userUid);
+                return this.paymentsCache.get(key);
+            }
+            
+            setPayments(year, userUid, payments) {
+                const key = this.getPaymentsKey(year, userUid);
+                this.paymentsCache.set(key, payments);
+            }
+            
+            clearPayments(year, userUid) {
+                const key = this.getPaymentsKey(year, userUid);
+                this.paymentsCache.delete(key);
+            }
+            
+            // Fee settings cache methods
+            getFeeSettings(year) {
+                const key = this.getFeeSettingsKey(year);
+                return this.feeSettingsCache.get(key);
+            }
+            
+            setFeeSettings(year, feeSettings) {
+                const key = this.getFeeSettingsKey(year);
+                this.feeSettingsCache.set(key, feeSettings);
+            }
+            
+            // Clear all caches for a specific user
+            clearUserCaches(userUid) {
+                const currentYear = new Date().getFullYear();
+                this.clearHosteller(currentYear, userUid);
+                this.clearInvoices(currentYear, userUid);
+                this.clearPayments(currentYear, userUid);
+            }
+            
+            // Clear all caches
+            clearAll() {
+                this.hostellerCache.clear();
+                this.invoicesCache.clear();
+                this.paymentsCache.clear();
+                this.feeSettingsCache.clear();
+            }
+        }
+
+        // ===== SESSION MANAGER =====
+        class SessionManager {
+            constructor(app) {
+                this.app = app;
+                this.db = null;
+                this.localSessionId = null;
+                this.sessionListener = null;
+                this.isInitialized = false;
+                this.listenerActive = false;
+                this.isOnline = navigator.onLine;
+                
+                this.setupNetworkListeners();
+            }
+
+            setupNetworkListeners() {
+                window.addEventListener('online', () => {
+                    this.isOnline = true;
+                    console.log("Device came online, performing server-side session verification...");
+                    this.verifySessionImmediately();
+                });
+                
+                window.addEventListener('offline', () => {
+                    this.isOnline = false;
+                    console.log("Device went offline");
+                });
+                
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        console.log("Page became visible, performing server-side session verification...");
+                        this.verifySessionImmediately();
+                    }
+                });
+            }
+
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.db = firebase.firestore();
+                    this.isInitialized = true;
+                    console.log("SessionManager initialized");
+                    
+                } catch (error) {
+                    console.error("SessionManager initialization error:", error);
+                }
+            }
+
+            generateSessionId() {
+                const array = new Uint32Array(8);
+                window.crypto.getRandomValues(array);
+                return Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
+            }
+
+            async createSession(userUid) {
+                if (!this.db || !userUid) {
+                    console.error("Cannot create session: missing db or userUid");
+                    return null;
+                }
+
+                try {
+                    const sessionId = this.generateSessionId();
+                    this.localSessionId = sessionId;
+                    
+                    localStorage.setItem(`session_${userUid}`, sessionId);
+                    
+                    await this.db.collection('sessions').doc(userUid).set({
+                        sessionId: sessionId,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        lastActive: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                    
+                    console.log("New session created for user:", userUid);
+                    return sessionId;
+                } catch (error) {
+                    console.error("Error creating session:", error);
+                    return null;
+                }
+            }
+
+            async resumeSession(userUid) {
+                if (!this.db || !userUid) {
+                    console.error("Cannot resume session: missing db or userUid");
+                    return false;
+                }
+
+                try {
+                    const sessionId = localStorage.getItem(`session_${userUid}`);
+                    
+                    if (!sessionId) {
+                        console.log("No local session found in localStorage, forcing logout");
+                        this.forceLogout(userUid);
+                        return false;
+                    }
+                    
+                    this.localSessionId = sessionId;
+                    console.log("Resuming existing session for user:", userUid);
+                    
+                    this.setupSessionListener(userUid);
+                    await this.verifySessionImmediately();
+                    
+                    return true;
+                } catch (error) {
+                    console.error("Error resuming session:", error);
+                    return false;
+                }
+            }
+
+            getLocalSessionId(userUid) {
+                return localStorage.getItem(`session_${userUid}`);
+            }
+
+            clearLocalSession(userUid) {
+                if (userUid) {
+                    localStorage.removeItem(`session_${userUid}`);
+                }
+                this.localSessionId = null;
+            }
+
+            async verifySessionImmediately() {
+                const auth = firebase.auth();
+                const user = auth.currentUser;
+                
+                if (!user || !this.db) {
+                    return;
+                }
+                
+                const userUid = user.uid;
+                const localSessionId = this.localSessionId || this.getLocalSessionId(userUid);
+                
+                if (!localSessionId) {
+                    console.log("No local session found in localStorage, forcing logout");
+                    this.forceLogout(userUid);
+                    return;
+                }
+                
+                try {
+                    const sessionDoc = await this.db.collection('sessions').doc(userUid).get({
+                        source: 'server'
+                    });
+                    
+                    if (!sessionDoc.exists) {
+                        console.log("Session document doesn't exist in Firestore, forcing logout");
+                        this.forceLogout(userUid);
+                    }
+                    
+                    const sessionData = sessionDoc.data();
+                    const firestoreSessionId = sessionData.sessionId;
+                    
+                    console.log("Session verification:", {
+                        local: localSessionId,
+                        firestore: firestoreSessionId,
+                        match: firestoreSessionId === localSessionId
+                    });
+                    
+                    if (firestoreSessionId !== localSessionId) {
+                        console.log("Session mismatch detected! Forcing logout...");
+                        this.forceLogout(userUid);
+                    } else {
+                        console.log("Session verification successful");
+                    }
+                } catch (error) {
+                    console.error("Error verifying session:", error);
+                    if (this.isOnline) {
+                        setTimeout(() => this.verifySessionImmediately(), 5000);
+                    }
+                }
+            }
+
+            setupSessionListener(userUid) {
+                if (!this.db || !userUid) {
+                    console.error("Cannot setup session listener: missing db or userUid");
+                    return;
+                }
+
+                this.removeSessionListener();
+
+                const localSessionId = this.localSessionId || this.getLocalSessionId(userUid);
+                this.localSessionId = localSessionId;
+
+                if (!localSessionId) {
+                    console.error("No local session ID found for user:", userUid);
+                    this.forceLogout(userUid);
+                    return;
+                }
+
+                console.log("Setting up real-time session listener for user:", userUid);
+                console.log("Local session ID:", localSessionId);
+
+                this.verifySessionImmediately();
+
+                this.sessionListener = this.db.collection('sessions').doc(userUid)
+                    .onSnapshot((doc) => {
+                        this.handleSessionSnapshot(doc, localSessionId, userUid);
+                    }, (error) => {
+                        console.error("Session listener error:", error);
+                        this.retrySessionListener(userUid);
+                    });
+                
+                this.listenerActive = true;
+            }
+
+            handleSessionSnapshot(doc, localSessionId, userUid) {
+                if (!doc.exists) {
+                    console.log("Session document doesn't exist in Firestore, forcing logout");
+                    this.forceLogout(userUid);
+                    return;
+                }
+
+                const sessionData = doc.data();
+                const firestoreSessionId = sessionData.sessionId;
+
+                console.log("Firestore session update:", firestoreSessionId);
+
+                if (localSessionId && firestoreSessionId !== localSessionId) {
+                    console.log("Session mismatch detected via real-time listener! Logging out...");
+                    this.forceLogout(userUid);
+                }
+            }
+
+            async forceLogout(userUid) {
+                console.log("CRITICAL: Forcing logout due to session violation");
+                
+                this.removeSessionListener();
+                this.clearLocalSession(userUid);
+                
+                try {
+                    await firebase.auth().signOut();
+                    console.log("Auto-logout completed due to session violation");
+                    
+                    if (this.app && this.app.cacheManager) {
+                        this.app.cacheManager.clearUserCaches(userUid);
+                    }
+                    
+                    window.location.reload();
+                    
+                } catch (signOutError) {
+                    console.error("Error during auto-logout:", signOutError);
+                    window.location.reload();
+                }
+            }
+
+            retrySessionListener(userUid) {
+                if (this.listenerActive) return;
+                
+                setTimeout(() => {
+                    const auth = firebase.auth();
+                    const user = auth.currentUser;
+                    if (user && user.uid === userUid) {
+                        this.setupSessionListener(userUid);
+                    }
+                }, 5000);
+            }
+
+            removeSessionListener() {
+                if (this.sessionListener) {
+                    this.sessionListener();
+                    this.sessionListener = null;
+                    this.listenerActive = false;
+                    console.log("Session listener removed");
+                }
+            }
+
+            async onUserLogin(userUid) {
+                const sessionId = await this.createSession(userUid);
+                if (sessionId) {
+                    this.setupSessionListener(userUid);
+                }
+                return sessionId;
+            }
+
+            onUserLogout(userUid) {
+                this.removeSessionListener();
+                this.clearLocalSession(userUid);
+            }
+        }
+
+        // ===== AUTH MANAGER =====
+        class AuthManager {
+            constructor(app) {
+                this.app = app;
+                this.auth = null;
+                this.currentUser = null;
+                this.isInitialized = false;
+                this.authModal = null;
+                this.db = null;
+                this.sessionManager = new SessionManager(app);
+                this.authReady = false;
+                this.authReadyPromise = null;
+                this.isSigningIn = false;
+                this.isPageReload = true;
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.auth = firebase.auth();
+                    this.db = firebase.firestore();
+                    
+                    this.authReadyPromise = new Promise((resolve) => {
+                        this.setupAuthListeners(resolve);
+                    });
+                    
+                    this.sessionManager.initialize();
+                    this.isInitialized = true;
+                    console.log("Auth initialized successfully");
+                    
+                } catch (error) {
+                    console.error("Auth initialization error:", error);
+                }
+            }
+            
+            setupAuthListeners(onAuthReady) {
+                let authStateChanged = false;
+                
+                this.auth.onAuthStateChanged(async (user) => {
+                    console.log("Auth state changed:", user ? `User ${user.uid} logged in` : "No user");
+                    
+                    if (user) {
+                        this.currentUser = user;
+                        
+                        if (this.isPageReload) {
+                            console.log("Page reload detected, resuming existing session...");
+                            await this.sessionManager.resumeSession(user.uid);
+                        } else {
+                            console.log("Manual sign-in detected, session creation will be handled by signInWithEmail");
+                        }
+                        
+                        this.isPageReload = false;
+                        this.closeAllModals();
+                        this.authReady = true;
+                        
+                        if (this.app && this.app.handleAuthStateChange) {
+                            this.app.handleAuthStateChange(user, true);
+                        }
+                    } else {
+                        if (this.currentUser?.uid) {
+                            this.sessionManager.onUserLogout(this.currentUser.uid);
+                        }
+                        this.currentUser = null;
+                        this.isSigningIn = false;
+                        this.isPageReload = true;
+                        
+                        this.authReady = true;
+                        
+                        if (this.app && this.app.handleAuthStateChange) {
+                            this.app.handleAuthStateChange(null, false);
+                        }
+                    }
+                    
+                    if (!authStateChanged && onAuthReady) {
+                        authStateChanged = true;
+                        onAuthReady();
+                    }
+                });
+            }
+            
+            async waitForAuthReady() {
+                if (this.authReady) {
+                    return true;
+                }
+                
+                if (this.authReadyPromise) {
+                    await this.authReadyPromise;
+                    return true;
+                }
+                
+                return new Promise((resolve) => {
+                    const checkInterval = setInterval(() => {
+                        if (this.authReady) {
+                            clearInterval(checkInterval);
+                            resolve(true);
+                        }
+                    }, 100);
+                    
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve(false);
+                    }, 5000);
+                });
+            }
+            
+            closeAllModals() {
+                this.hideAuthModal();
+            }
+            
+            showAuthModal() {
+                this.authModal = document.createElement('div');
+                this.authModal.className = 'auth-modal-overlay';
+                this.authModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Sign In to Hostel Portal</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="auth-email" class="auth-input" placeholder="your@email.com">
+                                <div id="email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="auth-password" class="auth-input" placeholder="••••••••">
+                                <div id="password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="sign-in-button" class="auth-button">Sign In</button>
+                        </div>
+                        <div class="auth-footer">
+                            Don't have an account? <span class="signup-link" id="signup-link">Sign Up</span>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(this.authModal);
+                this.setupAuthModalEvents();
+            }
+            
+            setupAuthModalEvents() {
+                const signInButton = document.getElementById('sign-in-button');
+                const emailInput = document.getElementById('auth-email');
+                const passwordInput = document.getElementById('auth-password');
+                const signupLink = document.getElementById('signup-link');
+                
+                signInButton.addEventListener('click', () => {
+                    this.signInWithEmail();
+                });
+                
+                emailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        passwordInput.focus();
+                    }
+                });
+                
+                passwordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.signInWithEmail();
+                    }
+                });
+                
+                signupLink.addEventListener('click', () => {
+                    this.showSignUpModal();
+                });
+                
+                this.authModal.addEventListener('click', (e) => {
+                    if (e.target === this.authModal) {
+                        this.hideAuthModal();
+                    }
+                });
+            }
+            
+            showSignUpModal() {
+                this.hideAuthModal();
+                
+                this.signUpModal = document.createElement('div');
+                this.signUpModal.className = 'auth-modal-overlay';
+                this.signUpModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Create Hostel Account</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="signup-email" class="auth-input" placeholder="your@email.com">
+                                <div id="signup-email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="signup-password" class="auth-input" placeholder="••••••••">
+                                <div id="signup-password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="signup-button" class="auth-button">Create Account</button>
+                        </div>
+                        <div class="auth-footer">
+                            Already have an account? <span class="signup-link" id="back-to-login">Sign In</span>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(this.signUpModal);
+                
+                const signupButton = document.getElementById('signup-button');
+                const backToLogin = document.getElementById('back-to-login');
+                
+                signupButton.addEventListener('click', () => {
+                    this.signUpWithEmail();
+                });
+                
+                backToLogin.addEventListener('click', () => {
+                    this.hideSignUpModal();
+                    this.showAuthModal();
+                });
+                
+                this.signUpModal.addEventListener('click', (e) => {
+                    if (e.target === this.signUpModal) {
+                        this.hideSignUpModal();
+                        this.showAuthModal();
+                    }
+                });
+            }
+            
+            async signInWithEmail() {
+                const email = document.getElementById('auth-email').value.trim();
+                const password = document.getElementById('auth-password').value.trim();
+                const signInButton = document.getElementById('sign-in-button');
+                const emailError = document.getElementById('email-error');
+                const passwordError = document.getElementById('password-error');
+                
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter your password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                signInButton.textContent = 'Signing In...';
+                signInButton.classList.add('loading');
+                
+                try {
+                    this.isSigningIn = true;
+                    this.isPageReload = false;
+                    
+                    await this.auth.signInWithEmailAndPassword(email, password);
+                    
+                    const user = this.auth.currentUser;
+                    if (user) {
+                        await this.sessionManager.onUserLogin(user.uid);
+                        console.log("Session created for manual sign-in");
+                    }
+                    
+                } catch (error) {
+                    console.error("Sign in error:", error);
+                    
+                    this.isSigningIn = false;
+                    this.isPageReload = true;
+                    
+                    signInButton.textContent = 'Sign In';
+                    signInButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-disabled':
+                            emailError.textContent = 'This account has been disabled';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-not-found':
+                            emailError.textContent = 'No account found with this email';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/wrong-password':
+                            passwordError.textContent = 'Incorrect password';
+                            passwordError.classList.add('show');
+                            break;
+                        case 'auth/too-many-requests':
+                            passwordError.textContent = 'Too many failed attempts. Try again later';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            passwordError.textContent = 'Failed to sign in. Please try again';
+                            passwordError.classList.add('show');
+                    }
+                }
+            }
+            
+            async signUpWithEmail() {
+                const email = document.getElementById('signup-email').value.trim();
+                const password = document.getElementById('signup-password').value.trim();
+                const signupButton = document.getElementById('signup-button');
+                const emailError = document.getElementById('signup-email-error');
+                const passwordError = document.getElementById('signup-password-error');
+                
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter a password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                if (password.length < 6) {
+                    passwordError.textContent = 'Password must be at least 6 characters';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                signupButton.textContent = 'Creating Account...';
+                signupButton.classList.add('loading');
+                
+                try {
+                    this.isSigningIn = true;
+                    this.isPageReload = false;
+                    
+                    const userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
+                    const user = userCredential.user;
+                    
+                    await this.sessionManager.onUserLogin(user.uid);
+                    console.log("Session created for new account");
+                    
+                    document.getElementById('signup-email').value = '';
+                    document.getElementById('signup-password').value = '';
+                    
+                    signupButton.textContent = 'Account Created!';
+                    signupButton.style.backgroundColor = '#10b981';
+                    
+                    setTimeout(() => {
+                        this.hideSignUpModal();
+                    }, 1500);
+                    
+                } catch (error) {
+                    console.error("Sign up error:", error);
+                    
+                    this.isSigningIn = false;
+                    this.isPageReload = true;
+                    
+                    signupButton.textContent = 'Create Account';
+                    signupButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/email-already-in-use':
+                            emailError.textContent = 'Email already in use';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/operation-not-allowed':
+                            emailError.textContent = 'Email/password accounts are not enabled';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/weak-password':
+                            passwordError.textContent = 'Password is too weak';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            emailError.textContent = 'Failed to create account';
+                            emailError.classList.add('show');
+                    }
+                }
+            }
+            
+            hideAuthModal() {
+                if (this.authModal && this.authModal.parentNode) {
+                    this.authModal.parentNode.removeChild(this.authModal);
+                    this.authModal = null;
+                }
+            }
+            
+            hideSignUpModal() {
+                if (this.signUpModal && this.signUpModal.parentNode) {
+                    this.signUpModal.parentNode.removeChild(this.signUpModal);
+                    this.signUpModal = null;
+                }
+            }
+            
+            isUserLoggedIn() {
+                return this.currentUser !== null && this.authReady;
+            }
+            
+            isSigningInState() {
+                return this.isSigningIn;
+            }
+            
+            async signOut() {
+                try {
+                    if (this.currentUser?.uid) {
+                        this.sessionManager.onUserLogout(this.currentUser.uid);
+                        this.app.cacheManager.clearUserCaches(this.currentUser.uid);
+                    }
+                    
+                    await this.auth.signOut();
+                    this.authReady = false;
+                    this.isSigningIn = false;
+                    this.isPageReload = true;
+                    console.log("User signed out successfully");
+                } catch (error) {
+                    console.error("Sign out error:", error);
+                    throw error;
+                }
+            }
+        }
+
+        // ===== STATE MANAGER FOR HOSTELLER PORTAL =====
+        class StateManager {
+            constructor() {
+                this.currentYear = new Date().getFullYear();
+                this.currentView = 'dashboard'; // dashboard, profile, invoices, payments, registration, invoice-detail
+                this.hostellerData = null;
+                this.invoices = [];
+                this.payments = [];
+                this.feeSettings = null;
+                this.currentInvoiceDetail = null; // For invoice detail view
+                
+                // Pagination
+                this.currentInvoicePage = 0;
+                this.currentPaymentPage = 0;
+                this.itemsPerPage = 5;
+                
+                // Page numbers container state
+                this.pageNumbersVisible = false;
+                
+                // Alert messages
+                this.alerts = [];
+            }
+            
+            setCurrentView(view) {
+                this.currentView = view;
+            }
+            
+            getCurrentView() {
+                return this.currentView;
+            }
+            
+            setHostellerData(data) {
+                this.hostellerData = data;
+            }
+            
+            getHostellerData() {
+                return this.hostellerData;
+            }
+            
+            setInvoices(invoices) {
+                this.invoices = invoices;
+            }
+            
+            getInvoices() {
+                return this.invoices;
+            }
+            
+            setPayments(payments) {
+                this.payments = payments;
+            }
+            
+            getPayments() {
+                return this.payments;
+            }
+            
+            setFeeSettings(settings) {
+                this.feeSettings = settings;
+            }
+            
+            getFeeSettings() {
+                return this.feeSettings;
+            }
+            
+            setCurrentInvoiceDetail(invoice) {
+                this.currentInvoiceDetail = invoice;
+            }
+            
+            getCurrentInvoiceDetail() {
+                return this.currentInvoiceDetail;
+            }
+            
+            // Alert management
+            addAlert(type, message) {
+                const id = Date.now();
+                this.alerts.push({ id, type, message });
+                setTimeout(() => {
+                    this.removeAlert(id);
+                }, 5000);
+            }
+            
+            removeAlert(id) {
+                this.alerts = this.alerts.filter(alert => alert.id !== id);
+            }
+            
+            getAlerts() {
+                return this.alerts;
+            }
+            
+            // Page numbers container state
+            togglePageNumbers() {
+                this.pageNumbersVisible = !this.pageNumbersVisible;
+                return this.pageNumbersVisible;
+            }
+            
+            getPageNumbersVisible() {
+                return this.pageNumbersVisible;
+            }
+            
+            // Get current year path
+            getYearPath() {
+                return `years/${this.currentYear}`;
+            }
+            
+            // Get hosteller path
+            getHostellerPath(userUid) {
+                return `${this.getYearPath()}/hostellers/${userUid}`;
+            }
+            
+            // Get invoices path
+            getInvoicesPath(userUid) {
+                return `${this.getHostellerPath(userUid)}/invoices`;
+            }
+            
+            // Get payments path
+            getPaymentsPath(userUid) {
+                return `${this.getHostellerPath(userUid)}/payments`;
+            }
+            
+            // Get fee settings path
+            getFeeSettingsPath() {
+                return `${this.getYearPath()}/feeSettings/default`;
+            }
+            
+            // Get paycodes path
+            getPayCodesPath() {
+                return `${this.getYearPath()}/payCodes`;
+            }
+        }
+
+        // ===== MAIN HOSTELLER APP =====
+        class HostellerApp {
+            constructor() {
+                this.stateManager = new StateManager();
+                this.cacheManager = new CacheManager();
+                this.authManager = new AuthManager(this);
+                this.sessionManager = new SessionManager(this);
+                this.isInitialized = false;
+                this.authCheckInProgress = false;
+                this.hasShownLoader = false;
+                
+                this.appWrapper = document.getElementById('app-wrapper');
+                this.chatContainer = document.getElementById('chat-container');
+                this.leftButtonContainer = document.getElementById('left-button-container');
+                this.profileImageContainer = document.getElementById('profile-image-container');
+                this.topBar = document.querySelector('.top-bar');
+                this.pageNumbersContainer = document.getElementById('page-numbers-container');
+                this.hamburgerMenu = document.getElementById('hamburger-menu');
+                this.portalTitleButton = document.getElementById('portal-title-button');
+                
+                this.db = null;
+                this.firebaseConfig = {
+                    apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+                    authDomain: "geobazarr.firebaseapp.com",
+                    databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+                    projectId: "geobazarr",
+                    storageBucket: "geobazarr.firebasestorage.app",
+                    messagingSenderId: "679949247383",
+                    appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+                };
+                
+                this.handleAuthStateChange = this.handleAuthStateChange.bind(this);
+                this.handleSignInClick = this.handleSignInClick.bind(this);
+                this.handleLogout = this.handleLogout.bind(this);
+                this.togglePageNumbers = this.togglePageNumbers.bind(this);
+                this.showView = this.showView.bind(this);
+                this.showInvoiceDetail = this.showInvoiceDetail.bind(this);
+                
+                this.initialize();
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.showSkeletonLoading();
+                    
+                    firebase.initializeApp(this.firebaseConfig);
+                    this.db = firebase.firestore();
+                    
+                    this.db.settings({
+                        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+                    });
+                    
+                    console.log("Firebase initialized successfully");
+                    
+                    this.authManager.initialize();
+                    this.isInitialized = true;
+                    
+                    this.setupEventDelegation();
+                    
+                    this.waitForAuthAndLoad();
+                    
+                } catch (error) {
+                    console.error("Firebase initialization error:", error);
+                    this.hideSkeletonLoading();
+                    this.showError("Firebase initialization failed. Please refresh the page.");
+                }
+            }
+            
+            // NEW: Show skeleton loading screen
+            showSkeletonLoading() {
+                this.topBar.classList.remove('hidden');
+                
+                const skeletonHtml = `
+                    <div class="skeleton-container">
+                        <!-- Dashboard skeleton -->
+                        <div class="skeleton-section skeleton-shimmer">
+                            <div class="skeleton-header">
+                                <div class="skeleton-title-box"></div>
+                            </div>
+                            
+                            <div class="skeleton-card"></div>
+                            <div class="skeleton-card"></div>
+                            <div class="skeleton-card"></div>
+                        </div>
+                        
+                        <!-- Table skeleton -->
+                        <div class="skeleton-section skeleton-shimmer">
+                            <div class="skeleton-header">
+                                <div class="skeleton-title-box"></div>
+                            </div>
+                            
+                            <div class="skeleton-table"></div>
+                            
+                            <!-- Skeleton pagination -->
+                            <div class="skeleton-pagination">
+                                <div class="skeleton-page-info"></div>
+                                <div class="skeleton-pagination-buttons">
+                                    <div class="skeleton-page-button"></div>
+                                    <div class="skeleton-page-button"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = skeletonHtml;
+                this.chatContainer.scrollTop = 0;
+                
+                this.chatContainer.style.overflowY = 'hidden';
+            }
+            
+            // NEW: Hide skeleton loading
+            hideSkeletonLoading() {
+                this.chatContainer.style.overflowY = 'auto';
+            }
+            
+            async waitForAuthAndLoad() {
+                console.log("Waiting for auth to be ready...");
+                
+                const authReady = await this.authManager.waitForAuthReady();
+                
+                if (authReady) {
+                    console.log("Auth is ready, checking user state...");
+                    
+                    if (this.authManager.isUserLoggedIn()) {
+                        console.log("User is logged in, loading hosteller data...");
+                        await this.loadHostellerData();
+                    } else {
+                        console.log("User is not logged in, showing sign in prompt...");
+                        this.hideSkeletonLoading();
+                        this.showSignInPrompt();
+                    }
+                } else {
+                    console.error("Auth initialization timed out");
+                    this.hideSkeletonLoading();
+                    this.showError("Authentication initialization timed out. Please refresh the page.");
+                }
+            }
+            
+            async loadHostellerData() {
+                const user = this.authManager.currentUser;
+                if (!user || !this.db) {
+                    this.showError("User not authenticated");
+                    return;
+                }
+                
+                try {
+                    // Check if hosteller exists
+                    const hostellerPath = this.stateManager.getHostellerPath(user.uid);
+                    const hostellerDoc = await this.db.doc(hostellerPath).get();
+                    
+                    if (hostellerDoc.exists) {
+                        const hostellerData = hostellerDoc.data();
+                        this.stateManager.setHostellerData(hostellerData);
+                        
+                        // Load additional data
+                        await this.loadAdditionalData(user.uid);
+                        
+                        // Show dashboard
+                        this.renderDashboard();
+                        this.updateTopBar();
+                        this.hideSkeletonLoading();
+                    } else {
+                        // Hosteller not registered, show registration form
+                        this.renderRegistrationForm();
+                        this.updateTopBar();
+                        this.hideSkeletonLoading();
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading hosteller data:", error);
+                    this.hideSkeletonLoading();
+                    this.showError("Failed to load hosteller data. Please try again.");
+                }
+            }
+            
+            async loadAdditionalData(userUid) {
+                try {
+                    // Load invoices
+                    const invoicesPath = this.stateManager.getInvoicesPath(userUid);
+                    const invoicesSnapshot = await this.db.collection(invoicesPath).get();
+                    const invoices = [];
+                    invoicesSnapshot.forEach(doc => {
+                        invoices.push({ id: doc.id, ...doc.data() });
+                    });
+                    this.stateManager.setInvoices(invoices);
+                    
+                    // Load payments
+                    const paymentsPath = this.stateManager.getPaymentsPath(userUid);
+                    const paymentsSnapshot = await this.db.collection(paymentsPath).get();
+                    const payments = [];
+                    paymentsSnapshot.forEach(doc => {
+                        payments.push({ id: doc.id, ...doc.data() });
+                    });
+                    this.stateManager.setPayments(payments);
+                    
+                    // Load fee settings
+                    const feeSettingsPath = this.stateManager.getFeeSettingsPath();
+                    const feeSettingsDoc = await this.db.doc(feeSettingsPath).get();
+                    if (feeSettingsDoc.exists) {
+                        this.stateManager.setFeeSettings(feeSettingsDoc.data());
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading additional data:", error);
+                }
+            }
+            
+            setupEventDelegation() {
+                document.addEventListener('click', (e) => {
+                    const target = e.target;
+                    
+                    // Hamburger menu
+                    if (target.closest('#hamburger-menu')) {
+                        this.togglePageNumbers();
+                    }
+                    
+                    // Sign in prompt button
+                    if (target.closest('#sign-in-prompt-button')) {
+                        this.handleSignInClick();
+                    }
+                    
+                    // Logout button
+                    if (target.closest('#logout-button')) {
+                        this.handleLogout();
+                    }
+                    
+                    // Dashboard card clicks - FIXED: Check for data-view attribute
+                    if (target.closest('.dashboard-card')) {
+                        const card = target.closest('.dashboard-card');
+                        if (card.dataset.view) {
+                            this.showView(card.dataset.view);
+                        }
+                    }
+                    
+                    // Recent invoice card clicks
+                    if (target.closest('.recent-invoice-card')) {
+                        const card = target.closest('.recent-invoice-card');
+                        const invoiceId = card.dataset.invoiceId;
+                        if (invoiceId) {
+                            this.showInvoiceDetailById(invoiceId);
+                        }
+                    }
+                    
+                    // View invoice button in invoice list
+                    if (target.closest('.view-invoice-button')) {
+                        const button = target.closest('.view-invoice-button');
+                        const invoiceId = button.dataset.invoiceId;
+                        this.showInvoiceDetailById(invoiceId);
+                    }
+                    
+                    // Pay invoice button in invoice list
+                    if (target.closest('.pay-invoice-button')) {
+                        const button = target.closest('.pay-invoice-button');
+                        const invoiceId = button.dataset.invoiceId;
+                        this.showInvoiceDetailById(invoiceId);
+                    }
+                    
+                    // Process payment with PayCode
+                    if (target.closest('#process-payment-btn')) {
+                        this.processPaymentWithPayCode();
+                    }
+                    
+                    // Back to invoices button
+                    if (target.closest('#back-to-invoices')) {
+                        this.showView('invoices');
+                    }
+                    
+                    // Print button
+                    if (target.closest('.print-invoice-button')) {
+                        window.print();
+                    }
+                    
+                    // Submit registration button
+                    if (target.closest('#submit-registration-button')) {
+                        this.submitRegistration();
+                    }
+                    
+                    // Page number click
+                    if (target.closest('.page-number-box')) {
+                        const pageBox = target.closest('.page-number-box');
+                        const page = parseInt(pageBox.dataset.page);
+                        if (!isNaN(page)) {
+                            this.handlePageNumberClick(page);
+                        }
+                    }
+                    
+                    // Pagination button click
+                    if (target.closest('.page-button')) {
+                        const button = target.closest('.page-button');
+                        if (button.classList.contains('prev-button')) {
+                            this.handlePaginationClick('prev');
+                        } else if (button.classList.contains('next-button')) {
+                            this.handlePaginationClick('next');
+                        }
+                    }
+                });
+            }
+            
+            updateTopBar() {
+                const isLoggedIn = this.authManager.isUserLoggedIn();
+                
+                if (isLoggedIn) {
+                    this.topBar.classList.remove('hidden');
+                } else {
+                    this.topBar.classList.add('hidden');
+                }
+                
+                // Update profile image
+                const hostellerData = this.stateManager.getHostellerData();
+                if (hostellerData && hostellerData.profileImageUrl) {
+                    this.profileImageContainer.innerHTML = `
+                        <img src="${hostellerData.profileImageUrl}" alt="Profile" class="profile-image" onerror="this.src='https://placehold.co/40x40/3B82F6/FFFFFF?text=H'">
+                    `;
+                } else {
+                    this.profileImageContainer.innerHTML = `
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:600;">H</div>
+                    `;
+                }
+            }
+            
+            async handleAuthStateChange(user, isLoggedIn) {
+                console.log("Auth state change handling:", { user: user?.uid, isLoggedIn });
+                
+                if (this.authCheckInProgress) {
+                    console.log("Auth check already in progress, skipping...");
+                    return;
+                }
+                
+                this.authCheckInProgress = true;
+                
+                try {
+                    if (isLoggedIn && user) {
+                        console.log("User logged in, loading hosteller data...");
+                        this.showSkeletonLoading();
+                        this.cacheManager.clearAll();
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        await this.loadHostellerData();
+                    } else {
+                        console.log("User logged out, showing sign in prompt...");
+                        this.hideSkeletonLoading();
+                        this.showSignInPrompt();
+                    }
+                } catch (error) {
+                    console.error("Error in handleAuthStateChange:", error);
+                    this.hideSkeletonLoading();
+                    this.showError("Authentication error occurred. Please try again.");
+                } finally {
+                    this.authCheckInProgress = false;
+                }
+            }
+            
+            handleSignInClick() {
+                this.authManager.showAuthModal();
+            }
+            
+            async handleLogout() {
+                try {
+                    await this.authManager.signOut();
+                    this.hideSkeletonLoading();
+                    this.showSignInPrompt();
+                } catch (error) {
+                    console.error("Logout error:", error);
+                }
+            }
+            
+            togglePageNumbers() {
+                const isVisible = this.stateManager.togglePageNumbers();
+                
+                if (isVisible) {
+                    this.pageNumbersContainer.classList.add('show');
+                    this.chatContainer.classList.add('page-numbers-open');
+                } else {
+                    this.pageNumbersContainer.classList.remove('show');
+                    this.chatContainer.classList.remove('page-numbers-open');
+                }
+            }
+            
+            showView(view) {
+                this.stateManager.setCurrentView(view);
+                
+                switch(view) {
+                    case 'dashboard':
+                        this.renderDashboard();
+                        break;
+                    case 'profile':
+                        this.renderProfile();
+                        break;
+                    case 'invoices':
+                        this.renderInvoices();
+                        break;
+                    case 'payments':
+                        this.renderPayments();
+                        break;
+                    case 'registration':
+                        this.renderRegistrationForm();
+                        break;
+                    case 'invoice-detail':
+                        this.renderInvoiceDetail();
+                        break;
+                }
+                
+                this.chatContainer.scrollTop = 0;
+            }
+            
+            showInvoiceDetailById(invoiceId) {
+                const invoices = this.stateManager.getInvoices();
+                const invoice = invoices.find(inv => inv.id === invoiceId);
+                
+                if (invoice) {
+                    this.stateManager.setCurrentInvoiceDetail(invoice);
+                    this.showView('invoice-detail');
+                }
+            }
+            
+            showError(message) {
+                console.error(message);
+                
+                this.topBar.classList.add('hidden');
+                
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="error-title">Error</div>
+                        <div class="error-message">
+                            ${message}
+                        </div>
+                        <button id="retry-button" class="signin-button" style="background: #3b82f6;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('retry-button')?.addEventListener('click', () => {
+                    window.location.reload();
+                });
+            }
+            
+            showSignInPrompt() {
+                this.topBar.classList.add('hidden');
+                
+                const html = `
+                    <div class="signin-prompt-container">
+                        <div class="signin-icon">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <div class="signin-title">Sign In to Hostel Portal</div>
+                        <div class="signin-message">
+                            You need to sign in to access your hostel account. Please sign in to continue.
+                        </div>
+                        <button id="sign-in-prompt-button" class="signin-button">
+                            Sign In to Continue
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+            }
+            
+            // ===== RENDER METHODS =====
+            renderDashboard() {
+                const hostellerData = this.stateManager.getHostellerData();
+                const invoices = this.stateManager.getInvoices();
+                
+                // Calculate statistics
+                const totalInvoices = invoices.length;
+                const paidInvoices = invoices.filter(inv => inv.status === 'paid').length;
+                const unpaidInvoices = invoices.filter(inv => inv.status === 'unpaid').length;
+                const totalBalance = invoices.reduce((sum, inv) => sum + (inv.totalAmount - inv.paidAmount), 0);
+                
+                let dashboardHtml = '<div class="portal-container">';
+                
+                // Display alerts
+                const alerts = this.stateManager.getAlerts();
+                if (alerts.length > 0) {
+                    alerts.forEach(alert => {
+                        dashboardHtml += `
+                            <div class="alert alert-${alert.type}">
+                                ${alert.message}
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Welcome section
+                dashboardHtml += `
+                    <div class="portal-section">
+                        <div class="section-type-header-inline">
+                            <div class="header-bg">
+                                <div class="connector-line">
+                                    <div class="dot"></div>
+                                    <div class="dot"></div>
+                                </div>
+                                <div class="title-box">
+                                    WELCOME TO HOSTEL PORTAL
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section-header">
+                            <h1 class="text-2xl font-bold text-gray-900">Hello, ${hostellerData?.name || 'Hosteller'}!</h1>
+                            <p class="text-gray-600">Manage your hostel account, view invoices, and make payments.</p>
+                        </div>
+                        
+                        <!-- Quick Stats -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-blue-50 p-4 border border-blue-200">
+                                <div class="text-sm text-blue-700 font-medium">Total Invoices</div>
+                                <div class="text-2xl font-bold text-blue-900">${totalInvoices}</div>
+                            </div>
+                            <div class="bg-green-50 p-4 border border-green-200">
+                                <div class="text-sm text-green-700 font-medium">Paid</div>
+                                <div class="text-2xl font-bold text-green-900">${paidInvoices}</div>
+                            </div>
+                            <div class="bg-red-50 p-4 border border-red-200">
+                                <div class="text-sm text-red-700 font-medium">Pending</div>
+                                <div class="text-2xl font-bold text-red-900">${unpaidInvoices}</div>
+                            </div>
+                            <div class="bg-yellow-50 p-4 border border-yellow-200">
+                                <div class="text-sm text-yellow-700 font-medium">Balance Due</div>
+                                <div class="text-2xl font-bold text-yellow-900">Rs. ${totalBalance.toLocaleString()}</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Dashboard Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-8">
+                            <div class="dashboard-card" data-view="profile">
+                                <div class="dashboard-card-icon">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                <div class="dashboard-card-title">My Profile</div>
+                                <div class="dashboard-card-subtitle">View and update your personal information</div>
+                            </div>
+                            
+                            <div class="dashboard-card" data-view="invoices">
+                                <div class="dashboard-card-icon">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                </div>
+                                <div class="dashboard-card-title">My Invoices</div>
+                                <div class="dashboard-card-subtitle">View and pay your hostel invoices</div>
+                            </div>
+                            
+                            <div class="dashboard-card" data-view="payments">
+                                <div class="dashboard-card-icon">
+                                    <i class="fas fa-history"></i>
+                                </div>
+                                <div class="dashboard-card-title">Payment History</div>
+                                <div class="dashboard-card-subtitle">View your payment records</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Recent Invoices -->
+                        <div class="mt-10">
+                            <h3 class="text-lg font-bold text-gray-900 mb-4">Recent Invoices</h3>
+                            ${this.renderRecentInvoices()}
+                        </div>
+                    </div>
+                `;
+                
+                dashboardHtml += '</div>';
+                
+                this.chatContainer.innerHTML = dashboardHtml;
+                this.updateTopBar();
+            }
+            
+            renderRecentInvoices() {
+                const invoices = this.stateManager.getInvoices();
+                const recentInvoices = invoices.slice(0, 3);
+                
+                if (recentInvoices.length === 0) {
+                    return '<p class="text-gray-500">No invoices found.</p>';
+                }
+                
+                let html = '<div class="space-y-3">';
+                
+                recentInvoices.forEach(invoice => {
+                    const statusClass = invoice.status === 'paid' ? 'status-paid' : 
+                                      invoice.status === 'partially_paid' ? 'status-partial' : 'status-unpaid';
+                    const statusText = invoice.status === 'partially_paid' ? 'Partial' : invoice.status;
+                    const balance = invoice.totalAmount - invoice.paidAmount;
+                    
+                    html += `
+                        <div class="recent-invoice-card flex justify-between items-center p-3 bg-white border border-gray-200" data-invoice-id="${invoice.id}">
+                            <div>
+                                <div class="font-medium">${invoice.month || 'N/A'}, ${invoice.year || 'N/A'}</div>
+                                <div class="text-sm text-gray-500">Due: ${invoice.dueDate?.toDate ? new Date(invoice.dueDate.toDate()).toLocaleDateString() : 'N/A'}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="font-bold">Rs. ${invoice.totalAmount?.toLocaleString() || '0'}</div>
+                                <div class="text-sm">
+                                    <span class="${statusClass} status-badge">${statusText}</span>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-1">Balance: Rs. ${balance.toLocaleString()}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+                return html;
+            }
+            
+            renderProfile() {
+                const hostellerData = this.stateManager.getHostellerData();
+                
+                if (!hostellerData) {
+                    return this.showError("No hosteller data found.");
+                }
+                
+                let profileHtml = '<div class="portal-container">';
+                
+                profileHtml += `
+                    <div class="portal-section">
+                        <div class="section-type-header-inline">
+                            <div class="header-bg">
+                                <div class="connector-line">
+                                    <div class="dot"></div>
+                                    <div class="dot"></div>
+                                </div>
+                                <div class="title-box">
+                                    MY PROFILE
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-center mb-8">
+                            <img src="${hostellerData.profileImageUrl || 'https://via.placeholder.com/150x180?text=PHOTO'}" 
+                                 alt="Profile" 
+                                 class="profile-image-large"
+                                 onerror="this.src='https://via.placeholder.com/150x180?text=PHOTO'">
+                            <h2 class="text-2xl font-bold text-gray-900 mt-4">${hostellerData.name}</h2>
+                            <p class="text-gray-600">Hosteller ID: ${hostellerData.id || 'N/A'}</p>
+                        </div>
+                        
+                        <div class="profile-display">
+                            <div class="profile-field">
+                                <span class="field-label">Full Name:</span>
+                                <span class="field-value">${hostellerData.name}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Phone Number:</span>
+                                <span class="field-value">${hostellerData.phoneNumber}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Address:</span>
+                                <span class="field-value">${hostellerData.address}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Date of Birth:</span>
+                                <span class="field-value">${hostellerData.dateOfBirth?.toDate ? new Date(hostellerData.dateOfBirth.toDate()).toLocaleDateString() : 'N/A'}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Gender:</span>
+                                <span class="field-value">${hostellerData.gender}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Date of Joining:</span>
+                                <span class="field-value">${hostellerData.dateOfJoining?.toDate ? new Date(hostellerData.dateOfJoining.toDate()).toLocaleDateString() : 'N/A'}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Block:</span>
+                                <span class="field-value">${hostellerData.blockId}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Room:</span>
+                                <span class="field-value">${hostellerData.roomId}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Bed:</span>
+                                <span class="field-value">${hostellerData.bedId}</span>
+                            </div>
+                            <div class="profile-field">
+                                <span class="field-label">Status:</span>
+                                <span class="field-value"><span class="status-badge ${hostellerData.status === 'approved' ? 'status-paid' : 'status-unpaid'}">${hostellerData.status}</span></span>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6 flex gap-4">
+                            <button onclick="app.showView('dashboard')" class="page-button">
+                                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                profileHtml += '</div>';
+                
+                this.chatContainer.innerHTML = profileHtml;
+                this.updateTopBar();
+            }
+            
+            renderInvoices() {
+                const invoices = this.stateManager.getInvoices();
+                const currentPage = this.stateManager.currentInvoicePage;
+                const itemsPerPage = this.stateManager.itemsPerPage;
+                
+                const startIndex = currentPage * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                const currentInvoices = invoices.slice(startIndex, endIndex);
+                const totalPages = Math.ceil(invoices.length / itemsPerPage);
+                
+                let invoicesHtml = '<div class="portal-container">';
+                
+                invoicesHtml += `
+                    <div class="portal-section">
+                        <div class="section-type-header-inline">
+                            <div class="header-bg">
+                                <div class="connector-line">
+                                    <div class="dot"></div>
+                                    <div class="dot"></div>
+                                </div>
+                                <div class="title-box">
+                                    MY INVOICES
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section-header">
+                            <h1 class="text-2xl font-bold text-gray-900">Invoice Statements</h1>
+                            <p class="text-gray-600">View and pay your hostel invoices</p>
+                        </div>
+                        
+                        ${invoices.length === 0 ? 
+                            '<div class="text-center py-8 text-gray-500">No invoices found.</div>' :
+                            `
+                            <table class="invoice-table">
+                                <thead>
+                                    <tr>
+                                        <th>Month</th>
+                                        <th>Year</th>
+                                        <th>Due Date</th>
+                                        <th>Total Amount</th>
+                                        <th>Paid Amount</th>
+                                        <th>Balance</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${currentInvoices.map(invoice => {
+                                        const dueDate = invoice.dueDate?.toDate ? new Date(invoice.dueDate.toDate()) : new Date();
+                                        const statusClass = invoice.status === 'paid' ? 'status-paid' : 
+                                                          invoice.status === 'partially_paid' ? 'status-partial' : 'status-unpaid';
+                                        const statusText = invoice.status === 'partially_paid' ? 'Partial' : invoice.status;
+                                        const balance = invoice.totalAmount - invoice.paidAmount;
+                                        
+                                        return `
+                                            <tr>
+                                                <td>${invoice.month || 'N/A'}</td>
+                                                <td>${invoice.year || 'N/A'}</td>
+                                                <td>${dueDate.toLocaleDateString()}</td>
+                                                <td>Rs. ${invoice.totalAmount?.toLocaleString() || '0'}</td>
+                                                <td>Rs. ${invoice.paidAmount?.toLocaleString() || '0'}</td>
+                                                <td>Rs. ${balance.toLocaleString()}</td>
+                                                <td><span class="${statusClass} status-badge">${statusText}</span></td>
+                                                <td>
+                                                    <button class="view-invoice-button page-button" data-invoice-id="${invoice.id}" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; margin-right: 0.25rem;">
+                                                        View
+                                                    </button>
+                                                    ${balance > 0 ? 
+                                                        `<button class="pay-invoice-button page-button" data-invoice-id="${invoice.id}" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">
+                                                            Pay
+                                                        </button>` : 
+                                                        ''
+                                                    }
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                            `
+                        }
+                        
+                        ${invoices.length > 0 ? `
+                            <div class="portal-pagination">
+                                <div class="page-info">
+                                    Showing ${startIndex + 1}-${Math.min(endIndex, invoices.length)} of ${invoices.length} invoices
+                                </div>
+                                <div class="pagination-buttons">
+                                    <button class="page-button prev-button" ${currentPage === 0 ? 'disabled' : ''}>
+                                        Previous
+                                    </button>
+                                    <button class="page-button next-button" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="mt-6">
+                            <button onclick="app.showView('dashboard')" class="page-button">
+                                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                invoicesHtml += '</div>';
+                
+                this.chatContainer.innerHTML = invoicesHtml;
+                this.updateTopBar();
+            }
+            
+            renderInvoiceDetail() {
+                const invoice = this.stateManager.getCurrentInvoiceDetail();
+                const hostellerData = this.stateManager.getHostellerData();
+                
+                if (!invoice || !hostellerData) {
+                    this.showView('invoices');
+                    return;
+                }
+                
+                const balance = invoice.totalAmount - invoice.paidAmount;
+                const statusClass = invoice.status === 'paid' ? 'status-paid-new' : 
+                                  invoice.status === 'partially_paid' ? 'status-partial-new' : 'status-unpaid-new';
+                const statusText = invoice.status === 'paid' ? 'Paid' : 
+                                 invoice.status === 'partially_paid' ? 'Partial' : 'Unpaid';
+                
+                let invoiceHtml = '<div class="invoice-detail-container">';
+                
+                // Back button
+                invoiceHtml += `
+                    <div class="portal-section invoice-detail-back">
+                        <button id="back-to-invoices" class="page-button">
+                            <i class="fas fa-arrow-left mr-2"></i> Back to Invoices
+                        </button>
+                    </div>
+                `;
+                
+                // Main Invoice Card
+                invoiceHtml += `
+                    <div class="invoice-card-new">
+                        <!-- Header -->
+                        <div class="bg-gray-800 p-6 text-white flex justify-between items-center border-b-4 border-red-600">
+                            <div>
+                                <h1 class="text-3xl font-bold tracking-widest uppercase">Invoice / बील</h1>
+                                <p class="text-gray-400 text-sm tracking-wide">SN: ${invoice.id || 'NPR-2080-81-742'}</p>
+                            </div>
+                            <div class="text-right">
+                                <div id="statusBadge" class="${statusClass} px-4 py-1 text-sm font-bold uppercase tracking-widest">
+                                    ${statusText}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Body -->
+                        <div class="p-6 md:p-10">
+                            <!-- Details Grid -->
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10 border-b border-gray-100 pb-8">
+                                <div>
+                                    <label class="text-xs font-bold text-red-600 uppercase tracking-tighter">Full Name</label>
+                                    <h2 id="disp-name" class="text-2xl font-semibold text-gray-800">${hostellerData.name}</h2>
+                                </div>
+                                <div>
+                                    <label class="text-xs font-bold text-red-600 uppercase tracking-tighter">Phone Number</label>
+                                    <p id="disp-phone" class="text-xl text-gray-700 font-medium">${hostellerData.phoneNumber}</p>
+                                </div>
+                                <div class="md:text-right">
+                                    <label class="text-xs font-bold text-red-600 uppercase tracking-tighter">Year & Month</label>
+                                    <p class="text-xl text-gray-800 font-medium">
+                                        <span id="disp-month">${invoice.month || 'N/A'}</span>, <span id="disp-year">${invoice.year || 'N/A'}</span>
+                                    </p>
+                                </div>
+                            </div>
+
+                            <!-- Items Section -->
+                            <div class="mb-10">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100 text-gray-700 uppercase text-sm tracking-widest">
+                                            <th class="p-3 border">Description</th>
+                                            <th class="p-3 border text-right">Amount (Rs.)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="text-lg">
+                                        <tr>
+                                            <td class="p-3 border font-normal">Hostel Fee (${invoice.month || 'Current Month'})</td>
+                                            <td class="p-3 border text-right font-medium">Rs. <span id="disp-hostel-fee">${invoice.totalAmount?.toLocaleString() || '0'}</span></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Total Calculation -->
+                            <div class="flex flex-col items-end">
+                                <div class="w-full md:w-1/3 space-y-2">
+                                    <div class="flex justify-between text-gray-600 text-lg">
+                                        <span>Grand Total:</span>
+                                        <span class="font-bold text-gray-900">Rs. <span id="disp-total">${invoice.totalAmount?.toLocaleString() || '0'}</span></span>
+                                    </div>
+                                    <div class="flex justify-between text-blue-700 text-lg">
+                                        <span>Paid Amount:</span>
+                                        <span class="font-bold">(-) Rs. <span id="disp-paid">${invoice.paidAmount?.toLocaleString() || '0'}</span></span>
+                                    </div>
+                                    <div class="flex justify-between text-2xl font-bold text-red-700 border-t-2 border-gray-800 pt-2 uppercase">
+                                        <span>Balance:</span>
+                                        <span>Rs. <span id="disp-balance">${balance.toLocaleString()}</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Footer -->
+                        <div class="bg-gray-100 p-4 text-center text-sm text-gray-500 uppercase tracking-widest">
+                            Thank you for your business / धन्यवाद 
+                        </div>
+                    </div>
+                `;
+                
+                // Payment Section (only if balance > 0)
+                if (balance > 0) {
+                    invoiceHtml += `
+                        <div class="payment-section-new no-print">
+                            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                                <div class="w-full md:w-1/2">
+                                    <h3 class="text-2xl font-bold text-gray-800 uppercase tracking-wide flex items-center gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                                        </svg>
+                                        Payment Section
+                                    </h3>
+                                    <p class="text-gray-500 mt-2">Enter your unique PayCode to securely settle your outstanding balance.</p>
+                                    <div class="mt-4 text-sm text-gray-600">
+                                        <p><strong>Invoice ID:</strong> ${invoice.id}</p>
+                                        <p><strong>Amount Due:</strong> Rs. ${balance.toLocaleString()}</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="w-full md:w-1/3">
+                                    <div class="flex flex-col">
+                                        <label class="text-xs font-bold mb-2 uppercase text-gray-600">Enter PayCode</label>
+                                        <div class="relative">
+                                            <input type="text" id="pay-code" placeholder="XXXX-XXXX-XXXX" 
+                                                class="w-full p-3 border-2 border-gray-200 outline-none focus:border-red-600 transition-all text-lg font-mono tracking-widest uppercase">
+                                        </div>
+                                        <button id="process-payment-btn" 
+                                            class="mt-4 w-full bg-gray-800 text-white py-4 font-bold hover:bg-black transition-all uppercase tracking-widest flex items-center justify-center gap-2">
+                                            Proceed to Payment
+                                        </button>
+                                        <button class="print-invoice-button mt-2 w-full text-gray-500 border border-gray-300 py-2 font-bold hover:bg-gray-50 transition-all uppercase tracking-widest text-xs">
+                                            Download Receipt
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Payment Notification Area -->
+                            <div id="payment-status" class="hidden mt-6 p-4 rounded bg-green-50 border border-green-200 text-green-800 font-medium text-center fade-in">
+                                Payment processing... please wait.
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    invoiceHtml += `
+                        <div class="payment-section-new no-print">
+                            <div class="text-center p-8">
+                                <div class="text-green-600 text-4xl mb-4">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                                <h3 class="text-2xl font-bold text-gray-800 mb-2">Invoice Fully Paid</h3>
+                                <p class="text-gray-600 mb-6">This invoice has been fully paid. No payment required.</p>
+                                <button class="print-invoice-button w-full md:w-auto bg-gray-800 text-white py-3 px-6 font-bold hover:bg-black transition-all uppercase tracking-widest">
+                                    Download Receipt
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                invoiceHtml += '</div>';
+                
+                this.chatContainer.innerHTML = invoiceHtml;
+                this.updateTopBar();
+            }
+            
+            async processPaymentWithPayCode() {
+                const invoice = this.stateManager.getCurrentInvoiceDetail();
+                const user = this.authManager.currentUser;
+                
+                if (!invoice || !user || !this.db) {
+                    this.stateManager.addAlert('error', 'Unable to process payment. Please try again.');
+                    this.showView('invoices');
+                    return;
+                }
+                
+                const payCode = document.getElementById('pay-code')?.value.trim();
+                const statusDiv = document.getElementById('payment-status');
+                const payBtn = document.getElementById('process-payment-btn');
+                
+                if (!payCode) {
+                    if (statusDiv) {
+                        statusDiv.innerText = "Please enter a valid PayCode to proceed.";
+                        statusDiv.classList.remove('hidden', 'bg-green-50', 'text-green-800', 'border-green-200');
+                        statusDiv.classList.add('bg-red-50', 'text-red-800', 'border-red-200', 'fade-in');
+                        statusDiv.classList.remove('hidden');
+                    }
+                    return;
+                }
+                
+                // Disable button and show processing
+                if (payBtn) {
+                    payBtn.disabled = true;
+                    payBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processing...';
+                }
+                
+                if (statusDiv) {
+                    statusDiv.innerText = "Verifying PayCode and initiating transaction...";
+                    statusDiv.classList.remove('hidden', 'bg-red-50', 'text-red-800', 'border-red-200');
+                    statusDiv.classList.add('bg-blue-50', 'text-blue-800', 'border-blue-200', 'fade-in');
+                }
+                
+                try {
+                    // Check PayCode in database
+                    const payCodePath = `${this.stateManager.getPayCodesPath()}/${payCode}`;
+                    const payCodeDoc = await this.db.doc(payCodePath).get();
+                    
+                    if (!payCodeDoc.exists) {
+                        throw new Error('Invalid PayCode');
+                    }
+                    
+                    const payCodeData = payCodeDoc.data();
+                    
+                    if (!payCodeData.valid) {
+                        throw new Error('PayCode has already been used');
+                    }
+                    
+                    const payCodeAmount = payCodeData.value || 0;
+                    const balance = invoice.totalAmount - invoice.paidAmount;
+                    
+                    if (payCodeAmount > balance) {
+                        throw new Error(`PayCode amount (Rs. ${payCodeAmount.toLocaleString()}) exceeds balance due (Rs. ${balance.toLocaleString()})`);
+                    }
+                    
+                    // Update PayCode to mark as used
+                    await this.db.doc(payCodePath).update({
+                        valid: false,
+                        usedBy: user.uid,
+                        usedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        invoiceId: invoice.id
+                    });
+                    
+                    // Calculate new amounts
+                    const newPaidAmount = invoice.paidAmount + payCodeAmount;
+                    const newBalance = balance - payCodeAmount;
+                    const newStatus = newBalance <= 0 ? 'paid' : 
+                                    newPaidAmount > 0 ? 'partially_paid' : 'unpaid';
+                    
+                    // Update invoice
+                    const invoicePath = `${this.stateManager.getInvoicesPath(user.uid)}/${invoice.id}`;
+                    await this.db.doc(invoicePath).update({
+                        paidAmount: newPaidAmount,
+                        status: newStatus,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    // Create payment record
+                    const paymentData = {
+                        hostellerName: invoice.hostellerName || this.stateManager.getHostellerData()?.name,
+                        phoneNumber: invoice.phoneNumber || this.stateManager.getHostellerData()?.phoneNumber,
+                        amountPaid: payCodeAmount,
+                        dateTime: firebase.firestore.FieldValue.serverTimestamp(),
+                        senderName: `PayCode: ${payCode}`,
+                        transactionCode: payCode,
+                        invoiceMonth: `${invoice.month || 'N/A'}, ${invoice.year || 'N/A'}`,
+                        paymentMethod: 'paycode',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    const paymentsPath = this.stateManager.getPaymentsPath(user.uid);
+                    await this.db.collection(paymentsPath).add(paymentData);
+                    
+                    // Update local state
+                    const updatedInvoice = { 
+                        ...invoice, 
+                        paidAmount: newPaidAmount, 
+                        status: newStatus 
+                    };
+                    
+                    const invoices = this.stateManager.getInvoices();
+                    const updatedInvoices = invoices.map(inv => 
+                        inv.id === invoice.id ? updatedInvoice : inv
+                    );
+                    this.stateManager.setInvoices(updatedInvoices);
+                    this.stateManager.setCurrentInvoiceDetail(updatedInvoice);
+                    
+                    // Update payments list
+                    const payments = this.stateManager.getPayments();
+                    payments.push({ id: Date.now().toString(), ...paymentData });
+                    this.stateManager.setPayments(payments);
+                    
+                    // Show success message
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `
+                            <div class="flex items-center justify-center gap-2">
+                                <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                                <span>Payment Successful! Rs. ${payCodeAmount.toLocaleString()} paid using PayCode: ${payCode}</span>
+                            </div>
+                        `;
+                        statusDiv.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200');
+                        statusDiv.classList.add('bg-green-50', 'text-green-800', 'border-green-200');
+                    }
+                    
+                    // Update UI
+                    setTimeout(() => {
+                        this.renderInvoiceDetail();
+                        this.stateManager.addAlert('success', `Payment of Rs. ${payCodeAmount.toLocaleString()} processed successfully!`);
+                    }, 2000);
+                    
+                } catch (error) {
+                    console.error("Payment processing error:", error);
+                    
+                    // Re-enable button
+                    if (payBtn) {
+                        payBtn.disabled = false;
+                        payBtn.innerHTML = 'Proceed to Payment';
+                    }
+                    
+                    // Show error message
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `
+                            <div class="flex items-center justify-center gap-2">
+                                <svg class="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
+                                <span>${error.message || 'Payment failed. Please try again.'}</span>
+                            </div>
+                        `;
+                        statusDiv.classList.remove('bg-blue-50', 'text-blue-800', 'border-blue-200', 'bg-green-50', 'text-green-800', 'border-green-200');
+                        statusDiv.classList.add('bg-red-50', 'text-red-800', 'border-red-200', 'fade-in');
+                    }
+                }
+            }
+            
+            renderPayments() {
+                const payments = this.stateManager.getPayments();
+                const currentPage = this.stateManager.currentPaymentPage;
+                const itemsPerPage = this.stateManager.itemsPerPage;
+                
+                const startIndex = currentPage * itemsPerPage;
+                const endIndex = startIndex + itemsPerPage;
+                const currentPayments = payments.slice(startIndex, endIndex);
+                const totalPages = Math.ceil(payments.length / itemsPerPage);
+                
+                let paymentsHtml = '<div class="portal-container">';
+                
+                paymentsHtml += `
+                    <div class="portal-section">
+                        <div class="section-type-header-inline">
+                            <div class="header-bg">
+                                <div class="connector-line">
+                                    <div class="dot"></div>
+                                    <div class="dot"></div>
+                                </div>
+                                <div class="title-box">
+                                    PAYMENT HISTORY
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section-header">
+                            <h1 class="text-2xl font-bold text-gray-900">Payment Records</h1>
+                            <p class="text-gray-600">View your payment history</p>
+                        </div>
+                        
+                        ${payments.length === 0 ? 
+                            '<div class="text-center py-8 text-gray-500">No payment records found.</div>' :
+                            `
+                            <table class="invoice-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date & Time</th>
+                                        <th>Invoice Month</th>
+                                        <th>Amount Paid</th>
+                                        <th>Transaction Code</th>
+                                        <th>Sender Name</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${currentPayments.map(payment => {
+                                        const dateTime = payment.dateTime?.toDate ? new Date(payment.dateTime.toDate()) : new Date();
+                                        
+                                        return `
+                                            <tr>
+                                                <td>${dateTime.toLocaleString()}</td>
+                                                <td>${payment.invoiceMonth}</td>
+                                                <td>Rs. ${payment.amountPaid?.toLocaleString() || '0'}</td>
+                                                <td>${payment.transactionCode}</td>
+                                                <td>${payment.senderName}</td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                            `
+                        }
+                        
+                        ${payments.length > 0 ? `
+                            <div class="portal-pagination">
+                                <div class="page-info">
+                                    Showing ${startIndex + 1}-${Math.min(endIndex, payments.length)} of ${payments.length} payments
+                                </div>
+                                <div class="pagination-buttons">
+                                    <button class="page-button prev-button" ${currentPage === 0 ? 'disabled' : ''}>
+                                        Previous
+                                    </button>
+                                    <button class="page-button next-button" ${currentPage >= totalPages - 1 ? 'disabled' : ''}>
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        ` : ''}
+                        
+                        <div class="mt-6">
+                            <button onclick="app.showView('dashboard')" class="page-button">
+                                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                paymentsHtml += '</div>';
+                
+                this.chatContainer.innerHTML = paymentsHtml;
+                this.updateTopBar();
+            }
+            
+            renderRegistrationForm() {
+                let registrationHtml = '<div class="portal-container">';
+                
+                registrationHtml += `
+                    <div class="portal-section">
+                        <div class="section-type-header-inline">
+                            <div class="header-bg">
+                                <div class="connector-line">
+                                    <div class="dot"></div>
+                                    <div class="dot"></div>
+                                </div>
+                                <div class="title-box">
+                                    HOSTELLER REGISTRATION
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section-header">
+                            <h1 class="text-2xl font-bold text-gray-900">New Registration</h1>
+                            <p class="text-gray-600">Fill out the form to register as a hosteller</p>
+                        </div>
+                        
+                        <div class="registration-form">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Full Name *</label>
+                                    <input type="text" id="reg-name" class="form-input" placeholder="Enter your full name" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Phone Number *</label>
+                                    <input type="tel" id="reg-phone" class="form-input" placeholder="98XXXXXXXX" required>
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Permanent Address *</label>
+                                    <input type="text" id="reg-address" class="form-input" placeholder="Enter your address" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Date of Birth</label>
+                                    <input type="date" id="reg-dob" class="form-input">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Gender</label>
+                                    <select id="reg-gender" class="form-input">
+                                        <option value="">Select Gender</option>
+                                        <option value="male">Male</option>
+                                        <option value="female">Female</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Date of Joining</label>
+                                    <input type="date" id="reg-joining" class="form-input">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Select Block</label>
+                                    <select id="reg-block" class="form-input">
+                                        <option value="">Select Block</option>
+                                        <option value="A">Block A</option>
+                                        <option value="B">Block B</option>
+                                        <option value="C">Block C</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Room Number</label>
+                                    <input type="text" id="reg-room" class="form-input" placeholder="e.g. 101">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Bed Designation</label>
+                                    <input type="text" id="reg-bed" class="form-input" placeholder="e.g. 01">
+                                </div>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group form-full-width">
+                                    <label class="form-label">Profile Image URL</label>
+                                    <input type="text" id="reg-image" class="form-input" placeholder="https://example.com/profile.jpg">
+                                    <p class="text-sm text-gray-500 mt-1">Enter a URL for your profile image (optional)</p>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-8">
+                                <button id="submit-registration-button" class="payment-button">
+                                    Submit Registration
+                                </button>
+                                <p class="text-sm text-gray-500 mt-2">Your registration will be reviewed by the warden before approval.</p>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-6">
+                            <button onclick="app.showView('dashboard')" class="page-button">
+                                <i class="fas fa-arrow-left mr-2"></i> Back to Dashboard
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                registrationHtml += '</div>';
+                
+                this.chatContainer.innerHTML = registrationHtml;
+                this.updateTopBar();
+            }
+            
+            async submitRegistration() {
+                const user = this.authManager.currentUser;
+                if (!user || !this.db) {
+                    this.showError("User not authenticated");
+                    return;
+                }
+                
+                const name = document.getElementById('reg-name').value.trim();
+                const phone = document.getElementById('reg-phone').value.trim();
+                const address = document.getElementById('reg-address').value.trim();
+                const dob = document.getElementById('reg-dob').value;
+                const gender = document.getElementById('reg-gender').value;
+                const joining = document.getElementById('reg-joining').value;
+                const block = document.getElementById('reg-block').value;
+                const room = document.getElementById('reg-room').value.trim();
+                const bed = document.getElementById('reg-bed').value.trim();
+                const image = document.getElementById('reg-image').value.trim();
+                
+                // Validate required fields
+                if (!name || !phone || !address) {
+                    this.stateManager.addAlert('error', 'Please fill in all required fields (Name, Phone, Address)');
+                    this.renderDashboard();
+                    return;
+                }
+                
+                try {
+                    const registrationData = {
+                        name,
+                        phoneNumber: phone,
+                        address,
+                        dateOfBirth: dob ? new Date(dob) : null,
+                        gender,
+                        dateOfJoining: joining ? new Date(joining) : new Date(),
+                        blockId: block,
+                        roomId: room,
+                        bedId: bed,
+                        profileImageUrl: image || 'https://via.placeholder.com/150x180?text=PHOTO',
+                        status: 'pending',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    // Save to Firestore
+                    const hostellerPath = this.stateManager.getHostellerPath(user.uid);
+                    await this.db.doc(hostellerPath).set(registrationData);
+                    
+                    // Update cache and state
+                    this.cacheManager.setHosteller(this.stateManager.currentYear, user.uid, registrationData);
+                    this.stateManager.setHostellerData(registrationData);
+                    
+                    // Show success message
+                    this.stateManager.addAlert('success', 'Registration submitted successfully! Your application is pending warden approval.');
+                    
+                    // Show dashboard
+                    this.renderDashboard();
+                    
+                } catch (error) {
+                    console.error("Error submitting registration:", error);
+                    this.stateManager.addAlert('error', 'Failed to submit registration. Please try again.');
+                    this.renderDashboard();
+                }
+            }
+            
+            handlePageNumberClick(page) {
+                // Implement page navigation if needed
+            }
+            
+            handlePaginationClick(direction) {
+                // Implement pagination if needed
+            }
+        }
+        
+        // ===== INITIALIZE APP =====
+        let app;
+        
+        window.addEventListener('load', () => {
+            app = new HostellerApp();
+        });
+        
+        window.app = app;
+    </script>
+</body>
+</html>
