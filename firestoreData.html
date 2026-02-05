@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firestore Data Setup Tool</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 9999px;
+        }
+        
+        .status-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #10b981;
+        }
+        
+        .status-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border: 1px solid #ef4444;
+        }
+        
+        .status-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border: 1px solid #f59e0b;
+        }
+        
+        .status-info {
+            background: #e0e7ff;
+            color: #3730a3;
+            border: 1px solid #6366f1;
+        }
+        
+        .log-entry {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.875rem;
+            padding: 0.25rem 0.5rem;
+            border-left: 3px solid #d1d5db;
+            margin-bottom: 0.25rem;
+            background: #f9fafb;
+        }
+        
+        .log-success {
+            border-left-color: #10b981;
+            background: #f0fdf4;
+        }
+        
+        .log-error {
+            border-left-color: #ef4444;
+            background: #fef2f2;
+        }
+        
+        .log-warning {
+            border-left-color: #f59e0b;
+            background: #fffbeb;
+        }
+        
+        .log-info {
+            border-left-color: #3b82f6;
+            background: #eff6ff;
+        }
+        
+        .progress-bar {
+            height: 0.5rem;
+            background: #e5e7eb;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            transition: width 0.3s ease;
+        }
+        
+        .auth-modal {
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 hidden">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white auth-modal">
+            <div class="mt-3">
+                <div class="text-center mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Sign In to Data Setup Tool</h3>
+                    <p class="text-sm text-gray-500 mt-1">Any user can sign in to setup data</p>
+                </div>
+                
+                <div id="auth-error" class="hidden mb-4 p-3 bg-red-50 text-red-700 rounded text-sm"></div>
+                
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" id="auth-email" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="your@email.com">
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" id="auth-password" 
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                           placeholder="••••••••">
+                </div>
+                
+                <div class="flex gap-2">
+                    <button id="signin-btn" 
+                            class="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition-colors">
+                        Sign In
+                    </button>
+                    <button id="signup-btn" 
+                            class="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 transition-colors">
+                        Sign Up
+                    </button>
+                </div>
+                
+                <div class="mt-4 text-center">
+                    <button id="skip-auth-btn" class="text-sm text-gray-500 hover:text-gray-700">
+                        Skip Authentication (Not Recommended)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main-content" class="hidden">
+        <div class="container mx-auto px-4 py-8 max-w-6xl">
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-8">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Firestore Data Setup Tool</h1>
+                    <p class="text-gray-600">Setup complete Nepal administrative data and school structure</p>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-right">
+                        <div class="font-medium text-gray-900" id="user-email"></div>
+                        <div class="text-sm text-gray-500">Connected to Firebase</div>
+                    </div>
+                    <button id="logout-btn" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Status Bar -->
+            <div class="bg-white rounded-lg shadow p-6 mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900">Setup Progress</h2>
+                    <div id="connection-status" class="status-badge status-success">Connected</div>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Firebase Project</label>
+                        <div class="bg-gray-50 p-4 rounded border border-gray-200">
+                            <code class="text-sm text-gray-800">
+                                Project ID: <span id="project-id">geobazarr</span><br>
+                                Database: <span id="database-url">geobazarr-default-rtdb.firebaseio.com</span>
+                            </code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Data Setup Sections -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+                <!-- Nepal Administrative Data -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-mountain mr-2"></i>Nepal Administrative Data
+                        </h2>
+                        <div id="nepal-status" class="status-badge status-warning">Not Setup</div>
+                    </div>
+                    
+                    <p class="text-gray-600 mb-4">Setup complete provinces, districts, and municipalities data for Nepal (753 municipalities)</p>
+                    
+                    <div class="space-y-3 mb-6">
+                        <div>
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm font-medium text-gray-700">Provinces</span>
+                                <span class="text-sm text-gray-500" id="provinces-count">0/7</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="provinces-progress" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm font-medium text-gray-700">Districts</span>
+                                <span class="text-sm text-gray-500" id="districts-count">0/77</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="districts-progress" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <div class="flex justify-between mb-1">
+                                <span class="text-sm font-medium text-gray-700">Municipalities</span>
+                                <span class="text-sm text-gray-500" id="municipalities-count">0/753</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div id="municipalities-progress" class="progress-fill" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button id="setup-nepal-btn" class="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 transition-colors">
+                        <i class="fas fa-database mr-2"></i>Setup Nepal Administrative Data
+                    </button>
+                </div>
+                
+                <!-- School Structure -->
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold text-gray-900">
+                            <i class="fas fa-school mr-2"></i>School Collection Structure
+                        </h2>
+                        <div id="school-status" class="status-badge status-warning">Not Setup</div>
+                    </div>
+                    
+                    <p class="text-gray-600 mb-4">Setup complete school structure with GPA scale and exam system</p>
+                    
+                    <div class="space-y-3 mb-6">
+                        <div class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span class="text-gray-700">Complete school structure with GPA scale</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span class="text-gray-700">Exam system with marksheets</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span class="text-gray-700">Student registration system</span>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span class="text-gray-700">Fee structure management</span>
+                        </div>
+                    </div>
+                    
+                    <button id="setup-school-btn" class="w-full bg-purple-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-purple-700 transition-colors">
+                        <i class="fas fa-graduation-cap mr-2"></i>Setup School Structure
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Log Console -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold text-gray-900">
+                        <i class="fas fa-terminal mr-2"></i>Setup Log
+                    </h2>
+                    <button id="clear-log-btn" class="text-sm text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-trash-alt mr-1"></i>Clear Log
+                    </button>
+                </div>
+                
+                <div id="log-console" class="bg-gray-900 text-gray-100 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm">
+                    <div class="log-entry log-info">
+                        [INFO] Authentication required. Please sign in or sign up.
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Warning Box -->
+            <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-yellow-800">Important Notice</h3>
+                        <div class="mt-2 text-sm text-yellow-700">
+                            <p>This tool will write data to your Firebase Firestore database. Make sure you have proper permissions and want to proceed. This should only be run once during initial setup.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration (same as warden.html)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+        
+        // App State
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        let isConnected = false;
+        
+        // Nepal Administrative Data
+        const provincesData = [
+            { id: 1, name: "Koshi Province" },
+            { id: 2, name: "Madhesh Province" },
+            { id: 3, name: "Bagmati Province" },
+            { id: 4, name: "Gandaki Province" },
+            { id: 5, name: "Lumbini Province" },
+            { id: 6, name: "Karnali Province" },
+            { id: 7, name: "Sudurpashchim Province" }
+        ];
+        
+        const districtsData = {
+            "Koshi Province": [
+                "Bhojpur", "Dhankuta", "Ilam", "Jhapa", "Khotang", "Morang", 
+                "Okhaldhunga", "Panchthar", "Sankhuwasabha", "Solukhumbu", 
+                "Sunsari", "Taplejung", "Terhathum", "Udayapur"
+            ],
+            "Madhesh Province": [
+                "Bara", "Dhanusha", "Mahottari", "Parsa", "Rautahat", 
+                "Saptari", "Siraha", "Sarlahi"
+            ],
+            "Bagmati Province": [
+                "Bhaktapur", "Chitwan", "Dhading", "Dolakha", "Kathmandu", 
+                "Kavrepalanchok", "Lalitpur", "Makwanpur", "Nuwakot", 
+                "Ramechhap", "Rasuwa", "Sindhuli", "Sindhupalchok"
+            ],
+            "Gandaki Province": [
+                "Baglung", "Gorkha", "Kaski", "Lamjung", "Manang", 
+                "Mustang", "Myagdi", "Nawalpur", "Parbat", "Syangja", 
+                "Tanahun"
+            ],
+            "Lumbini Province": [
+                "Arghakhanchi", "Banke", "Bardiya", "Dang", "Gulmi", 
+                "Kapilvastu", "Palpa", "Parasi", "Pyuthan", "Rolpa", 
+                "Rukum East", "Rupandehi"
+            ],
+            "Karnali Province": [
+                "Dailekh", "Dolpa", "Humla", "Jajarkot", "Jumla", 
+                "Kalikot", "Mugu", "Rukum West", "Salyan", "Surkhet"
+            ],
+            "Sudurpashchim Province": [
+                "Achham", "Baitadi", "Bajhang", "Bajura", "Dadeldhura", 
+                "Darchula", "Doti", "Kailali", "Kanchanpur"
+            ]
+        };
+        
+        // Complete Municipalities Data for Nepal (753 Municipalities)
+        const municipalitiesData = {
+            // Koshi Province
+            "Bhojpur": ["Bhojpur Municipality", "Shadanand Municipality", "Hatuwagadhi Rural Municipality", "Ramprasad Rai Rural Municipality", "Pauwadungma Rural Municipality", "Salpasilichho Rural Municipality"],
+            "Dhankuta": ["Dhankuta Municipality", "Pakhribas Municipality", "Mahalaxmi Municipality", "Chhathar Jorpati Rural Municipality", "Sangurigadhi Rural Municipality", "Chaubise Rural Municipality", "Khalsa Chhintang Sahidbhumi Rural Municipality"],
+            "Ilam": ["Ilam Municipality", "Deumai Municipality", "Mai Municipality", "Suryodaya Municipality", "Phakphokthum Rural Municipality", "Mai Jogmai Rural Municipality", "Chulachuli Rural Municipality", "Rong Rural Municipality", "Sandakpur Rural Municipality"],
+            "Jhapa": ["Birtamod Municipality", "Bhadrapur Municipality", "Arjundhara Municipality", "Kankai Municipality", "Shivasatakshi Municipality", "Gauradaha Municipality", "Damak Municipality", "Mechinagar Municipality", "Budhasharan Rural Municipality", "Kachankawal Rural Municipality", "Haldibari Rural Municipality", "Barhadashi Rural Municipality"],
+            "Khotang": ["Diktel Rupakot Majhuwagadhi Municipality", "Halesi Tuwachung Municipality", "Khotehang Rural Municipality", "Diprung Rural Municipality", "Ainselukhark Rural Municipality", "Rawa Besi Rural Municipality", "Sakela Rural Municipality", "Barahapokhari Rural Municipality", "Kepilasgadhi Rural Municipality", "Jantedhunga Rural Municipality", "Lamidanda Rural Municipality"],
+            "Morang": ["Biratnagar Metropolitan City", "Sundarharaicha Municipality", "Belbari Municipality", "Pathari Shanischare Municipality", "Urlabari Municipality", "Rangeli Municipality", "Letang Municipality", "Ratuwamai Municipality", "Sunawarshi Municipality", "Kerabari Rural Municipality", "Miklajung Rural Municipality", "Budhiganga Rural Municipality", "Katahari Rural Municipality", "Dhanpalthan Rural Municipality", "Kanepokhari Rural Municipality", "Gramthan Rural Municipality", "Jahada Rural Municipality"],
+            "Okhaldhunga": ["Siddhicharan Municipality", "Manebhanjyang Rural Municipality", "Champadevi Rural Municipality", "Sunkoshi Rural Municipality", "Molung Rural Municipality", "Chisankhugadhi Rural Municipality", "Khijidemba Rural Municipality"],
+            "Panchthar": ["Phidim Municipality", "Hilihang Rural Municipality", "Kummayak Rural Municipality", "Miklajung Rural Municipality", "Tumbewa Rural Municipality", "Yangwarak Rural Municipality", "Falelung Rural Municipality", "Falgunanda Rural Municipality"],
+            "Sankhuwasabha": ["Khandbari Municipality", "Chainpur Municipality", "Dharmadevi Municipality", "Madi Municipality", "Panchkhapan Municipality", "Bhotkhola Rural Municipality", "Makalu Rural Municipality", "Sabhapokhari Rural Municipality", "Silichong Rural Municipality", "Sisuwa Rural Municipality"],
+            "Solukhumbu": ["Solududhakunda Municipality", "Thulung Dudhkoshi Rural Municipality", "Necha Salyan Rural Municipality", "Dudhakaushika Rural Municipality", "Dudhkoshi Rural Municipality", "Maha Kulung Rural Municipality", "Sotang Rural Municipality", "Khumbu Pasang Lhamu Rural Municipality", "Likhu Pike Rural Municipality"],
+            "Sunsari": ["Itahari Sub-Metropolitan City", "Dharan Sub-Metropolitan City", "Inaruwa Municipality", "Duhabi Municipality", "Ramdhuni Municipality", "Barahachhetra Municipality", "Koshi Rural Municipality", "Harinagara Rural Municipality", "Bhokraha Rural Municipality", "Dewanganj Rural Municipality"],
+            "Taplejung": ["Phungling Municipality", "Aathrai Tribeni Rural Municipality", "Sidingwa Rural Municipality", "Phaktanglung Rural Municipality", "Mikwakhola Rural Municipality", "Meringden Rural Municipality", "Maiwakhola Rural Municipality", "Pathibhara Yangwarak Rural Municipality"],
+            "Terhathum": ["Myanglung Municipality", "Laligurans Municipality", "Aathrai Rural Municipality", "Chhathar Rural Municipality", "Phedap Rural Municipality", "Menchayam Rural Municipality"],
+            "Udayapur": ["Triyuga Municipality", "Chaudandigadhi Municipality", "Katari Municipality", "Belaka Municipality", "Udayapurgadhi Rural Municipality", "Rautamai Rural Municipality", "Tapli Rural Municipality"],
+            
+            // Madhesh Province
+            "Bara": ["Kalaiya Sub-Metropolitan City", "Jitpur Simara Sub-Metropolitan City", "Kolhabi Municipality", "Nijgadh Municipality", "Mahagadhimai Municipality", "Simraungadh Municipality", "Pacharauta Municipality", "Pheta Rural Municipality", "Bishrampur Rural Municipality", "Prasauni Rural Municipality", "Adarsh Kotwal Rural Municipality", "Karaiyamai Rural Municipality", "Devtal Rural Municipality", "Parwanipur Rural Municipality", "Baragadhi Rural Municipality", "Suwarna Rural Municipality"],
+            "Dhanusha": ["Janakpurdham Sub-Metropolitan City", "Chhireshwarnath Municipality", "Ganeshman Charnath Municipality", "Dhanusadham Municipality", "Nagarain Municipality", "Bideha Municipality", "Mithila Municipality", "Sahidnagar Municipality", "Sabaila Municipality", "Kamala Municipality", "Hansapur Municipality", "Janaknandini Rural Municipality", "Bateshwar Rural Municipality", "Mukhiyapatti Musharniya Rural Municipality", "Laxminiya Rural Municipality", "Dhanauji Rural Municipality"],
+            "Mahottari": ["Jaleshwar Municipality", "Bardibas Municipality", "Gaushala Municipality", "Aurahi Municipality", "Balawa Municipality", "Loharpatti Municipality", "Manara Shiswa Municipality", "Ramgopalpur Municipality", "Ekdara Rural Municipality", "Mahottari Rural Municipality", "Matihani Rural Municipality", "Pipara Rural Municipality", "Samsi Rural Municipality", "Sonama Rural Municipality"],
+            "Parsa": ["Birgunj Metropolitan City", "Bahudarmai Municipality", "Parsagadhi Municipality", "Pokhariya Municipality", "Kalikamai Rural Municipality", "Paterwa Sugauli Rural Municipality", "Jagarnathpur Rural Municipality", "Chhipaharmai Rural Municipality", "Bindabasini Rural Municipality", "Pakaha Mainpur Rural Municipality", "Thori Rural Municipality", "Sakhuwa Prasauni Rural Municipality"],
+            "Rautahat": ["Gaur Municipality", "Chandrapur Municipality", "Garuda Municipality", "Boudhimai Municipality", "Rajpur Municipality", "Gadhimai Municipality", "Brindaban Municipality", "Ishanath Municipality", "Katahariya Municipality", "Madhav Narayan Municipality", "Maulapur Municipality", "Dewahi Gonahi Municipality", "Rajdevi Municipality", "Durga Bhagawati Rural Municipality", "Gujara Municipality", "Paroha Municipality", "Yamunamai Rural Municipality", "Phatuwa Bijayapur Municipality"],
+            "Saptari": ["Rajbiraj Municipality", "Dakneshwori Municipality", "Hanumannagar Kankalini Municipality", "Khadak Municipality", "Bode Barsain Municipality", "Kanchanrup Municipality", "Surunga Municipality", "Shambhunath Municipality", "Krishnasavaran Municipality", "Saptakoshi Municipality", "Agnisair Krishna Savaran Rural Municipality", "Balan-Bihul Rural Municipality", "Rupani Rural Municipality", "Tilathi Koiladi Rural Municipality", "Chhinnamasta Rural Municipality", "Mahadeva Rural Municipality", "Rajgadh Rural Municipality"],
+            "Siraha": ["Lahan Municipality", "Siraha Municipality", "Dhangadhimai Municipality", "Golbazar Municipality", "Mirchaiya Municipality", "Kalyanpur Municipality", "Karjanha Municipality", "Sukhipur Municipality", "Bhagwanpur Rural Municipality", "Aurahi Rural Municipality", "Bishnupur Rural Municipality", "Bariyarpatti Rural Municipality", "Laxmipur Patari Rural Municipality", "Naraha Rural Municipality", "Sakhuwanankarkatti Rural Municipality", "Arnama Rural Municipality", "Navarajpur Rural Municipality"],
+            "Sarlahi": ["Malangawa Municipality", "Bagmati Municipality", "Hariwan Municipality", "Ishwarpur Municipality", "Lalbandi Municipality", "Godaita Municipality", "Barahathawa Municipality", "Kabilashi Municipality", "Haripur Municipality", "Haripurwa Municipality", "Basbariya Rural Municipality", "Brahampuri Rural Municipality", "Chakraghatta Rural Municipality", "Chandranagar Rural Municipality", "Dhankaul Rural Municipality", "Kaudena Rural Municipality", "Parsa Rural Municipality", "Ramnagar Rural Municipality"],
+            
+            // Bagmati Province
+            "Bhaktapur": ["Bhaktapur Municipality", "Madhyapur Thimi Municipality", "Changunarayan Municipality", "Suryabinayak Municipality"],
+            "Chitwan": ["Bharatpur Metropolitan City", "Ratnanagar Municipality", "Rapti Municipality", "Khairhani Municipality", "Madi Municipality", "Kalika Municipality", "Ichchhakamana Rural Municipality"],
+            "Dhading": ["Nilkantha Municipality", "Dhunibesi Municipality", "Benighat Rorang Rural Municipality", "Gajuri Rural Municipality", "Galchhi Rural Municipality", "Gangajamuna Rural Municipality", "Jwalamukhi Rural Municipality", "Khaniyabas Rural Municipality", "Netrawati Rural Municipality", "Rubi Valley Rural Municipality", "Siddhalek Rural Municipality", "Thakre Rural Municipality", "Tripurasundari Rural Municipality"],
+            "Dolakha": ["Bhimeshwar Municipality", "Jiri Municipality", "Kalinchok Rural Municipality", "Melung Rural Municipality", "Bigu Rural Municipality", "Gaurishankar Rural Municipality", "Baiteshwar Rural Municipality", "Sailung Rural Municipality"],
+            "Kathmandu": ["Kathmandu Metropolitan City", "Kirtipur Municipality", "Tokha Municipality", "Gokarneshwar Municipality", "Chandragiri Municipality", "Dakshinkali Municipality", "Nagarjun Municipality", "Tarakeshwar Municipality", "Budhanilkantha Municipality", "Shankharapur Municipality"],
+            "Kavrepalanchok": ["Panauti Municipality", "Banepa Municipality", "Dhulikhel Municipality", "Panchkhal Municipality", "Namobuddha Municipality", "Mandandeupur Municipality", "Khanikhola Rural Municipality", "Chauri Deurali Rural Municipality", "Temal Rural Municipality", "Bhumlu Rural Municipality", "Mahabharat Rural Municipality", "Bethanchok Rural Municipality", "Roshi Rural Municipality"],
+            "Lalitpur": ["Lalitpur Metropolitan City", "Mahalaxmi Municipality", "Godawari Municipality", "Konjyoson Rural Municipality", "Bagmati Rural Municipality", "Mahankal Rural Municipality"],
+            "Makwanpur": ["Hetauda Sub-Metropolitan City", "Thaha Municipality", "Bhimphedi Rural Municipality", "Makawanpurgadhi Rural Municipality", "Manahari Rural Municipality", "Raksirang Rural Municipality", "Bakaiya Rural Municipality", "Kailash Rural Municipality", "Bagmati Rural Municipality"],
+            "Nuwakot": ["Bidur Municipality", "Belkotgadhi Municipality", "Kakani Rural Municipality", "Kispang Rural Municipality", "Tadi Rural Municipality", "Dupcheshwar Rural Municipality", "Panchakanya Rural Municipality", "Likhu Rural Municipality", "Meghang Rural Municipality", "Shivapuri Rural Municipality", "Suryagadhi Rural Municipality", "Tarkeshwar Rural Municipality"],
+            "Ramechhap": ["Manthali Municipality", "Ramechhap Municipality", "Umakunda Rural Municipality", "Khandadevi Rural Municipality", "Gokulganga Rural Municipality", "Doramba Rural Municipality", "Sunapati Rural Municipality"],
+            "Rasuwa": ["Kalika Rural Municipality", "Gosaikunda Rural Municipality", "Naukunda Rural Municipality", "Parbatikunda Rural Municipality", "Uttargaya Rural Municipality"],
+            "Sindhuli": ["Kamalamai Municipality", "Dudhauli Municipality", "Sunkoshi Rural Municipality", "Hariharpurgadhi Rural Municipality", "Tinpatan Rural Municipality", "Marin Rural Municipality", "Golanjor Rural Municipality", "Phikkal Rural Municipality", "Ghyanglekh Rural Municipality"],
+            "Sindhupalchok": ["Chautara Sangachokgadhi Municipality", "Barhabise Municipality", "Melamchi Municipality", "Bahrabise Municipality", "Sunkoshi Rural Municipality", "Indrawati Rural Municipality", "Jugal Rural Municipality", "Panchpokhari Thangpal Rural Municipality", "Bhotekoshi Rural Municipality", "Lisankhu Pakhar Rural Municipality", "Helambu Rural Municipality", "Tripurasundari Rural Municipality"],
+            
+            // Gandaki Province
+            "Baglung": ["Baglung Municipality", "Galkot Municipality", "Jaimini Municipality", "Dhorpatan Municipality", "Bareng Rural Municipality", "Khathekhola Rural Municipality", "Taman Khola Rural Municipality", "Tara Khola Rural Municipality", "Nisikhola Rural Municipality", "Badigad Rural Municipality"],
+            "Gorkha": ["Gorkha Municipality", "Palungtar Municipality", "Sulikot Rural Municipality", "Siranchok Rural Municipality", "Ajirkot Rural Municipality", "Tsum Nubri Rural Municipality", "Dharche Rural Municipality", "Bhimsen Thapa Rural Municipality", "Gandaki Rural Municipality", "Chum Nubri Rural Municipality"],
+            "Kaski": ["Pokhara Metropolitan City", "Annapurna Rural Municipality", "Machhapuchchhre Rural Municipality", "Madi Rural Municipality", "Rupa Rural Municipality"],
+            "Lamjung": ["Besisahar Municipality", "Sundarbazar Municipality", "Madhya Nepal Municipality", "Rainas Municipality", "Dordi Rural Municipality", "Dudhpokhari Rural Municipality", "Kwholasothar Rural Municipality", "Marsyangdi Rural Municipality"],
+            "Manang": ["Chame Rural Municipality", "Nason Rural Municipality", "Narpa Bhumi Rural Municipality", "Manang Ngisyang Rural Municipality"],
+            "Mustang": ["Gharpajhong Rural Municipality", "Thasang Rural Municipality", "Bahragaun Muktikshetra Rural Municipality", "Lomanthang Rural Municipality", "Baragung Muktikshetra Rural Municipality"],
+            "Myagdi": ["Beni Municipality", "Annapurna Rural Municipality", "Dhaulagiri Rural Municipality", "Mangala Rural Municipality", "Malika Rural Municipality", "Raghuganga Rural Municipality"],
+            "Nawalpur": ["Kawasoti Municipality", "Gaindakot Municipality", "Madhyabindu Municipality", "Devchuli Municipality", "Baudikali Rural Municipality", "Bulingtar Rural Municipality", "Hupsekot Rural Municipality", "Binayi Tribeni Rural Municipality"],
+            "Parbat": ["Kushma Municipality", "Phalewas Municipality", "Jaljala Rural Municipality", "Paiyun Rural Municipality", "Mahashila Rural Municipality", "Modi Rural Municipality", "Bihadi Rural Municipality"],
+            "Syangja": ["Putalibazar Municipality", "Bhimad Municipality", "Waling Municipality", "Galyang Municipality", "Chapakot Municipality", "Bhirkot Municipality", "Kaligandaki Rural Municipality", "Fedikhola Rural Municipality", "Aandhikhola Rural Municipality", "Arjunchaupari Rural Municipality", "Harinas Rural Municipality", "Phedikhola Rural Municipality"],
+            "Tanahun": ["Bhimad Municipality", "Byas Municipality", "Shuklagandaki Municipality", "Bhanu Municipality", "Devghat Rural Municipality", "Bandipur Rural Municipality", "Ghiring Rural Municipality", "Rishing Rural Municipality", "Myagde Rural Municipality", "Anbukhaireni Rural Municipality"],
+            
+            // Lumbini Province
+            "Arghakhanchi": ["Sandhikharka Municipality", "Bhumikasthan Municipality", "Shitaganga Municipality", "Panini Rural Municipality", "Chhatradev Rural Municipality", "Malarani Rural Municipality"],
+            "Banke": ["Nepalgunj Sub-Metropolitan City", "Kohalpur Municipality", "Rapti Sonari Rural Municipality", "Narainapur Rural Municipality", "Duduwa Rural Municipality", "Janaki Rural Municipality", "Khajura Rural Municipality", "Baijanath Rural Municipality"],
+            "Bardiya": ["Gulariya Municipality", "Rajapur Municipality", "Madhuwan Municipality", "Thakurbaba Municipality", "Basgadhi Municipality", "Barbardiya Municipality", "Badhaiyatal Rural Municipality", "Geruwa Rural Municipality"],
+            "Dang": ["Ghorahi Sub-Metropolitan City", "Tulsipur Sub-Metropolitan City", "Lamahi Municipality", "Gadhawa Rural Municipality", "Rapti Rural Municipality", "Rajpur Rural Municipality", "Shantinagar Rural Municipality", "Banglachuli Rural Municipality", "Dangisharan Rural Municipality"],
+            "Gulmi": ["Tamghas Municipality", "Resunga Municipality", "Musikot Municipality", "Chandrakot Rural Municipality", "Madane Rural Municipality", "Chhatrakot Rural Municipality", "Dhurkot Rural Municipality", "Gulmi Durbar Rural Municipality", "Isma Rural Municipality", "Kaligandaki Rural Municipality", "Malika Rural Municipality", "Ruru Rural Municipality", "Satyawati Rural Municipality"],
+            "Kapilvastu": ["Kapilvastu Municipality", "Banganga Municipality", "Buddhabhumi Municipality", "Shivaraj Municipality", "Krishnanagar Municipality", "Maharajgunj Municipality", "Mayadevi Rural Municipality", "Yasodhara Rural Municipality", "Suddhodhan Rural Municipality", "Bijayanagar Rural Municipality"],
+            "Palpa": ["Tansen Municipality", "Rampur Municipality", "Rainadevi Chhahara Rural Municipality", "Rambha Rural Municipality", "Bagnaskali Rural Municipality", "Mathagadhi Rural Municipality", "Nisdi Rural Municipality", "Purbakhola Rural Municipality", "Tinau Rural Municipality", "Ribdikot Rural Municipality"],
+            "Parasi": ["Ramgram Municipality", "Sunwal Municipality", "Bardaghat Municipality", "Pratappur Rural Municipality", "Sarawal Rural Municipality", "Palhi Nandan Rural Municipality", "Susta Rural Municipality"],
+            "Pyuthan": ["Pyuthan Municipality", "Sworgadwary Municipality", "Mallarani Rural Municipality", "Mandavi Rural Municipality", "Sarumarani Rural Municipality", "Naubahini Rural Municipality", "Jhimruk Rural Municipality", "Gaumukhi Rural Municipality"],
+            "Rolpa": ["Rolpa Municipality", "Runtigadhi Rural Municipality", "Lungri Rural Municipality", "Sunchhahari Rural Municipality", "Triveni Rural Municipality", "Dui Khola Rural Municipality", "Madi Rural Municipality", "Ganga Dev Rural Municipality", "Pariwartan Rural Municipality", "Sunil Smriti Rural Municipality", "Thabang Rural Municipality"],
+            "Rukum East": ["Rukumkot Rural Municipality", "Bhume Rural Municipality", "Putha Uttarganga Rural Municipality", "Sisne Rural Municipality"],
+            "Rupandehi": ["Butwal Sub-Metropolitan City", "Siddharthanagar Municipality", "Tilottama Municipality", "Lumbini Sanskritik Municipality", "Sainamaina Municipality", "Devdaha Municipality", "Kanchan Municipality", "Suryapura Municipality", "Gaidahawa Rural Municipality", "Kotahimai Rural Municipality", "Marchawari Rural Municipality", "Mayadevi Rural Municipality", "Omsatiya Rural Municipality", "Rohini Rural Municipality", "Sammarimai Rural Municipality", "Siyari Rural Municipality", "Sudhdhodhan Rural Municipality"],
+            
+            // Karnali Province
+            "Dailekh": ["Narayan Municipality", "Dullu Municipality", "Aathabis Municipality", "Chamunda Bindrasaini Municipality", "Gurans Rural Municipality", "Bhairabi Rural Municipality", "Naumule Rural Municipality", "Mahabu Rural Municipality", "Dungeshwar Rural Municipality", "Thantikandh Rural Municipality", "Bhagawatimai Rural Municipality", "Birat Rural Municipality"],
+            "Dolpa": ["Thuli Bheri Municipality", "Tripurasundari Municipality", "Dunai Rural Municipality", "Shey Phoksundo Rural Municipality", "Jagadulla Rural Municipality", "Mudkechula Rural Municipality", "Kaike Rural Municipality", "Chharka Tangsong Rural Municipality"],
+            "Humla": ["Simkot Rural Municipality", "Sarkegad Rural Municipality", "Adanchuli Rural Municipality", "Kharpunath Rural Municipality", "Tanjakot Rural Municipality", "Chankheli Rural Municipality", "Namkha Rural Municipality"],
+            "Jajarkot": ["Khalanga", "Bheri Municipality", "Chhedagad Municipality", "Nalgad Municipality", "Kushe Rural Municipality", "Shivalaya Rural Municipality", "Barekot Rural Municipality", "Junichande Rural Municipality"],
+            "Jumla": ["Chandannath Municipality", "Tila Rural Municipality", "Guthichaur Rural Municipality", "Hima Rural Municipality", "Kanaka Sundari Rural Municipality", "Sinja Rural Municipality", "Tatopani Rural Municipality"],
+            "Kalikot": ["Khandachakra Municipality", "Raskot Municipality", "Tilagufa Municipality", "Narharinath Rural Municipality", "Pachal Jharana Rural Municipality", "Shubha Kalika Rural Municipality", "Sanni Triveni Rural Municipality", "Mahawai Rural Municipality"],
+            "Mugu": ["Chhayanath Rara Municipality", "Mugum Karmarong Rural Municipality", "Khatyad Rural Municipality", "Soru Rural Municipality"],
+            "Rukum West": ["Musikot Municipality", "Chaurjahari Municipality", "Aathbiskot Municipality", "Banfikot Rural Municipality", "Sanibheri Rural Municipality"],
+            "Salyan": ["Shaarda Municipality", "Bagchaur Municipality", "Bangad Kupinde Municipality", "Kalimati Rural Municipality", "Kapurkot Rural Municipality", "Kumakh Rural Municipality", "Siddha Kumakh Rural Municipality", "Darma Rural Municipality", "Tribeni Rural Municipality", "Chhatreshwori Rural Municipality"],
+            "Surkhet": ["Birendranagar Municipality", "Bheriganga Municipality", "Gurbha Kot Municipality", "Panchapuri Municipality", "Lekbeshi Municipality", "Chaukune Rural Municipality", "Barahatal Rural Municipality", "Simta Rural Municipality", "Chingad Rural Municipality"],
+            
+            // Sudurpashchim Province
+            "Achham": ["Mangalsen Municipality", "Sanphebagar Municipality", "Kamalbazar Municipality", "Panchadeval Binayak Municipality", "Mellekh Rural Municipality", "Bannigadhi Jayagadh Rural Municipality", "Ramaroshan Rural Municipality", "Chaurpati Rural Municipality", "Turmakhand Rural Municipality", "Dhakari Rural Municipality"],
+            "Baitadi": ["Dasharathchand Municipality", "Patan Municipality", "Melauli Municipality", "Purchaudi Municipality", "Dogdakedar Rural Municipality", "Dilasaini Rural Municipality", "Shivanath Rural Municipality", "Sigas Rural Municipality", "Surnaya Rural Municipality", "Pancheshwar Rural Municipality"],
+            "Bajhang": ["Jaya Prithvi Municipality", "Bungal Municipality", "Talkot Rural Municipality", "Masta Rural Municipality", "Khaptadchhanna Rural Municipality", "Thalara Rural Municipality", "Bitthadchir Rural Municipality", "Surma Rural Municipality", "Chhabis Pathibhera Rural Municipality", "Durgathali Rural Municipality", "Kedarsyu Rural Municipality"],
+            "Bajura": ["Badimalika Municipality", "Triveni Municipality", "Budhiganga Municipality", "Budhinanda Municipality", "Gaumul Rural Municipality", "Himali Rural Municipality", "Swamikartik Khapar Rural Municipality", "Chhededaha Rural Municipality"],
+            "Dadeldhura": ["Amargadhi Municipality", "Parshuram Municipality", "Aalital Rural Municipality", "Ganyapadhura Rural Municipality", "Navadurga Rural Municipality", "Ajaymeru Rural Municipality", "Bogatan Rural Municipality"],
+            "Darchula": ["Mahakali Municipality", "Shailyashikhar Municipality", "Malikarjun Rural Municipality", "Apihimal Rural Municipality", "Duhun Rural Municipality", "Naugad Rural Municipality", "Marma Rural Municipality", "Lekam Rural Municipality", "Byas Rural Municipality"],
+            "Doti": ["Dipayal Silgadhi Municipality", "Shikhar Municipality", "Purbichauki Rural Municipality", "Badikedar Rural Municipality", "Jorayal Rural Municipality", "Sayal Rural Municipality", "Aadarsha Rural Municipality", "K.I. Singh Rural Municipality", "Bogatan Rural Municipality"],
+            "Kailali": ["Dhangadhi Sub-Metropolitan City", "Tikapur Municipality", "Ghodaghodi Municipality", "Lamki Chuha Municipality", "Bhajani Municipality", "Gauriganga Municipality", "Janaki Rural Municipality", "Bardagoriya Rural Municipality", "Mohanyal Rural Municipality", "Kailari Rural Municipality", "Joshipur Rural Municipality", "Chure Rural Municipality"],
+            "Kanchanpur": ["Bhimdatta Municipality", "Punarbas Municipality", "Bedkot Municipality", "Mahakali Municipality", "Shuklaphanta Municipality", "Belauri Municipality", "Krishnapur Municipality", "Laljhadi Rural Municipality", "Beldandi Rural Municipality"]
+        };
+        
+        // GPA Scale Data
+        const gpaScaleData = [
+            { grade: "A+", minPercentage: 90, maxPercentage: 100, gradePoint: 4.0 },
+            { grade: "A", minPercentage: 80, maxPercentage: 89, gradePoint: 3.6 },
+            { grade: "B+", minPercentage: 70, maxPercentage: 79, gradePoint: 3.2 },
+            { grade: "B", minPercentage: 60, maxPercentage: 69, gradePoint: 2.8 },
+            { grade: "C+", minPercentage: 50, maxPercentage: 59, gradePoint: 2.4 },
+            { grade: "C", minPercentage: 40, maxPercentage: 49, gradePoint: 2.0 },
+            { grade: "D+", minPercentage: 30, maxPercentage: 39, gradePoint: 1.6 },
+            { grade: "NG", minPercentage: 0, maxPercentage: 29, gradePoint: 0.0 }
+        ];
+        
+        // DOM Elements
+        const authModal = document.getElementById('auth-modal');
+        const mainContent = document.getElementById('main-content');
+        const connectBtn = document.getElementById('connect-btn');
+        const setupNepalBtn = document.getElementById('setup-nepal-btn');
+        const setupSchoolBtn = document.getElementById('setup-school-btn');
+        const clearLogBtn = document.getElementById('clear-log-btn');
+        const logConsole = document.getElementById('log-console');
+        const connectionStatus = document.getElementById('connection-status');
+        const nepalStatus = document.getElementById('nepal-status');
+        const schoolStatus = document.getElementById('school-status');
+        const userEmail = document.getElementById('user-email');
+        const logoutBtn = document.getElementById('logout-btn');
+        
+        // Auth DOM Elements
+        const authEmailInput = document.getElementById('auth-email');
+        const authPasswordInput = document.getElementById('auth-password');
+        const authErrorDiv = document.getElementById('auth-error');
+        const signinBtn = document.getElementById('signin-btn');
+        const signupBtn = document.getElementById('signup-btn');
+        const skipAuthBtn = document.getElementById('skip-auth-btn');
+        
+        // Logging function
+        function logMessage(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            
+            logConsole.appendChild(logEntry);
+            logConsole.scrollTop = logConsole.scrollHeight;
+            
+            // Also log to console
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        // Update progress bars
+        function updateProgress(elementId, current, total) {
+            const percentage = total > 0 ? (current / total) * 100 : 0;
+            const progressElement = document.getElementById(elementId);
+            const countElement = document.getElementById(`${elementId.replace('-progress', '-count')}`);
+            
+            if (progressElement) {
+                progressElement.style.width = `${percentage}%`;
+            }
+            
+            if (countElement) {
+                countElement.textContent = `${current}/${total}`;
+            }
+        }
+        
+        // Initialize Firebase
+        async function initializeFirebase() {
+            try {
+                logMessage('Initializing Firebase...', 'info');
+                
+                // Initialize Firebase
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+                auth = firebase.auth();
+                
+                // Set up auth state listener
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        currentUser = user;
+                        userEmail.textContent = user.email;
+                        logMessage(`Signed in as: ${user.email}`, 'success');
+                        authModal.classList.add('hidden');
+                        mainContent.classList.remove('hidden');
+                    } else {
+                        currentUser = null;
+                        authModal.classList.remove('hidden');
+                        mainContent.classList.add('hidden');
+                        logMessage('Please sign in to continue', 'info');
+                    }
+                });
+                
+                // Test connection
+                await db.collection('test').doc('connection-test').set({
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+                    message: 'Connection test successful'
+                });
+                
+                // Clean up test document
+                await db.collection('test').doc('connection-test').delete();
+                
+                isConnected = true;
+                logMessage('Firebase connected successfully!', 'success');
+                
+            } catch (error) {
+                logMessage(`Firebase initialization failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Authentication functions
+        async function handleSignIn() {
+            const email = authEmailInput.value.trim();
+            const password = authPasswordInput.value.trim();
+            
+            if (!email || !password) {
+                showAuthError('Please enter both email and password');
+                return;
+            }
+            
+            signinBtn.disabled = true;
+            signinBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing In...';
+            
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+                logMessage(`Successfully signed in as ${email}`, 'success');
+            } catch (error) {
+                showAuthError(`Sign in failed: ${error.message}`);
+                signinBtn.disabled = false;
+                signinBtn.textContent = 'Sign In';
+            }
+        }
+        
+        async function handleSignUp() {
+            const email = authEmailInput.value.trim();
+            const password = authPasswordInput.value.trim();
+            
+            if (!email || !password) {
+                showAuthError('Please enter both email and password');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showAuthError('Password must be at least 6 characters');
+                return;
+            }
+            
+            signupBtn.disabled = true;
+            signupBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Signing Up...';
+            
+            try {
+                await auth.createUserWithEmailAndPassword(email, password);
+                logMessage(`Account created successfully for ${email}`, 'success');
+            } catch (error) {
+                showAuthError(`Sign up failed: ${error.message}`);
+                signupBtn.disabled = false;
+                signupBtn.textContent = 'Sign Up';
+            }
+        }
+        
+        function showAuthError(message) {
+            authErrorDiv.textContent = message;
+            authErrorDiv.classList.remove('hidden');
+        }
+        
+        async function handleLogout() {
+            try {
+                await auth.signOut();
+                logMessage('Signed out successfully', 'info');
+            } catch (error) {
+                logMessage(`Logout failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function handleSkipAuth() {
+            // This is not recommended for production
+            logMessage('WARNING: Skipping authentication. Not recommended for production.', 'warning');
+            authModal.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+            userEmail.textContent = 'Unauthenticated User';
+        }
+        
+        // Setup Nepal Administrative Data
+        async function setupNepalData() {
+            if (!isConnected) {
+                logMessage('Please connect to Firebase first', 'error');
+                return;
+            }
+            
+            setupNepalBtn.disabled = true;
+            setupNepalBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Setting up...';
+            nepalStatus.className = 'status-badge status-info';
+            nepalStatus.textContent = 'In Progress';
+            
+            let totalMunicipalities = 0;
+            
+            // Calculate total municipalities
+            Object.values(municipalitiesData).forEach(districtMunis => {
+                totalMunicipalities += districtMunis.length;
+            });
+            
+            try {
+                logMessage('Starting Nepal administrative data setup...', 'info');
+                logMessage(`Total to setup: 7 provinces, 77 districts, ${totalMunicipalities} municipalities`, 'info');
+                
+                // 1. Setup provinces
+                logMessage('Setting up provinces data...', 'info');
+                const provincesRef = db.collection('nepal_admin').doc('provinces');
+                await provincesRef.set({ provinces: provincesData });
+                
+                updateProgress('provinces-progress', provincesData.length, provincesData.length);
+                logMessage(`✓ Added ${provincesData.length} provinces`, 'success');
+                
+                // 2. Setup districts by province
+                logMessage('Setting up districts data...', 'info');
+                const districtsCollection = db.collection('nepal_admin').doc('districts');
+                
+                let districtsProcessed = 0;
+                for (const [province, districts] of Object.entries(districtsData)) {
+                    const provinceKey = province.replace(/\s+/g, '_');
+                    const districtDoc = districtsCollection.collection(provinceKey).doc('districts');
+                    await districtDoc.set({ districts: districts });
+                    
+                    districtsProcessed += districts.length;
+                    updateProgress('districts-progress', districtsProcessed, Object.values(districtsData).flat().length);
+                    logMessage(`✓ Added ${districts.length} districts for ${province}`, 'success');
+                }
+                
+                // 3. Setup municipalities for each district
+                logMessage('Setting up municipalities data...', 'info');
+                const municipalitiesCollection = db.collection('nepal_admin').doc('municipalities');
+                
+                let municipalitiesProcessed = 0;
+                let districtCount = 0;
+                const totalDistricts = Object.keys(municipalitiesData).length;
+                
+                for (const [district, municipalities] of Object.entries(municipalitiesData)) {
+                    districtCount++;
+                    const districtKey = district.replace(/\s+/g, '_');
+                    const municipalityDoc = municipalitiesCollection.collection(districtKey).doc('municipalities');
+                    
+                    try {
+                        await municipalityDoc.set({ municipalities: municipalities });
+                        municipalitiesProcessed += municipalities.length;
+                        
+                        // Update progress for municipalities (by district count)
+                        updateProgress('municipalities-progress', districtCount, totalDistricts);
+                        
+                        logMessage(`✓ Added ${municipalities.length} municipalities for ${district} (${districtCount}/${totalDistricts})`, 'success');
+                    } catch (error) {
+                        logMessage(`✗ Failed to add municipalities for ${district}: ${error.message}`, 'error');
+                    }
+                    
+                    // Small delay to prevent rate limiting
+                    if (districtCount % 10 === 0) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    }
+                }
+                
+                nepalStatus.className = 'status-badge status-success';
+                nepalStatus.textContent = 'Setup Complete';
+                setupNepalBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Setup Complete';
+                
+                logMessage(`✓ Nepal administrative data setup completed!`, 'success');
+                logMessage(`✓ Total: 7 provinces, 77 districts, ${municipalitiesProcessed} municipalities`, 'success');
+                
+            } catch (error) {
+                logMessage(`Error setting up Nepal data: ${error.message}`, 'error');
+                nepalStatus.className = 'status-badge status-error';
+                nepalStatus.textContent = 'Setup Failed';
+                setupNepalBtn.disabled = false;
+                setupNepalBtn.innerHTML = '<i class="fas fa-database mr-2"></i>Retry Setup';
+            }
+        }
+        
+        // Setup School Structure
+        async function setupSchoolStructure() {
+            if (!isConnected) {
+                logMessage('Please connect to Firebase first', 'error');
+                return;
+            }
+            
+            setupSchoolBtn.disabled = true;
+            setupSchoolBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Setting up...';
+            schoolStatus.className = 'status-badge status-info';
+            schoolStatus.textContent = 'In Progress';
+            
+            try {
+                logMessage('Starting school structure setup...', 'info');
+                
+                // Generate a unique school ID
+                const schoolId = `SCH_${Date.now()}`;
+                const currentYear = new Date().getFullYear().toString().slice(-2);
+                
+                // 1. Create school document
+                const schoolData = {
+                    schoolName: "National Pathshala",
+                    schoolLogo: "https://via.placeholder.com/150x150?text=School+Logo",
+                    schoolCode: 123456,
+                    admin: {
+                        adminName: "School Administrator",
+                        approved: true
+                    },
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                const schoolRef = db.collection('schools').doc(schoolId);
+                await schoolRef.set(schoolData);
+                logMessage(`✓ Created school: ${schoolData.schoolName}`, 'success');
+                
+                // 2. Create GPA Scale subcollection
+                logMessage('Setting up GPA scale...', 'info');
+                const gpaScaleRef = schoolRef.collection('gpa_scale');
+                
+                for (const grade of gpaScaleData) {
+                    const gradeDoc = gpaScaleRef.doc(grade.grade);
+                    await gradeDoc.set({
+                        grade: grade.grade,
+                        minPercentage: grade.minPercentage,
+                        maxPercentage: grade.maxPercentage,
+                        gradePoint: grade.gradePoint,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    logMessage(`✓ Added GPA scale for grade: ${grade.grade}`, 'success');
+                }
+                
+                // 3. Create classes subcollection
+                const classes = [
+                    {
+                        id: "CLASS_10",
+                        className: "Class 10",
+                        classTeacher: "Mr. John Doe",
+                        classFeeDescription: {
+                            "Monthly Fee": 1500,
+                            "Annual Fee": 5000,
+                            "Exam Fee": 1000,
+                            "Sports Fee": 500,
+                            "Library Fee": 300,
+                            "Computer Lab Fee": 700,
+                            "Transport Fee": 2000,
+                            "Uniform Fee": 1500
+                        }
+                    },
+                    {
+                        id: "CLASS_9",
+                        className: "Class 9",
+                        classTeacher: "Ms. Jane Smith",
+                        classFeeDescription: {
+                            "Monthly Fee": 1400,
+                            "Annual Fee": 4500,
+                            "Exam Fee": 900,
+                            "Sports Fee": 500,
+                            "Library Fee": 300,
+                            "Computer Lab Fee": 700,
+                            "Transport Fee": 2000,
+                            "Uniform Fee": 1500
+                        }
+                    },
+                    {
+                        id: "CLASS_8",
+                        className: "Class 8",
+                        classTeacher: "Mr. David Brown",
+                        classFeeDescription: {
+                            "Monthly Fee": 1300,
+                            "Annual Fee": 4000,
+                            "Exam Fee": 800,
+                            "Sports Fee": 500,
+                            "Library Fee": 300,
+                            "Computer Lab Fee": 700,
+                            "Transport Fee": 2000,
+                            "Uniform Fee": 1500
+                        }
+                    }
+                ];
+                
+                for (const classData of classes) {
+                    const classRef = schoolRef.collection('classes').doc(classData.id);
+                    await classRef.set({
+                        className: classData.className,
+                        classTeacher: classData.classTeacher,
+                        classFeeDescription: classData.classFeeDescription,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    logMessage(`✓ Created class: ${classData.className}`, 'success');
+                    
+                    // 4. Add example students
+                    const students = [
+                        {
+                            studentUID: `STU_${currentYear}001`,
+                            registrationNumber: parseInt(`${currentYear}1234560001`),
+                            studentName: "Dilshad Alam",
+                            dateOfBirth: new Date("2006-05-15"),
+                            studentGender: "Male",
+                            motherName: "Sabina Khatun",
+                            fatherName: "Mohammad Alam",
+                            permanentAddress: {
+                                province: "Bagmati Province",
+                                district: "Kathmandu",
+                                municipality: "Kathmandu Metropolitan City",
+                                wardNo: "5"
+                            },
+                            phoneNumber: 9841000001,
+                            registeredAt: new Date(),
+                            studentSignature: "https://via.placeholder.com/300x100?text=Signature",
+                            profileImage: "https://via.placeholder.com/150x180?text=Student+Photo",
+                            approved: true
+                        },
+                        {
+                            studentUID: `STU_${currentYear}002`,
+                            registrationNumber: parseInt(`${currentYear}1234560002`),
+                            studentName: "Riya Sharma",
+                            dateOfBirth: new Date("2006-08-22"),
+                            studentGender: "Female",
+                            motherName: "Sita Sharma",
+                            fatherName: "Rajesh Sharma",
+                            permanentAddress: {
+                                province: "Bagmati Province",
+                                district: "Lalitpur",
+                                municipality: "Lalitpur Metropolitan City",
+                                wardNo: "7"
+                            },
+                            phoneNumber: 9841000002,
+                            registeredAt: new Date(),
+                            studentSignature: "https://via.placeholder.com/300x100?text=Signature",
+                            profileImage: "https://via.placeholder.com/150x180?text=Student+Photo",
+                            approved: true
+                        },
+                        {
+                            studentUID: `STU_${currentYear}003`,
+                            registrationNumber: parseInt(`${currentYear}1234560003`),
+                            studentName: "Rajesh Kumar",
+                            dateOfBirth: new Date("2006-11-10"),
+                            studentGender: "Male",
+                            motherName: "Mina Devi",
+                            fatherName: "Hari Prasad",
+                            permanentAddress: {
+                                province: "Bagmati Province",
+                                district: "Bhaktapur",
+                                municipality: "Bhaktapur Municipality",
+                                wardNo: "3"
+                            },
+                            phoneNumber: 9841000003,
+                            registeredAt: new Date(),
+                            studentSignature: "https://via.placeholder.com/300x100?text=Signature",
+                            profileImage: "https://via.placeholder.com/150x180?text=Student+Photo",
+                            approved: true
+                        }
+                    ];
+                    
+                    for (const student of students) {
+                        const studentRef = classRef.collection('students').doc(student.studentUID);
+                        await studentRef.set({
+                            registrationNumber: student.registrationNumber,
+                            studentName: student.studentName,
+                            dateOfBirth: firebase.firestore.Timestamp.fromDate(student.dateOfBirth),
+                            studentGender: student.studentGender,
+                            motherName: student.motherName,
+                            fatherName: student.fatherName,
+                            permanentAddress: student.permanentAddress,
+                            phoneNumber: student.phoneNumber,
+                            registeredAt: firebase.firestore.Timestamp.fromDate(student.registeredAt),
+                            studentSignature: student.studentSignature,
+                            profileImage: student.profileImage,
+                            approved: student.approved,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                        });
+                        
+                        logMessage(`✓ Added student: ${student.studentName}`, 'success');
+                        
+                        // 5. Create example exam data
+                        const examId = `EXAM_${Date.now()}`;
+                        const examRef = classRef.collection('exams').doc(examId);
+                        
+                        const examData = {
+                            examName: "First Terminal Exam",
+                            grade: 10,
+                            academicYear: "2083",
+                            conductedBy: schoolData.schoolName,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                            locked: false
+                        };
+                        
+                        await examRef.set(examData);
+                        logMessage(`✓ Created exam: ${examData.examName}`, 'success');
+                        
+                        // 6. Add student exam results
+                        const studentExamRef = examRef.collection('students').doc(student.studentUID);
+                        
+                        const studentExamData = {
+                            studentUID: student.studentUID,
+                            fullName: student.studentName,
+                            symbolNumber: `SYM${student.registrationNumber.toString().slice(-4)}`,
+                            rollNumber: parseInt(student.studentUID.slice(-3)),
+                            dateOfBirth: student.dateOfBirth.toISOString().split('T')[0],
+                            district: student.permanentAddress.district,
+                            schoolName: schoolData.schoolName,
+                            totalSubjects: 7,
+                            totalCreditHours: 28,
+                            gpa: 3.60,
+                            finalResult: "PASS",
+                            checkedBy: "Exam Department",
+                            dateOfIssue: "2026-02-25",
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        
+                        await studentExamRef.set(studentExamData);
+                        logMessage(`✓ Added exam results for ${student.studentName}`, 'success');
+                        
+                        // 7. Add subjects with grades
+                        const subjects = [
+                            {
+                                subjectId: "ENG001",
+                                sn: 1,
+                                subjectName: "Compulsory English",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "A", practical: "A+" },
+                                finalGrade: "A",
+                                gradePoint: 3.6,
+                                remarks: ""
+                            },
+                            {
+                                subjectId: "NEP002",
+                                sn: 2,
+                                subjectName: "Compulsory Nepali",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "B+", practical: "A" },
+                                finalGrade: "B+",
+                                gradePoint: 3.2,
+                                remarks: ""
+                            },
+                            {
+                                subjectId: "MATH003",
+                                sn: 3,
+                                subjectName: "Compulsory Mathematics",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "A+", practical: null },
+                                finalGrade: "A+",
+                                gradePoint: 4.0,
+                                remarks: ""
+                            },
+                            {
+                                subjectId: "SCI004",
+                                sn: 4,
+                                subjectName: "Compulsory Science",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "A", practical: "A+" },
+                                finalGrade: "A+",
+                                gradePoint: 3.6,
+                                remarks: ""
+                            },
+                            {
+                                subjectId: "SOC005",
+                                sn: 5,
+                                subjectName: "Social Studies",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "B", practical: "A" },
+                                finalGrade: "B+",
+                                gradePoint: 3.2,
+                                remarks: ""
+                            },
+                            {
+                                subjectId: "ACC006",
+                                sn: 6,
+                                subjectName: "Optional I (Account)",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "A", practical: "A" },
+                                finalGrade: "A",
+                                gradePoint: 3.6,
+                                remarks: ""
+                            },
+                            {
+                                subjectId: "COMP007",
+                                sn: 7,
+                                subjectName: "Optional II (Computer)",
+                                creditHours: 4.0,
+                                obtainedGrade: { theory: "A+", practical: "A+" },
+                                finalGrade: "A+",
+                                gradePoint: 4.0,
+                                remarks: "Excellent performance"
+                            }
+                        ];
+                        
+                        for (const subject of subjects) {
+                            const subjectRef = studentExamRef.collection('subjects').doc(subject.subjectId);
+                            
+                            await subjectRef.set({
+                                sn: subject.sn,
+                                subjectName: subject.subjectName,
+                                creditHours: subject.creditHours,
+                                obtainedGrade: subject.obtainedGrade,
+                                finalGrade: subject.finalGrade,
+                                gradePoint: subject.gradePoint,
+                                remarks: subject.remarks
+                            });
+                        }
+                        
+                        logMessage(`✓ Added ${subjects.length} subjects for ${student.studentName}`, 'success');
+                    }
+                }
+                
+                // 8. Create additional exams collection at school level
+                const schoolExamsRef = schoolRef.collection('exams').doc('First Terminal Exam');
+                await schoolExamsRef.set({
+                    examName: "First Terminal Exam",
+                    grade: 10,
+                    academicYear: "2083",
+                    conductedBy: schoolData.schoolName,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    locked: false
+                });
+                
+                logMessage(`✓ Created school-level exam collection`, 'success');
+                
+                schoolStatus.className = 'status-badge status-success';
+                schoolStatus.textContent = 'Setup Complete';
+                setupSchoolBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Setup Complete';
+                
+                logMessage('✓ School structure setup completed!', 'success');
+                logMessage(`✓ School ID: ${schoolId}`, 'info');
+                logMessage('✓ Includes: GPA scale, classes, students, exams with marksheets', 'info');
+                
+            } catch (error) {
+                logMessage(`Error setting up school structure: ${error.message}`, 'error');
+                schoolStatus.className = 'status-badge status-error';
+                schoolStatus.textContent = 'Setup Failed';
+                setupSchoolBtn.disabled = false;
+                setupSchoolBtn.innerHTML = '<i class="fas fa-graduation-cap mr-2"></i>Retry Setup';
+            }
+        }
+        
+        // Event Listeners
+        signinBtn.addEventListener('click', handleSignIn);
+        signupBtn.addEventListener('click', handleSignUp);
+        logoutBtn.addEventListener('click', handleLogout);
+        skipAuthBtn.addEventListener('click', handleSkipAuth);
+        
+        // Also allow Enter key in auth form
+        authEmailInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSignIn();
+            }
+        });
+        
+        authPasswordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSignIn();
+            }
+        });
+        
+        // Setup buttons
+        setupNepalBtn.addEventListener('click', setupNepalData);
+        setupSchoolBtn.addEventListener('click', setupSchoolStructure);
+        
+        clearLogBtn.addEventListener('click', () => {
+            logConsole.innerHTML = '<div class="log-entry log-info">[INFO] Log cleared</div>';
+        });
+        
+        // Initialize Firebase on load
+        window.addEventListener('load', () => {
+            initializeFirebase();
+            
+            // Calculate totals for progress bars
+            let totalDistricts = 0;
+            let totalMunicipalities = 0;
+            
+            Object.values(districtsData).forEach(districts => {
+                totalDistricts += districts.length;
+            });
+            
+            Object.values(municipalitiesData).forEach(districtMunis => {
+                totalMunicipalities += districtMunis.length;
+            });
+            
+            document.getElementById('districts-count').textContent = `0/${totalDistricts}`;
+            document.getElementById('municipalities-count').textContent = `0/${totalMunicipalities}`;
+            
+            logMessage('Data Setup Tool initialized. Please sign in.', 'info');
+            logMessage(`This tool will setup: 7 provinces, ${totalDistricts} districts, ${totalMunicipalities} municipalities`, 'info');
+        });
+        
+    </script>
+</body>
+</html>
