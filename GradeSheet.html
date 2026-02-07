@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimum-scale=1.0">
+    <title>Mark Sheet - Student Portal</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&family=Roboto+Condensed:wght@700&family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        /* CRITICAL: Ensure HTML and BODY are full height and non-scrollable */
+        html {
+            height: 100%;
+            overflow: hidden !important;
+        }
+
+        /* Use Oswald font family as default */
+        body {
+            font-family: 'Oswald', sans-serif;
+            font-weight: 400;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            
+            /* White background */
+            background-color: #ffffff !important;
+            color: #000000;
+            
+            /* CRITICAL: Prevent the main body from scrolling at all */
+            overflow: hidden !important; 
+            
+            user-select: none;
+            -webkit-user-select: none; 
+            -moz-user-select: none;
+            -ms-user-select: none; 
+            
+            /* Prevents elastic scrolling on iOS */
+            overscroll-behavior: none;
+            
+            /* Make body a fixed container occupying full screen */
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* App wrapper - uses dynamic viewport height for mobile keyboard stability */
+        #app-wrapper {
+            height: 100vh; /* Fallback */
+            height: 100dvh; /* Dynamic viewport height (best for mobile keyboard) */
+            width: 100%;
+            position: absolute; /* Relative to fixed body */
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden; /* Ensures only the chat container can scroll */
+            background: white !important;
+        }
+        
+        /* Strict No-Oval/No-Round Policy */
+        * {
+            border-radius: 0 !important;
+        }
+        
+        /* --- Hide Scrollbar on Chat Container --- */
+        #chat-container {
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #chat-container::-webkit-scrollbar {
+            display: none;
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Alert messages */
+        .alert {
+            padding: 1rem;
+            margin: 1rem 0;
+            border: 1px solid transparent;
+            font-size: 0.9rem;
+        }
+        
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-color: #10b981;
+        }
+        
+        .alert-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border-color: #ef4444;
+        }
+        
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #f59e0b;
+        }
+        
+        /* ===== MARK SHEET FORM STYLES ===== */
+        .form-container {
+            width: 100%;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+            background: white;
+        }
+        
+        .form-section {
+            background: #f9fafb;
+            padding: 1.5rem;
+            border: 1px solid #e5e7eb;
+            margin-bottom: 2rem;
+        }
+        
+        .form-header {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #374151;
+            font-size: 1.1rem;
+        }
+        
+        .form-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 2px solid #d1d5db;
+            background: white;
+            font-size: 1rem;
+            font-family: 'Oswald', sans-serif;
+            color: #1f2937;
+            outline: none;
+            transition: border-color 0.2s;
+            cursor: pointer;
+        }
+        
+        .form-select:focus {
+            border-color: #3b82f6;
+        }
+        
+        .form-select:disabled {
+            background: #f3f4f6;
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        
+        .form-button {
+            width: 100%;
+            padding: 1rem;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: 'Oswald', sans-serif;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .form-button:hover:not(:disabled) {
+            background: #2563eb;
+        }
+        
+        .form-button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        /* ===== TOP BAR STYLES ===== */
+        .top-bar {
+            width: 100%;
+            background: white;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e5e7eb;
+            height: 48px;
+            box-sizing: border-box;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            transition: transform 0.3s ease;
+        }
+        
+        .top-bar.hidden {
+            transform: translateY(-100%);
+        }
+        
+        /* Left button container */
+        #left-button-container {
+            flex-shrink: 0;
+            width: 32px;
+            height: 32px;
+        }
+        
+        /* Portal Title */
+        .portal-title-container {
+            flex: 1;
+            max-width: 600px;
+            margin: 0 16px;
+            position: relative;
+            height: 32px;
+        }
+        
+        .portal-title-button {
+            width: 100%;
+            height: 100%;
+            padding: 0 16px;
+            background: #000000 !important;
+            color: white;
+            border: none;
+            font-family: 'Oswald', sans-serif !important;
+            font-size: 14px;
+            font-weight: 700;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            line-height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .portal-title-button:hover {
+            background: #333333 !important;
+        }
+        
+        .portal-title-button:active {
+            background: #666666 !important;
+        }
+        
+        /* Profile image container */
+        .profile-container {
+            width: 32px;
+            height: 32px;
+            flex-shrink: 0;
+            border-radius: 0 !important;
+            overflow: hidden;
+            background: #f3f4f6;
+            border: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        .profile-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        /* Error container */
+        .error-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        /* Skeleton Loading */
+        .skeleton-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+        }
+        
+        .skeleton-loading {
+            text-align: center;
+        }
+        
+        .skeleton-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        .skeleton-text {
+            background: #e5e7eb;
+            height: 20px;
+            width: 200px;
+            margin: 0.5rem auto;
+        }
+
+        /* ===== AUTH MODAL STYLES ===== */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .auth-modal {
+            background: white;
+            width: 40%;
+            min-width: 300px;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+            border-radius: 4px !important;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .auth-body {
+            padding: 20px;
+        }
+        
+        .auth-field {
+            margin-bottom: 16px;
+        }
+        
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            border-radius: 0 !important;
+            font-family: 'Oswald', sans-serif;
+        }
+        
+        .auth-input:focus {
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .auth-error.show {
+            display: block;
+        }
+        
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            font-family: 'Oswald', sans-serif;
+        }
+        
+        .auth-button:hover {
+            background: #2563eb;
+        }
+        
+        .auth-button:active {
+            background: #1d4ed8;
+        }
+        
+        .auth-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* ===== MOBILE GRADE SHEET STYLES ===== */
+        .mobile-grade-sheet {
+            font-family: 'Oswald', sans-serif;
+            background-color: #f0f2f5;
+            letter-spacing: 0.02em;
+            height: 100%;
+            overflow-y: auto;
+        }
+
+        .glass-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        /* Subject Title Box */
+        .subject-title-box {
+            background-color: #1a2a3a;
+            color: white;
+            padding: 2px 12px;
+            display: inline-block;
+            font-size: 0.85rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            border-radius: 2px;
+        }
+
+        .grade-pill {
+            padding: 1px 10px;
+            border-radius: 2px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+
+        /* GP Pill Styling */
+        .gp-pill {
+            padding: 1px 8px;
+            border-radius: 2px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            background: #e2e8f0;
+            color: #1a2a3a;
+            border: 1px solid #cbd5e1;
+        }
+
+        .grade-a-plus { background: #15803d; color: #ffffff; }
+        .grade-a { background: #166534; color: #ffffff; }
+        .grade-b-plus { background: #854d0e; color: #ffffff; }
+        .grade-b { background: #a16207; color: #ffffff; }
+        .grade-c-plus { background: #b45309; color: #ffffff; }
+        .grade-c { background: #c2410c; color: #ffffff; }
+        .grade-d-plus { background: #991b1b; color: #ffffff; }
+        .grade-d { background: #7f1d1d; color: #ffffff; }
+
+        .stat-card {
+            border-radius: 4px;
+        }
+
+        /* Mobile Grade Sheet App Bar */
+        .mobile-app-bar {
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: #1a2a3a;
+            color: white;
+            padding: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Print adjustments */
+        @media print {
+            .no-print { display: none; }
+            body { background: white; }
+            .glass-card { border: 1px solid #000; box-shadow: none; }
+        }
+    </style>
+</head>
+
+<body class="h-full">
+
+    <!-- Mobile App Container (Flex Column) -->
+    <div id="app-wrapper" class="flex flex-col overflow-hidden">
+        <!-- Top bar (common for all pages) -->
+        <div class="top-bar hidden">
+            <!-- Left button (hamburger menu) -->
+            <div id="left-button-container">
+                <button class="back-button" id="hamburger-menu" style="background: #000; color: white; width: 32px; height: 32px; border: none; display: flex; align-items: center; justify-content: center;">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            
+            <!-- Portal Title -->
+            <div class="portal-title-container">
+                <button class="portal-title-button" id="portal-title-button">
+                    Mark Sheet Portal
+                </button>
+            </div>
+            
+            <!-- Profile image -->
+            <div class="profile-container">
+                <div id="profile-image-container">
+                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:600;">U</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main content area - different pages will be loaded here -->
+        <main id="chat-container" class="flex-1 overflow-y-auto">
+            <!-- Content will be dynamically loaded here -->
+        </main>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+
+        // State Manager for MarkSheet App
+        class MarkSheetStateManager {
+            constructor() {
+                this.schoolID = null;
+                this.academicYearID = null;
+                this.classID = null;
+                this.sectionID = null;
+                this.enrollmentID = null;
+                this.examID = null;
+                this.schoolData = null;
+                this.classData = null;
+                this.sectionData = null;
+                this.enrollmentData = null;
+                this.examData = null;
+                this.studentData = null;
+                this.resultData = null;
+                this.alerts = [];
+            }
+            
+            extractURLParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.schoolID = urlParams.get('schoolID');
+                this.academicYearID = urlParams.get('academicYearID');
+                this.classID = urlParams.get('classID');
+                this.sectionID = urlParams.get('sectionID');
+                this.enrollmentID = urlParams.get('enrollmentID');
+                this.examID = urlParams.get('examID');
+                
+                // Check if all required parameters are present
+                const requiredParams = ['schoolID', 'academicYearID', 'classID', 'sectionID', 'enrollmentID', 'examID'];
+                const missingParams = requiredParams.filter(param => !this[param]);
+                
+                if (missingParams.length > 0) {
+                    throw new Error(`Missing URL parameters: ${missingParams.join(', ')}`);
+                }
+            }
+            
+            getSchoolPath() {
+                return `schools/${this.schoolID}`;
+            }
+            
+            getAcademicYearPath() {
+                return `${this.getSchoolPath()}/academicYears/${this.academicYearID}`;
+            }
+            
+            getClassesPath() {
+                return `${this.getSchoolPath()}/classes`;
+            }
+            
+            getSectionsPath() {
+                return `${this.getSchoolPath()}/sections`;
+            }
+            
+            getEnrollmentsPath() {
+                return `${this.getSchoolPath()}/enrollments`;
+            }
+            
+            getExamsPath() {
+                return `${this.getSchoolPath()}/exams`;
+            }
+            
+            getStudentPath(studentID) {
+                return `${this.getSchoolPath()}/students/${studentID}`;
+            }
+            
+            getResultsPath() {
+                return `${this.getSchoolPath()}/results`;
+            }
+            
+            getSubjectPath(subjectID) {
+                return `${this.getSchoolPath()}/subjects/${subjectID}`;
+            }
+            
+            addAlert(type, message) {
+                const id = Date.now();
+                this.alerts.push({ id, type, message });
+                setTimeout(() => {
+                    this.removeAlert(id);
+                }, 5000);
+            }
+            
+            removeAlert(id) {
+                this.alerts = this.alerts.filter(alert => alert.id !== id);
+            }
+            
+            getAlerts() {
+                return this.alerts;
+            }
+            
+            clearSelections() {
+                this.classData = null;
+                this.sectionData = null;
+                this.enrollmentData = null;
+                this.examData = null;
+                this.studentData = null;
+                this.resultData = null;
+            }
+            
+            hasAllData() {
+                return this.schoolData && this.classData && this.sectionData && 
+                       this.enrollmentData && this.examData && this.studentData && this.resultData;
+            }
+        }
+
+        // Mark Sheet App
+        class MarkSheetApp {
+            constructor() {
+                this.stateManager = new MarkSheetStateManager();
+                this.db = null;
+                this.auth = null;
+                this.currentUser = null;
+                this.isInitialized = false;
+                
+                this.appWrapper = document.getElementById('app-wrapper');
+                this.chatContainer = document.getElementById('chat-container');
+                this.topBar = document.querySelector('.top-bar');
+                this.portalTitleButton = document.getElementById('portal-title-button');
+                this.profileImageContainer = document.getElementById('profile-image-container');
+                
+                this.initialize();
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.showSkeletonLoading();
+                    
+                    // Extract URL parameters
+                    this.stateManager.extractURLParams();
+                    
+                    firebase.initializeApp(firebaseConfig);
+                    this.db = firebase.firestore();
+                    this.auth = firebase.auth();
+                    
+                    this.db.settings({
+                        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+                    });
+                    
+                    console.log("Firebase initialized successfully");
+                    this.isInitialized = true;
+                    
+                    this.setupAuthListener();
+                    
+                } catch (error) {
+                    console.error("Initialization error:", error);
+                    this.hideSkeletonLoading();
+                    this.showError(error.message || "Failed to initialize app. Please check URL parameters.");
+                }
+            }
+            
+            setupAuthListener() {
+                this.auth.onAuthStateChanged(async (user) => {
+                    console.log("Auth state changed:", user ? `User ${user.email} logged in` : "No user");
+                    
+                    if (user) {
+                        this.currentUser = user;
+                        await this.loadAllData();
+                    } else {
+                        this.currentUser = null;
+                        this.hideSkeletonLoading();
+                        this.showSignInPrompt();
+                    }
+                });
+            }
+            
+            async loadAllData() {
+                try {
+                    // Load all data in parallel
+                    await Promise.all([
+                        this.loadSchoolData(),
+                        this.loadClassData(),
+                        this.loadSectionData(),
+                        this.loadEnrollmentData(),
+                        this.loadExamData()
+                    ]);
+                    
+                    // Load student data after enrollment data is loaded
+                    if (this.stateManager.enrollmentData && this.stateManager.enrollmentData.studentID) {
+                        await this.loadStudentData(this.stateManager.enrollmentData.studentID);
+                    }
+                    
+                    // Load result data after student and exam data are loaded
+                    if (this.stateManager.enrollmentData && this.stateManager.examData) {
+                        await this.loadResultData(
+                            this.stateManager.enrollmentID,
+                            this.stateManager.examID
+                        );
+                    }
+                    
+                    this.hideSkeletonLoading();
+                    this.renderMobileGradeSheet();
+                    
+                } catch (error) {
+                    console.error("Error loading all data:", error);
+                    this.showError("Failed to load data. Please try again.");
+                }
+            }
+            
+            async loadSchoolData() {
+                try {
+                    const schoolPath = this.stateManager.getSchoolPath();
+                    const schoolDoc = await this.db.doc(schoolPath).get();
+                    
+                    if (!schoolDoc.exists) {
+                        throw new Error("School not found");
+                    }
+                    
+                    this.stateManager.schoolData = schoolDoc.data();
+                    console.log("School data loaded:", this.stateManager.schoolData);
+                    
+                    return this.stateManager.schoolData;
+                    
+                } catch (error) {
+                    console.error("Error loading school data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadClassData() {
+                try {
+                    const classPath = `${this.stateManager.getClassesPath()}/${this.stateManager.classID}`;
+                    const classDoc = await this.db.doc(classPath).get();
+                    
+                    if (!classDoc.exists) {
+                        throw new Error("Class not found");
+                    }
+                    
+                    this.stateManager.classData = {
+                        id: classDoc.id,
+                        ...classDoc.data()
+                    };
+                    console.log("Class data loaded:", this.stateManager.classData);
+                    
+                    return this.stateManager.classData;
+                    
+                } catch (error) {
+                    console.error("Error loading class data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadSectionData() {
+                try {
+                    const sectionPath = `${this.stateManager.getSectionsPath()}/${this.stateManager.sectionID}`;
+                    const sectionDoc = await this.db.doc(sectionPath).get();
+                    
+                    if (!sectionDoc.exists) {
+                        throw new Error("Section not found");
+                    }
+                    
+                    this.stateManager.sectionData = {
+                        id: sectionDoc.id,
+                        ...sectionDoc.data()
+                    };
+                    console.log("Section data loaded:", this.stateManager.sectionData);
+                    
+                    return this.stateManager.sectionData;
+                    
+                } catch (error) {
+                    console.error("Error loading section data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadEnrollmentData() {
+                try {
+                    const enrollmentPath = `${this.stateManager.getEnrollmentsPath()}/${this.stateManager.enrollmentID}`;
+                    const enrollmentDoc = await this.db.doc(enrollmentPath).get();
+                    
+                    if (!enrollmentDoc.exists) {
+                        throw new Error("Enrollment not found");
+                    }
+                    
+                    this.stateManager.enrollmentData = {
+                        id: enrollmentDoc.id,
+                        ...enrollmentDoc.data()
+                    };
+                    console.log("Enrollment data loaded:", this.stateManager.enrollmentData);
+                    
+                    return this.stateManager.enrollmentData;
+                    
+                } catch (error) {
+                    console.error("Error loading enrollment data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadExamData() {
+                try {
+                    const examPath = `${this.stateManager.getExamsPath()}/${this.stateManager.examID}`;
+                    const examDoc = await this.db.doc(examPath).get();
+                    
+                    if (!examDoc.exists) {
+                        throw new Error("Exam not found");
+                    }
+                    
+                    this.stateManager.examData = {
+                        id: examDoc.id,
+                        ...examDoc.data()
+                    };
+                    console.log("Exam data loaded:", this.stateManager.examData);
+                    
+                    return this.stateManager.examData;
+                    
+                } catch (error) {
+                    console.error("Error loading exam data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadStudentData(studentID) {
+                try {
+                    const studentPath = this.stateManager.getStudentPath(studentID);
+                    const studentDoc = await this.db.doc(studentPath).get();
+                    
+                    if (!studentDoc.exists) {
+                        throw new Error("Student not found");
+                    }
+                    
+                    this.stateManager.studentData = studentDoc.data();
+                    console.log("Student data loaded:", this.stateManager.studentData);
+                    
+                } catch (error) {
+                    console.error("Error loading student data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadResultData(enrollmentID, examID) {
+                try {
+                    const resultsPath = this.stateManager.getResultsPath();
+                    const resultsSnapshot = await this.db.collection(resultsPath)
+                        .where('enrollmentID', '==', enrollmentID)
+                        .where('examID', '==', examID)
+                        .limit(1)
+                        .get();
+                    
+                    if (resultsSnapshot.empty) {
+                        throw new Error("No result found for this student and exam");
+                    }
+                    
+                    const resultDoc = resultsSnapshot.docs[0];
+                    const resultData = resultDoc.data();
+                    
+                    // Load subject details for each subject
+                    const subjectsWithDetails = await Promise.all(
+                        resultData.subjects.map(async (subject) => {
+                            try {
+                                if (subject.subjectID) {
+                                    const subjectPath = this.stateManager.getSubjectPath(subject.subjectID);
+                                    const subjectDoc = await this.db.doc(subjectPath).get();
+                                    
+                                    if (subjectDoc.exists) {
+                                        const subjectData = subjectDoc.data();
+                                        return {
+                                            ...subject,
+                                            subjectName: subjectData.subjectName || subject.subjectID,
+                                            creditHours: subjectData.creditHours || 0
+                                        };
+                                    }
+                                }
+                                return {
+                                    ...subject,
+                                    subjectName: subject.subjectID || subject.subjectName || 'Unknown Subject',
+                                    creditHours: subject.creditHours || 0
+                                };
+                            } catch (error) {
+                                console.error(`Error loading subject ${subject.subjectID}:`, error);
+                                return {
+                                    ...subject,
+                                    subjectName: subject.subjectID || subject.subjectName || 'Unknown Subject',
+                                    creditHours: subject.creditHours || 0
+                                };
+                            }
+                        })
+                    );
+                    
+                    this.stateManager.resultData = {
+                        ...resultData,
+                        subjects: subjectsWithDetails,
+                        resultID: resultDoc.id
+                    };
+                    
+                    console.log("Result data loaded:", this.stateManager.resultData);
+                    
+                } catch (error) {
+                    console.error("Error loading result data:", error);
+                    throw error;
+                }
+            }
+            
+            // Helper function to get grade color class
+            getGradeColorClass(grade) {
+                if (!grade) return '';
+                
+                const gradeMap = {
+                    'A+': 'grade-a-plus',
+                    'A': 'grade-a',
+                    'B+': 'grade-b-plus',
+                    'B': 'grade-b',
+                    'C+': 'grade-c-plus',
+                    'C': 'grade-c',
+                    'D+': 'grade-d-plus',
+                    'D': 'grade-d'
+                };
+                
+                return gradeMap[grade.trim()] || '';
+            }
+            
+            // Show skeleton loading screen
+            showSkeletonLoading() {
+                const skeletonHtml = `
+                    <div class="skeleton-container">
+                        <div class="skeleton-loading">
+                            <div class="skeleton-spinner"></div>
+                            <div class="skeleton-text"></div>
+                            <div class="skeleton-text" style="width: 150px;"></div>
+                        </div>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = skeletonHtml;
+                this.topBar.classList.add('hidden');
+            }
+            
+            // Hide skeleton loading
+            hideSkeletonLoading() {
+                this.topBar.classList.remove('hidden');
+            }
+            
+            showError(message) {
+                console.error(message);
+                
+                this.topBar.classList.add('hidden');
+                
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="error-title">Error</div>
+                        <div class="error-message">
+                            ${message}
+                        </div>
+                        <button id="retry-button" class="form-button" style="background: #3b82f6;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('retry-button')?.addEventListener('click', () => {
+                    window.location.reload();
+                });
+            }
+            
+            showSignInPrompt() {
+                this.topBar.classList.add('hidden');
+                
+                const html = `
+                    <div class="form-container">
+                        <div class="form-section">
+                            <div class="form-header">Sign In Required</div>
+                            <p class="text-gray-600 mb-6 text-center">
+                                You need to sign in to access the Mark Sheet Portal.
+                            </p>
+                            <button id="sign-in-prompt-button" class="form-button">
+                                Sign In to Continue
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('sign-in-prompt-button')?.addEventListener('click', () => {
+                    this.showAuthModal();
+                });
+            }
+            
+            showAuthModal() {
+                const authModal = document.createElement('div');
+                authModal.className = 'auth-modal-overlay';
+                authModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Sign In to Mark Sheet Portal</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="auth-email" class="auth-input" placeholder="user@example.com">
+                                <div id="email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="auth-password" class="auth-input" placeholder="••••••••">
+                                <div id="password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="sign-in-button" class="auth-button">Sign In</button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(authModal);
+                this.setupAuthModalEvents(authModal);
+            }
+            
+            setupAuthModalEvents(authModal) {
+                const signInButton = document.getElementById('sign-in-button');
+                const emailInput = document.getElementById('auth-email');
+                const passwordInput = document.getElementById('auth-password');
+                
+                signInButton.addEventListener('click', async () => {
+                    await this.signInWithEmail(emailInput, passwordInput, authModal);
+                });
+                
+                emailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        passwordInput.focus();
+                    }
+                });
+                
+                passwordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.signInWithEmail(emailInput, passwordInput, authModal);
+                    }
+                });
+                
+                authModal.addEventListener('click', (e) => {
+                    if (e.target === authModal) {
+                        authModal.remove();
+                    }
+                });
+            }
+            
+            async signInWithEmail(emailInput, passwordInput, authModal) {
+                const email = emailInput.value.trim();
+                const password = passwordInput.value.trim();
+                const signInButton = document.getElementById('sign-in-button');
+                const emailError = document.getElementById('email-error');
+                const passwordError = document.getElementById('password-error');
+                
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter your password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                signInButton.textContent = 'Signing In...';
+                signInButton.classList.add('loading');
+                
+                try {
+                    await this.auth.signInWithEmailAndPassword(email, password);
+                    authModal.remove();
+                    
+                } catch (error) {
+                    console.error("Sign in error:", error);
+                    
+                    signInButton.textContent = 'Sign In';
+                    signInButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-disabled':
+                            emailError.textContent = 'This account has been disabled';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-not-found':
+                            emailError.textContent = 'No account found with this email';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/wrong-password':
+                            passwordError.textContent = 'Incorrect password';
+                            passwordError.classList.add('show');
+                            break;
+                        case 'auth/too-many-requests':
+                            passwordError.textContent = 'Too many failed attempts. Try again later';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            passwordError.textContent = 'Failed to sign in. Please try again';
+                            passwordError.classList.add('show');
+                    }
+                }
+            }
+            
+            // Function to redirect to print version
+            redirectToPrintView() {
+                const params = new URLSearchParams({
+                    schoolID: this.stateManager.schoolID,
+                    academicYearID: this.stateManager.academicYearID,
+                    classID: this.stateManager.classID,
+                    sectionID: this.stateManager.sectionID,
+                    enrollmentID: this.stateManager.enrollmentID,
+                    examID: this.stateManager.examID
+                });
+                
+                // Redirect to the markSheet.html page with the same parameters
+                window.location.href = `https://dilshadalmm.github.io/dilshadalmm/markSheet.html?${params.toString()}`;
+            }
+            
+            renderMobileGradeSheet() {
+                const schoolData = this.stateManager.schoolData;
+                const studentData = this.stateManager.studentData;
+                const resultData = this.stateManager.resultData;
+                const classData = this.stateManager.classData;
+                const examData = this.stateManager.examData;
+                
+                if (!schoolData || !studentData || !resultData) {
+                    this.showError("Missing data for mark sheet");
+                    return;
+                }
+                
+                // Format dates
+                const formatDate = (timestamp) => {
+                    if (!timestamp) return 'N/A';
+                    if (timestamp.toDate) {
+                        return timestamp.toDate().toISOString().split('T')[0];
+                    }
+                    if (typeof timestamp === 'string') {
+                        return timestamp;
+                    }
+                    return 'N/A';
+                };
+                
+                const startedAt = examData?.startedAt ? formatDate(examData.startedAt) : 'N/A';
+                const endedAt = examData?.endedAt ? formatDate(examData.endedAt) : 'N/A';
+                const dateOfBirth = studentData.dateOfBirth ? formatDate(studentData.dateOfBirth) : 'N/A';
+                
+                // Calculate total percentage and GPA from result data
+                const percentage = resultData.percentage || '0.00';
+                const gpa = resultData.GPA || '0.00';
+                
+                // Generate subject cards
+                let subjectCardsHtml = '';
+                if (resultData.subjects && resultData.subjects.length > 0) {
+                    resultData.subjects.forEach((subject, index) => {
+                        const gradeColorClass = this.getGradeColorClass(subject.grade);
+                        
+                        subjectCardsHtml += `
+                            <div class="glass-card p-4 shadow-sm space-y-4">
+                                <div class="flex justify-between items-center">
+                                    <div class="subject-title-box">${subject.subjectName || subject.subjectID || 'Unknown Subject'}</div>
+                                    <div class="flex gap-1">
+                                        <span class="grade-pill ${gradeColorClass}">${subject.grade || '-'}</span>
+                                        <span class="gp-pill">${subject.gradePoint || '0.0'}</span>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 text-center">
+                                    <div class="border border-gray-100 py-1">
+                                        <p class="text-[9px] text-gray-400 uppercase font-medium">Theory</p>
+                                        <p class="text-sm font-bold">${subject.theoryMarks || '-'}</p>
+                                    </div>
+                                    <div class="border border-gray-100 py-1">
+                                        <p class="text-[9px] text-gray-400 uppercase font-medium">Practical</p>
+                                        <p class="text-sm font-bold">${subject.practicalMarks || '-'}</p>
+                                    </div>
+                                    <div class="bg-gray-50 py-1 border border-gray-200">
+                                        <p class="text-[9px] text-gray-600 uppercase font-medium">TOTAL MARK</p>
+                                        <p class="text-sm font-bold text-gray-900">${subject.finalMarks || '-'}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                const mobileGradeSheetHtml = `
+                    <div class="mobile-grade-sheet pb-10">
+                        <!-- Top App Bar -->
+                        <header class="sticky top-0 z-50 bg-[#1a2a3a] text-white p-3 shadow-md">
+                            <div class="flex items-center justify-between max-w-md mx-auto">
+                                <div class="flex items-center gap-3">
+                                    <img src="${schoolData.schoolLogo || 'https://i.postimg.cc/KcVvrkz3/Concept_20251225_020546_0000.png'}" 
+                                         alt="Logo" 
+                                         class="w-8 h-8 bg-white p-1 rounded-sm">
+                                    <div>
+                                        <h1 class="text-[10px] font-light opacity-80 uppercase tracking-widest leading-none">${schoolData.schoolName || 'Dilshad Institute'}</h1>
+                                        <p class="text-md font-medium leading-tight">RESULT PORTAL</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2 no-print">
+                                    <!-- Dashboard Button - Blue Background -->
+                                    <button id="dashboard-button" class="h-8 px-3 bg-blue-600 hover:bg-blue-700 transition-colors text-[10px] font-bold uppercase tracking-wider border border-blue-400 flex items-center justify-center">
+                                        Dashboard
+                                    </button>
+                                    <!-- Print Button - Blue Background -->
+                                    <button id="print-redirect-button" class="w-8 h-8 flex items-center justify-center bg-blue-600 hover:bg-blue-700 transition-colors border border-blue-400">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </header>
+
+                        <main class="max-w-md mx-auto px-4 mt-6 space-y-6">
+                            
+                            <!-- Student Profile Card -->
+                            <div class="glass-card p-5 shadow-sm border-t-4 border-[#1a2a3a]">
+                                <div class="flex items-start justify-between">
+                                    <div class="space-y-1">
+                                        <h2 class="text-2xl font-bold text-gray-900 uppercase">${studentData.studentName || 'N/A'}</h2>
+                                        <p class="text-sm text-blue-800 font-medium uppercase">Student ID: _________________</p>
+                                    </div>
+                                    <img src="${studentData.studentProfile || 'https://i.postimg.cc/8cB6w9Zv/Concept_20260111_031429_0000.png'}" 
+                                         alt="Student" 
+                                         class="w-20 h-20 object-cover border border-gray-200"
+                                         onerror="this.src='https://i.postimg.cc/8cB6w9Zv/Concept_20260111_031429_0000.png'">
+                                </div>
+                                
+                                <div class="grid grid-cols-2 gap-y-4 gap-x-4 mt-6 pt-4 border-t border-gray-100 uppercase text-[11px]">
+                                    <div class="col-span-1">
+                                        <p class="text-gray-400 font-medium">Date of Birth</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${dateOfBirth}</p>
+                                    </div>
+                                    <div class="col-span-1">
+                                        <p class="text-gray-400 font-medium">District</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${studentData.district || 'N/A'}</p>
+                                    </div>
+                                    <div class="col-span-1">
+                                        <p class="text-gray-400 font-medium">Roll No</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${studentData.rollNo || studentData.symbolNo || 'N/A'}</p>
+                                    </div>
+                                    <div class="col-span-1">
+                                        <p class="text-gray-400 font-medium">Academic Year</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${this.stateManager.academicYearID || 'N/A'}</p>
+                                    </div>
+                                    <div class="col-span-2">
+                                        <p class="text-gray-400 font-medium">Exam</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${examData?.examTitle || 'N/A'}</p>
+                                    </div>
+                                    <div class="col-span-1">
+                                        <p class="text-gray-400 font-medium">Conducted From</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${startedAt}</p>
+                                    </div>
+                                    <div class="col-span-1">
+                                        <p class="text-gray-400 font-medium">To</p>
+                                        <p class="font-bold text-gray-800 border-b border-gray-200">${endedAt}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Summary Stats -->
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="stat-card bg-gray-900 p-4 text-white shadow-md">
+                                    <p class="text-[10px] uppercase opacity-70 tracking-widest">Grade Point Avg</p>
+                                    <p class="text-4xl font-bold mt-1">${gpa}</p>
+                                    <p class="text-[10px] mt-2 border-t border-white/20 pt-1 uppercase">${gpa >= 3.6 ? 'Excellent' : gpa >= 3.0 ? 'Good' : 'Average'}</p>
+                                </div>
+                                <div class="stat-card bg-[#1a2a3a] p-4 text-white shadow-md">
+                                    <p class="text-[10px] uppercase opacity-70 tracking-widest">Percentage</p>
+                                    <p class="text-4xl font-bold mt-1">${percentage}%</p>
+                                    <p class="text-[10px] mt-2 border-t border-white/20 pt-1 uppercase">${percentage >= 80 ? 'Distinction' : percentage >= 60 ? 'First Division' : percentage >= 45 ? 'Second Division' : 'Third Division'}</p>
+                                </div>
+                            </div>
+
+                            <!-- Subject Wise Breakdown -->
+                            <div class="space-y-4">
+                                ${subjectCardsHtml || '<p class="text-center text-gray-500">No subject data available</p>'}
+                            </div>
+
+                            <!-- Verification -->
+                            <div class="text-center pt-8 border-t border-gray-200">
+                                <p class="text-[11px] text-gray-500 uppercase tracking-widest">Verified Digital Grade Sheet</p>
+                                <p class="text-[10px] text-gray-500 mt-1 uppercase font-normal">${schoolData.schoolName ? schoolData.schoolName.toUpperCase() : 'DILSHAD INSTITUTE OF SCIENCE'} - OFFICIAL PORTAL</p>
+                            </div>
+                        </main>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = mobileGradeSheetHtml;
+                
+                // Add event listeners
+                document.getElementById('print-redirect-button')?.addEventListener('click', () => {
+                    this.redirectToPrintView();
+                });
+                
+                document.getElementById('dashboard-button')?.addEventListener('click', () => {
+                    // You can implement dashboard redirection here if needed
+                    // For now, just reload to go back
+                    window.history.back();
+                });
+            }
+            
+            updateTopBar() {
+                this.topBar.classList.remove('hidden');
+                const portalTitle = document.getElementById('portal-title-button');
+                if (portalTitle && this.stateManager.schoolData) {
+                    portalTitle.textContent = this.stateManager.schoolData.schoolName || 'Mark Sheet Portal';
+                }
+            }
+        }
+        
+        // ===== INITIALIZE APP =====
+        let app;
+        
+        window.addEventListener('load', () => {
+            app = new MarkSheetApp();
+        });
+        
+        // Make app available globally for debugging
+        window.app = app;
+    </script>
+</body>
+</html>
