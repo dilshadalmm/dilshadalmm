@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimum-scale=1.0">
+    <title>Marks Entry Portal</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        /* CRITICAL: Ensure HTML and BODY are full height and non-scrollable */
+        html {
+            height: 100%;
+            overflow: hidden !important;
+        }
+
+        /* Use Oswald font family as default */
+        body {
+            font-family: 'Oswald', sans-serif;
+            font-weight: 400;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            
+            /* White background */
+            background-color: #ffffff !important;
+            color: #000000;
+            
+            /* CRITICAL: Prevent the main body from scrolling at all */
+            overflow: hidden !important; 
+            
+            user-select: none;
+            -webkit-user-select: none; 
+            -moz-user-select: none;
+            -ms-user-select: none; 
+            
+            /* Prevents elastic scrolling on iOS */
+            overscroll-behavior: none;
+            
+            /* Make body a fixed container occupying full screen */
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* App wrapper - uses dynamic viewport height for mobile keyboard stability */
+        #app-wrapper {
+            height: 100vh; /* Fallback */
+            height: 100dvh; /* Dynamic viewport height (best for mobile keyboard) */
+            width: 100%;
+            position: absolute; /* Relative to fixed body */
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden; /* Ensures only the chat container can scroll */
+            background: white !important;
+        }
+        
+        /* Strict No-Oval/No-Round Policy */
+        * {
+            border-radius: 0 !important;
+        }
+        
+        /* --- Hide Scrollbar on Chat Container --- */
+        #chat-container {
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #chat-container::-webkit-scrollbar {
+            display: none;
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white !important;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Alert messages */
+        .alert {
+            padding: 1rem;
+            margin: 1rem 0;
+            border: 1px solid transparent;
+            font-size: 0.9rem;
+        }
+        
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-color: #10b981;
+        }
+        
+        .alert-error {
+            background: #fee2e2;
+            color: #7f1d1d;
+            border-color: #ef4444;
+        }
+        
+        .alert-warning {
+            background: #fef3c7;
+            color: #92400e;
+            border-color: #f59e0b;
+        }
+        
+        /* ===== TABLE STYLES ===== */
+        .table-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 11px;
+            text-transform: uppercase;
+            table-layout: auto;
+        }
+
+        /* Fixed Headers */
+        th {
+            background-color: #1a2a3a;
+            color: white;
+            padding: 8px 12px;
+            text-align: center;
+            font-weight: 500;
+            white-space: nowrap;
+            border: 0.5px solid #2c3e50;
+            position: sticky;
+            z-index: 30;
+        }
+
+        thead tr:first-child th { top: 0; }
+        thead tr:last-child th { top: 33px; }
+
+        /* FIXED S.N. COLUMN LOGIC */
+        thead tr:first-child th:first-child {
+            left: 0;
+            z-index: 40;
+        }
+
+        tbody td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            background-color: inherit;
+            border-right: 1px solid #cbd5e1;
+        }
+
+        td {
+            border: 0.5px solid #e2e8f0;
+            padding: 0 8px;
+            white-space: nowrap;
+            height: 40px;
+        }
+
+        tbody tr:nth-child(even) { background-color: #f8fafc; }
+        tbody tr:nth-child(odd) { background-color: #ffffff; }
+        tr:hover { background-color: #f1f5f9 !important; }
+
+        .table-input {
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 4px;
+            font-weight: 600;
+            color: #334155;
+            outline: none;
+            text-align: inherit;
+            pointer-events: none;
+            font-family: 'Oswald', sans-serif;
+            font-size: 11px;
+            text-transform: uppercase;
+            width: 100%;
+        }
+
+        tr.editing .table-input {
+            background: white;
+            border-color: #3b82f6;
+            pointer-events: auto;
+        }
+
+        .header-field {
+            border: none;
+            border-bottom: 1px solid #94a3b8;
+            background: transparent;
+            font-weight: 600;
+            font-size: 12px;
+            padding: 0 4px;
+            outline: none;
+            text-transform: uppercase;
+            color: #1e293b;
+            font-family: 'Oswald', sans-serif;
+        }
+
+        .action-btn {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            font-family: 'Oswald', sans-serif;
+            border: none;
+            cursor: pointer;
+        }
+
+        .name-cell-input { min-width: 150px; }
+        .subject-cell-input { min-width: 160px; }
+
+        @media print {
+            .no-print { display: none; }
+            body { background: white; padding: 0; }
+            .table-container { border: none; height: auto; overflow: visible; }
+            th { background-color: #000 !important; color: white !important; border: 1px solid #333; position: static; }
+            td { border: 1px solid #ccc; position: static !important; }
+        }
+
+        /* Top bar */
+        .top-bar {
+            width: 100%;
+            background: white;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e5e7eb;
+            height: 48px;
+            box-sizing: border-box;
+            position: sticky;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+        }
+        
+        /* Auth Modal */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .auth-modal {
+            background: white;
+            width: 40%;
+            min-width: 300px;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .auth-body {
+            padding: 20px;
+        }
+        
+        .auth-field {
+            margin-bottom: 16px;
+        }
+        
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            font-family: 'Oswald', sans-serif;
+        }
+        
+        .auth-input:focus {
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .auth-error.show {
+            display: block;
+        }
+        
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            font-family: 'Oswald', sans-serif;
+        }
+        
+        .auth-button:hover {
+            background: #2563eb;
+        }
+        
+        .auth-button:active {
+            background: #1d4ed8;
+        }
+        
+        .auth-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* Skeleton Loading */
+        .skeleton-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: white;
+        }
+        
+        .skeleton-loading {
+            text-align: center;
+        }
+        
+        .skeleton-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #3b82f6;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        .skeleton-text {
+            background: #e5e7eb;
+            height: 20px;
+            width: 200px;
+            margin: 0.5rem auto;
+        }
+
+        /* Error container */
+        .error-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+
+<body class="h-full">
+
+    <!-- Mobile App Container (Flex Column) -->
+    <div id="app-wrapper" class="flex flex-col overflow-hidden">
+        <!-- Top bar -->
+        <div class="top-bar">
+            <div class="flex items-center gap-4">
+                <img src="https://i.postimg.cc/KcVvrkz3/Concept_20251225_020546_0000.png" class="w-8 h-8 border p-1" alt="Logo">
+                <div>
+                    <h1 class="text-lg font-bold text-gray-800 leading-none">MARKS ENTRY PORTAL</h1>
+                    <p class="text-[10px] tracking-widest text-gray-500 font-medium uppercase">Teacher Dashboard</p>
+                </div>
+            </div>
+            <div>
+                <button id="logout-button" class="bg-red-600 hover:bg-red-700 text-white px-4 py-1 text-[10px] font-bold tracking-widest uppercase">
+                    LOGOUT
+                </button>
+            </div>
+        </div>
+        
+        <!-- Main content area -->
+        <main id="chat-container" class="flex-1 overflow-y-auto">
+            <!-- Content will be dynamically loaded here -->
+        </main>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+
+        // State Manager for Marks Entry App
+        class MarksEntryStateManager {
+            constructor() {
+                this.schoolID = null;
+                this.examID = null;
+                this.subjectID = null;
+                this.teacherID = null;
+                this.examData = null;
+                this.classID = null;
+                this.sectionID = null;
+                this.academicYearID = null;
+                this.subjectData = null;
+                this.teacherData = null;
+                this.enrollments = [];
+                this.studentsData = {};
+                this.resultsData = {};
+                this.alerts = [];
+                this.editedRows = new Set();
+            }
+            
+            extractURLParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.schoolID = urlParams.get('schoolID');
+                this.examID = urlParams.get('examID');
+                this.subjectID = urlParams.get('subjectID');
+                
+                console.log("URL Parameters:", {
+                    schoolID: this.schoolID,
+                    examID: this.examID,
+                    subjectID: this.subjectID
+                });
+                
+                // Check if all required parameters are present
+                const requiredParams = ['schoolID', 'examID', 'subjectID'];
+                const missingParams = requiredParams.filter(param => !this[param]);
+                
+                if (missingParams.length > 0) {
+                    throw new Error(`Missing URL parameters: ${missingParams.join(', ')}`);
+                }
+            }
+            
+            getSchoolPath() {
+                return `schools/${this.schoolID}`;
+            }
+            
+            getExamPath() {
+                return `${this.getSchoolPath()}/exams/${this.examID}`;
+            }
+            
+            getSubjectPath() {
+                return `${this.getSchoolPath()}/subjects/${this.subjectID}`;
+            }
+            
+            getTeacherPath(teacherID) {
+                return `${this.getSchoolPath()}/teachers/${teacherID}`;
+            }
+            
+            getClassSubjectsPath() {
+                return `${this.getSchoolPath()}/classSubjects`;
+            }
+            
+            getEnrollmentsPath() {
+                return `${this.getSchoolPath()}/enrollments`;
+            }
+            
+            getStudentsPath() {
+                return `${this.getSchoolPath()}/students`;
+            }
+            
+            getResultsPath() {
+                return `${this.getSchoolPath()}/results`;
+            }
+            
+            getStudentResultSubjectPath(resultID) {
+                return `${this.getSchoolPath()}/results/${resultID}/subjects/${this.subjectID}`;
+            }
+            
+            markRowEdited(rowIndex) {
+                this.editedRows.add(rowIndex);
+            }
+            
+            clearEditedRows() {
+                this.editedRows.clear();
+            }
+            
+            hasEditedRows() {
+                return this.editedRows.size > 0;
+            }
+            
+            getEditedRows() {
+                return Array.from(this.editedRows);
+            }
+        }
+
+        // Marks Entry App
+        class MarksEntryApp {
+            constructor() {
+                this.stateManager = new MarksEntryStateManager();
+                this.db = null;
+                this.auth = null;
+                this.currentUser = null;
+                this.isInitialized = false;
+                
+                this.appWrapper = document.getElementById('app-wrapper');
+                this.chatContainer = document.getElementById('chat-container');
+                this.logoutButton = document.getElementById('logout-button');
+                
+                this.initialize();
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.showSkeletonLoading();
+                    
+                    // Extract URL parameters
+                    this.stateManager.extractURLParams();
+                    
+                    firebase.initializeApp(firebaseConfig);
+                    this.db = firebase.firestore();
+                    this.auth = firebase.auth();
+                    
+                    this.db.settings({
+                        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+                    });
+                    
+                    console.log("Firebase initialized successfully");
+                    this.isInitialized = true;
+                    
+                    this.setupAuthListener();
+                    this.setupEventListeners();
+                    
+                } catch (error) {
+                    console.error("Initialization error:", error);
+                    this.hideSkeletonLoading();
+                    this.showError(error.message || "Failed to initialize app. Please check URL parameters.");
+                }
+            }
+            
+            setupAuthListener() {
+                this.auth.onAuthStateChanged(async (user) => {
+                    console.log("Auth state changed:", user ? `User ${user.email} logged in` : "No user");
+                    
+                    if (user) {
+                        this.currentUser = user;
+                        this.stateManager.teacherID = user.uid;
+                        await this.loadAllData();
+                    } else {
+                        this.currentUser = null;
+                        this.hideSkeletonLoading();
+                        this.showSignInPrompt();
+                    }
+                });
+            }
+            
+            setupEventListeners() {
+                this.logoutButton?.addEventListener('click', () => {
+                    this.auth.signOut();
+                });
+            }
+            
+            async loadAllData() {
+                try {
+                    console.log("Starting to load all data...");
+                    
+                    // Load exam data first (contains classID, sectionID, academicYearID)
+                    await this.loadExamData();
+                    
+                    // Verify teacher permission
+                    await this.verifyTeacherPermission();
+                    
+                    // Load subject data
+                    await this.loadSubjectData();
+                    
+                    // Load teacher data
+                    await this.loadTeacherData();
+                    
+                    // Load all enrollments for the class-section-academicYear
+                    await this.loadEnrollments();
+                    
+                    // Load student data for each enrollment
+                    await this.loadAllStudentsData();
+                    
+                    // Load or create results for each student
+                    await this.loadOrCreateAllResults();
+                    
+                    this.hideSkeletonLoading();
+                    this.renderMarksEntryTable();
+                    
+                } catch (error) {
+                    console.error("Error loading all data:", error);
+                    this.showError(error.message || "Failed to load data. Please try again.");
+                }
+            }
+            
+            async loadExamData() {
+                try {
+                    console.log("Loading exam data...");
+                    const examPath = this.stateManager.getExamPath();
+                    console.log("Exam path:", examPath);
+                    
+                    const examDoc = await this.db.doc(examPath).get();
+                    
+                    if (!examDoc.exists) {
+                        throw new Error("Exam not found");
+                    }
+                    
+                    this.stateManager.examData = examDoc.data();
+                    console.log("Exam data:", this.stateManager.examData);
+                    
+                    // Extract required fields with validation
+                    this.stateManager.classID = this.stateManager.examData.classID;
+                    this.stateManager.sectionID = this.stateManager.examData.sectionID;
+                    this.stateManager.academicYearID = this.stateManager.examData.academicYearID;
+                    
+                    console.log("Extracted exam context:", {
+                        classID: this.stateManager.classID,
+                        sectionID: this.stateManager.sectionID,
+                        academicYearID: this.stateManager.academicYearID
+                    });
+                    
+                    // Validate required fields
+                    if (!this.stateManager.classID || !this.stateManager.sectionID || !this.stateManager.academicYearID) {
+                        throw new Error("Exam document is missing required fields (classID, sectionID, or academicYearID)");
+                    }
+                    
+                    return this.stateManager.examData;
+                    
+                } catch (error) {
+                    console.error("Error loading exam data:", error);
+                    throw error;
+                }
+            }
+            
+            async verifyTeacherPermission() {
+                try {
+                    console.log("Verifying teacher permission...");
+                    
+                    // Collect all values for debugging
+                    const teacherID = this.stateManager.teacherID;
+                    const subjectID = this.stateManager.subjectID;
+                    const classID = this.stateManager.classID;
+                    const sectionID = this.stateManager.sectionID;
+                    const academicYearID = this.stateManager.academicYearID;
+                    
+                    console.log("Permission check values:", {
+                        teacherID,
+                        subjectID,
+                        classID,
+                        sectionID,
+                        academicYearID
+                    });
+                    
+                    // Validate all values are present
+                    if (!teacherID) {
+                        throw new Error("Teacher ID is not set. Please sign in.");
+                    }
+                    if (!subjectID) {
+                        throw new Error("Subject ID is not set.");
+                    }
+                    if (!classID) {
+                        throw new Error("Class ID is not set. Exam data may be incomplete.");
+                    }
+                    if (!sectionID) {
+                        throw new Error("Section ID is not set. Exam data may be incomplete.");
+                    }
+                    if (!academicYearID) {
+                        throw new Error("Academic Year ID is not set. Exam data may be incomplete.");
+                    }
+                    
+                    const classSubjectsPath = this.stateManager.getClassSubjectsPath();
+                    console.log("ClassSubjects path:", classSubjectsPath);
+                    
+                    // Build query with non-null values
+                    let query = this.db.collection(classSubjectsPath);
+                    
+                    // Add each condition separately
+                    query = query.where('teacherID', '==', teacherID);
+                    query = query.where('subjectID', '==', subjectID);
+                    query = query.where('classID', '==', classID);
+                    query = query.where('sectionID', '==', sectionID);
+                    query = query.where('academicYearID', '==', academicYearID);
+                    query = query.limit(1);
+                    
+                    const querySnapshot = await query.get();
+                    
+                    if (querySnapshot.empty) {
+                        throw new Error("You are not authorized to enter marks for this subject. Please contact administrator.");
+                    }
+                    
+                    console.log("Teacher permission verified successfully");
+                    return true;
+                    
+                } catch (error) {
+                    console.error("Error verifying teacher permission:", error);
+                    throw error;
+                }
+            }
+            
+            async loadSubjectData() {
+                try {
+                    console.log("Loading subject data...");
+                    const subjectPath = this.stateManager.getSubjectPath();
+                    const subjectDoc = await this.db.doc(subjectPath).get();
+                    
+                    if (!subjectDoc.exists) {
+                        throw new Error("Subject not found");
+                    }
+                    
+                    this.stateManager.subjectData = subjectDoc.data();
+                    console.log("Subject data loaded:", this.stateManager.subjectData);
+                    return this.stateManager.subjectData;
+                    
+                } catch (error) {
+                    console.error("Error loading subject data:", error);
+                    // Don't throw error, continue with subjectID only
+                    this.stateManager.subjectData = { subjectName: this.stateManager.subjectID };
+                }
+            }
+            
+            async loadTeacherData() {
+                try {
+                    console.log("Loading teacher data...");
+                    const teacherPath = this.stateManager.getTeacherPath(this.stateManager.teacherID);
+                    const teacherDoc = await this.db.doc(teacherPath).get();
+                    
+                    if (!teacherDoc.exists) {
+                        throw new Error("Teacher profile not found");
+                    }
+                    
+                    this.stateManager.teacherData = teacherDoc.data();
+                    console.log("Teacher data loaded:", this.stateManager.teacherData);
+                    return this.stateManager.teacherData;
+                    
+                } catch (error) {
+                    console.error("Error loading teacher data:", error);
+                    // Continue with minimal teacher data
+                    this.stateManager.teacherData = { teacherName: this.currentUser?.email || 'Teacher' };
+                }
+            }
+            
+            async loadEnrollments() {
+                try {
+                    console.log("Loading enrollments...");
+                    const enrollmentsPath = this.stateManager.getEnrollmentsPath();
+                    
+                    // Validate required fields
+                    if (!this.stateManager.classID || !this.stateManager.sectionID || !this.stateManager.academicYearID) {
+                        throw new Error("Cannot load enrollments: missing classID, sectionID, or academicYearID");
+                    }
+                    
+                    console.log("Enrollment query criteria:", {
+                        classID: this.stateManager.classID,
+                        sectionID: this.stateManager.sectionID,
+                        academicYearID: this.stateManager.academicYearID
+                    });
+                    
+                    const querySnapshot = await this.db.collection(enrollmentsPath)
+                        .where('classID', '==', this.stateManager.classID)
+                        .where('sectionID', '==', this.stateManager.sectionID)
+                        .where('academicYearID', '==', this.stateManager.academicYearID)
+                        .where('active', '==', true)
+                        .orderBy('rollNumber')
+                        .get();
+                    
+                    if (querySnapshot.empty) {
+                        console.warn("No active enrollments found for this class-section");
+                        this.stateManager.enrollments = [];
+                        return [];
+                    }
+                    
+                    this.stateManager.enrollments = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    
+                    console.log("Enrollments loaded:", this.stateManager.enrollments.length, "students");
+                    return this.stateManager.enrollments;
+                    
+                } catch (error) {
+                    console.error("Error loading enrollments:", error);
+                    throw error;
+                }
+            }
+            
+            async loadAllStudentsData() {
+                try {
+                    console.log("Loading students data...");
+                    const studentsPath = this.stateManager.getStudentsPath();
+                    
+                    for (const enrollment of this.stateManager.enrollments) {
+                        try {
+                            const studentPath = `${studentsPath}/${enrollment.studentID}`;
+                            const studentDoc = await this.db.doc(studentPath).get();
+                            
+                            if (studentDoc.exists) {
+                                this.stateManager.studentsData[enrollment.studentID] = studentDoc.data();
+                            } else {
+                                console.warn(`Student not found: ${enrollment.studentID}`);
+                                this.stateManager.studentsData[enrollment.studentID] = {
+                                    studentName: `Student ${enrollment.studentID}`,
+                                    registrationNo: enrollment.studentID
+                                };
+                            }
+                        } catch (error) {
+                            console.error(`Error loading student ${enrollment.studentID}:`, error);
+                        }
+                    }
+                    
+                    console.log("Students data loaded for", Object.keys(this.stateManager.studentsData).length, "students");
+                    
+                } catch (error) {
+                    console.error("Error loading students data:", error);
+                    // Continue with empty student data
+                }
+            }
+            
+            async loadOrCreateAllResults() {
+                try {
+                    console.log("Loading/creating results...");
+                    const resultsPath = this.stateManager.getResultsPath();
+                    
+                    for (const enrollment of this.stateManager.enrollments) {
+                        const studentID = enrollment.studentID;
+                        const resultID = `${this.stateManager.examID}_${studentID}`;
+                        
+                        try {
+                            const resultPath = `${resultsPath}/${resultID}`;
+                            const resultDoc = await this.db.doc(resultPath).get();
+                            
+                            if (!resultDoc.exists) {
+                                // Create result document if it doesn't exist
+                                console.log(`Creating result for student ${studentID}`);
+                                await this.db.doc(resultPath).set({
+                                    examID: this.stateManager.examID,
+                                    studentID: studentID,
+                                    enrollmentID: enrollment.id,
+                                    GPA: 0,
+                                    percentage: 0,
+                                    locked: false,
+                                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                                });
+                                
+                                this.stateManager.resultsData[studentID] = {
+                                    id: resultID,
+                                    examID: this.stateManager.examID,
+                                    studentID: studentID,
+                                    enrollmentID: enrollment.id,
+                                    GPA: 0,
+                                    percentage: 0,
+                                    locked: false
+                                };
+                            } else {
+                                this.stateManager.resultsData[studentID] = {
+                                    id: resultID,
+                                    ...resultDoc.data()
+                                };
+                            }
+                            
+                            // Load subject marks if they exist
+                            await this.loadSubjectMarks(resultID, studentID);
+                            
+                        } catch (error) {
+                            console.error(`Error processing result for student ${studentID}:`, error);
+                        }
+                    }
+                    
+                    console.log("Results loaded/created for", Object.keys(this.stateManager.resultsData).length, "students");
+                    
+                } catch (error) {
+                    console.error("Error loading/creating results:", error);
+                    throw error;
+                }
+            }
+            
+            async loadSubjectMarks(resultID, studentID) {
+                try {
+                    if (!this.stateManager.resultsData[studentID]) {
+                        this.stateManager.resultsData[studentID] = {};
+                    }
+                    
+                    if (!this.stateManager.resultsData[studentID].subjects) {
+                        this.stateManager.resultsData[studentID].subjects = {};
+                    }
+                    
+                    const subjectPath = this.stateManager.getStudentResultSubjectPath(resultID);
+                    const subjectDoc = await this.db.doc(subjectPath).get();
+                    
+                    if (subjectDoc.exists) {
+                        this.stateManager.resultsData[studentID].subjects[this.stateManager.subjectID] = subjectDoc.data();
+                    } else {
+                        // Initialize empty subject data
+                        this.stateManager.resultsData[studentID].subjects[this.stateManager.subjectID] = {
+                            theoryMarks: '',
+                            practicalMarks: '',
+                            theoryGrade: '',
+                            practicalGrade: '',
+                            finalMarks: '',
+                            finalGrade: '',
+                            gradePoint: '',
+                            enteredBy: '',
+                            updatedAt: null
+                        };
+                    }
+                    
+                } catch (error) {
+                    console.error(`Error loading subject marks for student ${studentID}:`, error);
+                }
+            }
+            
+            // Show skeleton loading screen
+            showSkeletonLoading() {
+                const skeletonHtml = `
+                    <div class="skeleton-container">
+                        <div class="skeleton-loading">
+                            <div class="skeleton-spinner"></div>
+                            <div class="skeleton-text"></div>
+                            <div class="skeleton-text" style="width: 150px;"></div>
+                        </div>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = skeletonHtml;
+            }
+            
+            // Hide skeleton loading
+            hideSkeletonLoading() {
+                // Loading will be hidden when content is rendered
+            }
+            
+            showError(message) {
+                console.error(message);
+                
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="error-title">Error</div>
+                        <div class="error-message">
+                            ${message}
+                        </div>
+                        <button id="retry-button" class="auth-button" style="background: #3b82f6;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('retry-button')?.addEventListener('click', () => {
+                    window.location.reload();
+                });
+            }
+            
+            showSignInPrompt() {
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-sign-in-alt"></i>
+                        </div>
+                        <div class="error-title">Sign In Required</div>
+                        <div class="error-message">
+                            You need to sign in to access the Marks Entry Portal.
+                        </div>
+                        <button id="sign-in-prompt-button" class="auth-button">
+                            Sign In to Continue
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('sign-in-prompt-button')?.addEventListener('click', () => {
+                    this.showAuthModal();
+                });
+            }
+            
+            showAuthModal() {
+                const authModal = document.createElement('div');
+                authModal.className = 'auth-modal-overlay';
+                authModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Sign In to Marks Entry Portal</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="auth-email" class="auth-input" placeholder="teacher@example.com">
+                                <div id="email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="auth-password" class="auth-input" placeholder="••••••••">
+                                <div id="password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="sign-in-button" class="auth-button">Sign In</button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(authModal);
+                this.setupAuthModalEvents(authModal);
+            }
+            
+            setupAuthModalEvents(authModal) {
+                const signInButton = document.getElementById('sign-in-button');
+                const emailInput = document.getElementById('auth-email');
+                const passwordInput = document.getElementById('auth-password');
+                
+                signInButton.addEventListener('click', async () => {
+                    await this.signInWithEmail(emailInput, passwordInput, authModal);
+                });
+                
+                emailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        passwordInput.focus();
+                    }
+                });
+                
+                passwordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.signInWithEmail(emailInput, passwordInput, authModal);
+                    }
+                });
+                
+                authModal.addEventListener('click', (e) => {
+                    if (e.target === authModal) {
+                        authModal.remove();
+                    }
+                });
+            }
+            
+            async signInWithEmail(emailInput, passwordInput, authModal) {
+                const email = emailInput.value.trim();
+                const password = passwordInput.value.trim();
+                const signInButton = document.getElementById('sign-in-button');
+                const emailError = document.getElementById('email-error');
+                const passwordError = document.getElementById('password-error');
+                
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter your password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                signInButton.textContent = 'Signing In...';
+                signInButton.classList.add('loading');
+                
+                try {
+                    await this.auth.signInWithEmailAndPassword(email, password);
+                    authModal.remove();
+                    
+                } catch (error) {
+                    console.error("Sign in error:", error);
+                    
+                    signInButton.textContent = 'Sign In';
+                    signInButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-disabled':
+                            emailError.textContent = 'This account has been disabled';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-not-found':
+                            emailError.textContent = 'No account found with this email';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/wrong-password':
+                            passwordError.textContent = 'Incorrect password';
+                            passwordError.classList.add('show');
+                            break;
+                        case 'auth/too-many-requests':
+                            passwordError.textContent = 'Too many failed attempts. Try again later';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            passwordError.textContent = 'Failed to sign in. Please try again';
+                            passwordError.classList.add('show');
+                    }
+                }
+            }
+            
+            async saveRow(rowIndex) {
+                try {
+                    const enrollment = this.stateManager.enrollments[rowIndex];
+                    if (!enrollment) {
+                        throw new Error("Student not found");
+                    }
+                    
+                    const studentID = enrollment.studentID;
+                    const resultID = this.stateManager.resultsData[studentID]?.id;
+                    
+                    if (!resultID) {
+                        throw new Error("Result not found for student");
+                    }
+                    
+                    // Get the row element
+                    const rows = document.querySelectorAll('#dataTable tbody tr');
+                    const row = rows[rowIndex];
+                    
+                    // Collect data from inputs
+                    const theoryMarks = row.querySelector('td:nth-child(8) input').value.trim();
+                    const practicalMarks = row.querySelector('td:nth-child(9) input').value.trim();
+                    const finalMarks = row.querySelector('td:nth-child(10) input').value.trim();
+                    const theoryGrade = row.querySelector('td:nth-child(11) input').value.trim();
+                    const practicalGrade = row.querySelector('td:nth-child(12) input').value.trim();
+                    const finalGrade = row.querySelector('td:nth-child(13) input').value.trim();
+                    const gradePoint = row.querySelector('td:nth-child(14) input').value.trim();
+                    
+                    // Validate marks
+                    if (!theoryMarks && !practicalMarks) {
+                        this.showAlert('warning', 'Please enter at least theory or practical marks');
+                        return;
+                    }
+                    
+                    // Prepare update data
+                    const updateData = {
+                        theoryMarks: theoryMarks || '',
+                        practicalMarks: practicalMarks || '',
+                        finalMarks: finalMarks || '',
+                        theoryGrade: theoryGrade || '',
+                        practicalGrade: practicalGrade || '',
+                        finalGrade: finalGrade || '',
+                        gradePoint: gradePoint || '',
+                        enteredBy: this.stateManager.teacherID,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    // Update in Firestore
+                    const subjectPath = this.stateManager.getStudentResultSubjectPath(resultID);
+                    await this.db.doc(subjectPath).set(updateData, { merge: true });
+                    
+                    // Update local state
+                    if (!this.stateManager.resultsData[studentID].subjects) {
+                        this.stateManager.resultsData[studentID].subjects = {};
+                    }
+                    this.stateManager.resultsData[studentID].subjects[this.stateManager.subjectID] = updateData;
+                    
+                    // Remove from edited rows
+                    this.stateManager.editedRows.delete(rowIndex);
+                    
+                    // Show success message
+                    this.showAlert('success', 'Marks saved successfully!');
+                    
+                    // Exit edit mode
+                    this.toggleEditMode(rowIndex);
+                    
+                    console.log(`Saved marks for student ${studentID}`);
+                    
+                } catch (error) {
+                    console.error("Error saving row:", error);
+                    this.showAlert('error', 'Failed to save marks. Please try again.');
+                }
+            }
+            
+            async saveAllEditedRows() {
+                try {
+                    const editedRows = this.stateManager.getEditedRows();
+                    if (editedRows.length === 0) {
+                        this.showAlert('warning', 'No changes to save.');
+                        return;
+                    }
+                    
+                    this.showAlert('info', `Saving ${editedRows.length} student(s)...`);
+                    
+                    // Save each edited row
+                    for (const rowIndex of editedRows) {
+                        await this.saveRow(rowIndex);
+                    }
+                    
+                    this.stateManager.clearEditedRows();
+                    this.showAlert('success', 'All marks saved successfully!');
+                    
+                } catch (error) {
+                    console.error("Error saving all rows:", error);
+                    this.showAlert('error', 'Failed to save all marks. Please try again.');
+                }
+            }
+            
+            toggleEditMode(rowIndex) {
+                const rows = document.querySelectorAll('#dataTable tbody tr');
+                const row = rows[rowIndex];
+                const isEditing = row.classList.toggle('editing');
+                
+                const editButton = row.querySelector('.edit-trigger');
+                if (editButton) {
+                    editButton.textContent = isEditing ? 'LOCK' : 'EDIT';
+                    editButton.classList.toggle('bg-orange-500', isEditing);
+                    editButton.classList.toggle('bg-blue-100', !isEditing);
+                    editButton.classList.toggle('text-blue-700', !isEditing);
+                    editButton.classList.toggle('text-white', isEditing);
+                }
+                
+                // If entering edit mode, mark as edited
+                if (isEditing) {
+                    this.stateManager.markRowEdited(rowIndex);
+                }
+            }
+            
+            showAlert(type, message) {
+                // Remove existing alerts
+                const existingAlerts = document.querySelectorAll('.alert');
+                existingAlerts.forEach(alert => alert.remove());
+                
+                // Create alert element
+                const alertDiv = document.createElement('div');
+                alertDiv.className = `alert alert-${type}`;
+                alertDiv.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span>${message}</span>
+                        <button class="text-sm font-bold ml-4" onclick="this.parentElement.parentElement.remove()">×</button>
+                    </div>
+                `;
+                
+                // Insert at the top of chat container
+                const firstChild = this.chatContainer.firstChild;
+                if (firstChild) {
+                    this.chatContainer.insertBefore(alertDiv, firstChild);
+                } else {
+                    this.chatContainer.appendChild(alertDiv);
+                }
+                
+                // Auto-remove after 5 seconds
+                setTimeout(() => {
+                    if (alertDiv.parentElement) {
+                        alertDiv.remove();
+                    }
+                }, 5000);
+            }
+            
+            calculateFinalMarks(rowIndex) {
+                const rows = document.querySelectorAll('#dataTable tbody tr');
+                const row = rows[rowIndex];
+                
+                const theoryInput = row.querySelector('td:nth-child(8) input');
+                const practicalInput = row.querySelector('td:nth-child(9) input');
+                const finalInput = row.querySelector('td:nth-child(10) input');
+                
+                const theoryMarks = parseFloat(theoryInput.value) || 0;
+                const practicalMarks = parseFloat(practicalInput.value) || 0;
+                
+                // Auto-calculate final marks as sum
+                finalInput.value = theoryMarks + practicalMarks;
+                
+                // Mark row as edited
+                this.stateManager.markRowEdited(rowIndex);
+            }
+            
+            renderMarksEntryTable() {
+                const examData = this.stateManager.examData;
+                const subjectData = this.stateManager.subjectData;
+                const teacherData = this.stateManager.teacherData;
+                const enrollments = this.stateManager.enrollments;
+                
+                if (!enrollments || enrollments.length === 0) {
+                    this.showError("No students found for this class-section");
+                    return;
+                }
+                
+                // Generate table rows
+                let tableRowsHtml = '';
+                
+                enrollments.forEach((enrollment, index) => {
+                    const studentID = enrollment.studentID;
+                    const studentData = this.stateManager.studentsData[studentID] || {};
+                    const resultData = this.stateManager.resultsData[studentID] || {};
+                    const subjectMarks = resultData.subjects?.[this.stateManager.subjectID] || {};
+                    
+                    // Format date of birth
+                    let dateOfBirth = '';
+                    if (studentData.dateOfBirth) {
+                        if (studentData.dateOfBirth.toDate) {
+                            dateOfBirth = studentData.dateOfBirth.toDate().toISOString().split('T')[0];
+                        } else if (typeof studentData.dateOfBirth === 'string') {
+                            dateOfBirth = studentData.dateOfBirth;
+                        }
+                    }
+                    
+                    tableRowsHtml += `
+                        <tr>
+                            <td class="text-center font-bold">${index + 1}</td>
+                            <td class="no-print text-center">
+                                <button onclick="app.toggleEditMode(${index})" class="edit-trigger action-btn bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                    EDIT
+                                </button>
+                            </td>
+                            <td><input type="text" class="table-input name-cell-input" value="${studentData.studentName || ''}" readonly></td>
+                            <td><input type="text" class="table-input" value="${studentData.registrationNo || studentID}" readonly></td>
+                            <td><input type="text" class="table-input w-12 text-center" value="${enrollment.rollNumber || ''}" readonly></td>
+                            <td><input type="text" class="table-input w-24 text-center" value="${dateOfBirth}" readonly></td>
+                            <td><input type="text" class="table-input subject-cell-input" value="${subjectData.subjectName || this.stateManager.subjectID}" readonly></td>
+                            <td><input type="text" class="table-input w-16 text-center" value="${subjectData.creditHours || ''}" readonly></td>
+                            <td><input type="number" min="0" max="100" class="table-input w-12 text-center" 
+                                   value="${subjectMarks.theoryMarks || ''}" 
+                                   onchange="app.calculateFinalMarks(${index})"></td>
+                            <td><input type="number" min="0" max="100" class="table-input w-12 text-center" 
+                                   value="${subjectMarks.practicalMarks || ''}" 
+                                   onchange="app.calculateFinalMarks(${index})"></td>
+                            <td><input type="number" min="0" max="200" class="table-input w-16 text-center font-bold" 
+                                   value="${subjectMarks.finalMarks || ''}"></td>
+                            <td><input type="text" class="table-input w-12 text-center" value="${subjectMarks.theoryGrade || ''}"></td>
+                            <td><input type="text" class="table-input w-12 text-center" value="${subjectMarks.practicalGrade || ''}"></td>
+                            <td><input type="text" class="table-input w-16 text-center text-blue-700 font-bold" value="${subjectMarks.finalGrade || ''}"></td>
+                            <td><input type="text" class="table-input w-16 text-center" value="${subjectMarks.gradePoint || ''}"></td>
+                            <td class="no-print text-center">
+                                <button onclick="app.saveRow(${index})" class="action-btn bg-gray-200 text-gray-700 hover:bg-green-600 hover:text-white">
+                                    UPDATE
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                const marksEntryHtml = `
+                    <main class="w-[98%] mx-auto space-y-4 p-2 md:p-4">
+                        
+                        <!-- Header Area -->
+                        <div class="bg-white p-4 shadow-sm border-t-4 border-[#1a2a3a] space-y-4">
+                            <div class="flex flex-wrap justify-between items-center gap-3">
+                                <div class="flex items-center gap-4">
+                                    <img src="https://i.postimg.cc/KcVvrkz3/Concept_20251225_020546_0000.png" class="w-10 h-10 border p-1" alt="Logo">
+                                    <div>
+                                        <h1 class="text-xl font-bold text-gray-800 leading-none">MARKS ENTRY SYSTEM</h1>
+                                        <p class="text-[10px] tracking-widest text-gray-500 font-medium uppercase">Teacher: ${teacherData.teacherName || this.currentUser?.email || 'Teacher'}</p>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap gap-x-6 gap-y-2 text-[11px] font-bold text-gray-600 bg-gray-50 p-3 border border-gray-100 flex-grow max-w-4xl mx-4">
+                                    <div class="flex items-center">CLASS: <input type="text" class="header-field w-24" value="${this.stateManager.classID || ''}" readonly></div>
+                                    <div class="flex items-center">ACADEMIC YEAR: <input type="text" class="header-field w-28" value="${this.stateManager.academicYearID || ''}" readonly></div>
+                                    <div class="flex items-center">EXAM: <input type="text" class="header-field w-32" value="${examData?.examTitle || this.stateManager.examID}" readonly></div>
+                                    <div class="flex items-center">SUBJECT: <input type="text" class="header-field w-40" value="${subjectData.subjectName || this.stateManager.subjectID}" readonly></div>
+                                    <div class="flex items-center">TEACHER: <input type="text" class="header-field w-40" value="${teacherData.teacherName || this.currentUser?.email || ''}" readonly></div>
+                                </div>
+                                
+                                <div class="flex items-center gap-2 no-print">
+                                    <button id="update-all-button" class="bg-[#1a2a3a] hover:bg-black text-white px-4 py-2 text-[10px] font-bold tracking-widest uppercase flex items-center gap-2 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
+                                        Update All Records
+                                    </button>
+                                    <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-[10px] font-bold tracking-widest uppercase flex items-center gap-2 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                        Print Record
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-container shadow-sm border-b-2 border-gray-300">
+                            <table id="dataTable">
+                                <thead>
+                                    <tr>
+                                        <th rowspan="2">S.N.</th>
+                                        <th rowspan="2" class="no-print">ACTION</th>
+                                        <th rowspan="2">Student Name</th>
+                                        <th rowspan="2">Student ID</th>
+                                        <th rowspan="2">Roll No</th>
+                                        <th rowspan="2">Date of Birth</th>
+                                        <th rowspan="2">Subjects</th>
+                                        <th rowspan="2">Credit Hours</th>
+                                        <th colspan="2">Obtained Marks</th>
+                                        <th rowspan="2">Final Mark</th>
+                                        <th colspan="2">Obtained Grade</th>
+                                        <th rowspan="2">Final Grade</th>
+                                        <th rowspan="2">Grade Point</th>
+                                        <th rowspan="2" class="no-print">ACTION</th>
+                                    </tr>
+                                    <tr>
+                                        <th class="bg-[#243447]">TH</th>
+                                        <th class="bg-[#243447]">PR</th>
+                                        <th class="bg-[#243447]">TH</th>
+                                        <th class="bg-[#243447]">PR</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${tableRowsHtml}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="flex justify-between items-center no-print px-1 py-4">
+                            <p class="text-[10px] text-gray-400 font-medium uppercase tracking-widest">Dilshad Management System v2.0 • Showing ${enrollments.length} Students</p>
+                            <div class="flex items-center gap-2">
+                                <span id="edited-count" class="text-[10px] font-bold">
+                                    ${this.stateManager.hasEditedRows() ? `${this.stateManager.editedRows.size} unsaved changes` : 'All changes saved'}
+                                </span>
+                                <button id="save-all-button" class="bg-green-600 hover:bg-green-700 text-white px-6 py-2 text-[10px] font-bold tracking-widest uppercase shadow-md transition-all flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                                    Save All Changes
+                                </button>
+                            </div>
+                        </div>
+                    </main>
+                `;
+                
+                this.chatContainer.innerHTML = marksEntryHtml;
+                this.chatContainer.scrollTop = 0;
+                
+                // Add event listeners
+                document.getElementById('update-all-button')?.addEventListener('click', () => {
+                    this.saveAllEditedRows();
+                });
+                
+                document.getElementById('save-all-button')?.addEventListener('click', () => {
+                    this.saveAllEditedRows();
+                });
+                
+                // Update edited count display
+                const updateEditedCount = () => {
+                    const editedCount = document.getElementById('edited-count');
+                    if (editedCount) {
+                        if (this.stateManager.hasEditedRows()) {
+                            editedCount.textContent = `${this.stateManager.editedRows.size} unsaved changes`;
+                            editedCount.className = 'text-[10px] font-bold text-orange-600';
+                        } else {
+                            editedCount.textContent = 'All changes saved';
+                            editedCount.className = 'text-[10px] font-bold text-green-600';
+                        }
+                    }
+                };
+                
+                // Initial update
+                updateEditedCount();
+                
+                // Update edited count display periodically
+                setInterval(updateEditedCount, 1000);
+            }
+        }
+        
+        // ===== INITIALIZE APP =====
+        let app;
+        
+        window.addEventListener('load', () => {
+            app = new MarksEntryApp();
+        });
+        
+        // Make app available globally for debugging
+        window.app = app;
+    </script>
+</body>
+</html>
