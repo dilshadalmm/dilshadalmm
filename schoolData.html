@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Management Data Writer</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        * {
+            border-radius: 0 !important;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f8fafc;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card {
+            background: white;
+            border: 1px solid #e2e8f0;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #2563eb;
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #059669;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            margin: 1rem 0;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .log-container {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 1rem;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #334155;
+        }
+        
+        .log-entry {
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #334155;
+        }
+        
+        .log-success {
+            color: #34d399;
+        }
+        
+        .log-error {
+            color: #f87171;
+        }
+        
+        .log-warning {
+            color: #fbbf24;
+        }
+        
+        .log-info {
+            color: #60a5fa;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-card {
+            background: white;
+            padding: 1rem;
+            border-left: 4px solid #3b82f6;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #1e293b;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: #64748b;
+        }
+        
+        .auth-container {
+            background: white;
+            padding: 2rem;
+            max-width: 400px;
+            margin: 4rem auto;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            font-size: 1rem;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Authentication Screen -->
+        <div id="auth-screen" class="auth-container" style="display: none;">
+            <h2 class="text-2xl font-bold text-center mb-6">Sign In to Write Data</h2>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="auth-email" class="form-input" placeholder="admin@example.com">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input type="password" id="auth-password" class="form-input" placeholder="••••••••">
+            </div>
+            <div id="auth-error" class="text-red-500 text-sm mb-4" style="display: none;"></div>
+            <button id="signin-btn" class="btn btn-primary w-full">Sign In</button>
+            <p class="text-center text-sm text-gray-600 mt-4">
+                Any valid Firebase user can write data
+            </p>
+        </div>
+
+        <!-- Main Data Writer Screen -->
+        <div id="main-screen" style="display: none;">
+            <div class="header">
+                <h1 class="text-3xl font-bold">School Management Data Writer</h1>
+                <p class="opacity-90">Write complete school management structure to Firebase with sample data</p>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-bold mb-4">Firebase Configuration</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-sm text-gray-600">Project ID: <span id="project-id" class="font-mono">geobazarr</span></p>
+                        <p class="text-sm text-gray-600">Current User: <span id="current-user" class="font-medium"></span></p>
+                    </div>
+                    <div class="text-right">
+                        <button id="logout-btn" class="btn btn-danger">Sign Out</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-bold mb-4">Data Configuration</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div class="form-group">
+                        <label class="form-label">School ID</label>
+                        <input type="text" id="school-id" class="form-input" value="DILSHAD_SCIENCE">
+                        <p class="text-xs text-gray-500 mt-1">Will be created as document ID in schools collection</p>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Academic Year</label>
+                        <input type="text" id="academic-year" class="form-input" value="2024-2025">
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="form-group">
+                        <label class="form-label">Number of Students</label>
+                        <input type="number" id="student-count" class="form-input" value="10" min="1" max="100">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Number of Teachers</label>
+                        <input type="number" id="teacher-count" class="form-input" value="5" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Number of Classes</label>
+                        <input type="number" id="class-count" class="form-input" value="3" min="1" max="10">
+                    </div>
+                </div>
+            </div>
+
+            <div class="stats-grid" id="stats-container">
+                <!-- Stats will be populated by JavaScript -->
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-bold mb-4">Data Generation Progress</h2>
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill"></div>
+                </div>
+                <div class="flex justify-between text-sm text-gray-600 mb-2">
+                    <span>Progress: <span id="progress-text">0%</span></span>
+                    <span id="current-step">Ready</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-bold mb-4">Actions</h2>
+                <div class="flex flex-wrap gap-2">
+                    <button id="write-data-btn" class="btn btn-success">
+                        <span id="write-btn-text">Write All Data to Firebase</span>
+                        <span id="write-loading" class="loading" style="display: none; margin-left: 8px;"></span>
+                    </button>
+                    <button id="clear-data-btn" class="btn btn-danger">Clear All Data</button>
+                    <button id="view-data-btn" class="btn btn-primary">View in Firebase Console</button>
+                </div>
+                <p class="text-sm text-gray-600 mt-2">
+                    This will create a complete school management structure with sample data. Existing data will be overwritten.
+                </p>
+            </div>
+
+            <div class="card">
+                <h2 class="text-xl font-bold mb-4">Execution Log</h2>
+                <div class="log-container" id="log-container">
+                    <div class="log-entry log-info">Ready to write data...</div>
+                </div>
+                <div class="flex justify-between mt-2">
+                    <button id="clear-log-btn" class="btn btn-primary text-sm">Clear Log</button>
+                    <span class="text-sm text-gray-600" id="log-count">1 entry</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration (same as school.html)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+
+        // Initialize Firebase
+        let db;
+        let auth;
+        let currentUser = null;
+        let isWriting = false;
+
+        // DOM Elements
+        const authScreen = document.getElementById('auth-screen');
+        const mainScreen = document.getElementById('main-screen');
+        const logContainer = document.getElementById('log-container');
+        const statsContainer = document.getElementById('stats-container');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+        const currentStep = document.getElementById('current-step');
+
+        // Sample Data Generators
+        const sampleData = {
+            provinces: ['Bagmati', 'Gandaki', 'Karnali', 'Province 1', 'Province 2'],
+            districts: ['Kathmandu', 'Lalitpur', 'Bhaktapur', 'Pokhara', 'Butwal'],
+            municipalities: ['Kathmandu Metro', 'Lalitpur Metro', 'Pokhara Metro', 'Dharan Sub-Metro', 'Biratnagar Metro'],
+            firstNames: ['Aarav', 'Bibek', 'Chandra', 'Dipika', 'Eshan', 'Falak', 'Gita', 'Hari', 'Ishwor', 'Jamuna', 'Krishna', 'Laxmi', 'Manoj', 'Nisha', 'Om', 'Prakash', 'Rama', 'Sita', 'Tara', 'Umesh'],
+            lastNames: ['Shrestha', 'Gurung', 'Rai', 'Magar', 'Tamang', 'Karki', 'Limbu', 'Sherpa', 'Chhetri', 'Bhandari', 'Bhattarai', 'Khadka', 'Thapa', 'Maharjan', 'Pradhan', 'Koirala', 'Adhikari', 'Basnet', 'Dhakal', 'Rana'],
+            subjects: ['Mathematics', 'Science', 'English', 'Nepali', 'Social Studies', 'Computer Science', 'Health & Physical Education', 'Moral Education', 'Optional Mathematics', 'Economics'],
+            teacherSubjects: ['Math Teacher', 'Science Teacher', 'English Teacher', 'Nepali Teacher', 'Social Studies Teacher', 'Computer Teacher', 'Sports Teacher'],
+            classNames: ['Nursery', 'Kindergarten', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'],
+            sectionNames: ['A', 'B', 'C', 'D'],
+            feeItems: [
+                { name: 'Tuition Fee', amount: 5000 },
+                { name: 'Examination Fee', amount: 1000 },
+                { name: 'Library Fee', amount: 500 },
+                { name: 'Sports Fee', amount: 300 },
+                { name: 'Computer Fee', amount: 800 },
+                { name: 'Lab Fee', amount: 700 }
+            ],
+            discountTypes: [
+                { name: 'Sibling Discount', type: 'percentage', value: 10 },
+                { name: 'Staff Child Discount', type: 'percentage', value: 20 },
+                { name: 'Merit Scholarship', type: 'flat', value: 2000 },
+                { name: 'Early Payment Discount', type: 'percentage', value: 5 }
+            ]
+        };
+
+        // Initialize the app
+        function initApp() {
+            try {
+                firebase.initializeApp(firebaseConfig);
+                db = firebase.firestore();
+                auth = firebase.auth();
+                
+                logMessage('Firebase initialized successfully', 'success');
+                
+                // Check auth state
+                auth.onAuthStateChanged((user) => {
+                    if (user) {
+                        currentUser = user;
+                        document.getElementById('current-user').textContent = user.email;
+                        authScreen.style.display = 'none';
+                        mainScreen.style.display = 'block';
+                        updateStats();
+                        logMessage(`Signed in as ${user.email}`, 'success');
+                    } else {
+                        authScreen.style.display = 'block';
+                        mainScreen.style.display = 'none';
+                        logMessage('Please sign in to continue', 'warning');
+                    }
+                });
+                
+            } catch (error) {
+                logMessage(`Firebase initialization error: ${error.message}`, 'error');
+            }
+        }
+
+        // Authentication functions
+        document.getElementById('signin-btn').addEventListener('click', async () => {
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            const errorElement = document.getElementById('auth-error');
+            
+            if (!email || !password) {
+                errorElement.textContent = 'Please enter both email and password';
+                errorElement.style.display = 'block';
+                return;
+            }
+            
+            try {
+                errorElement.style.display = 'none';
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                errorElement.textContent = error.message;
+                errorElement.style.display = 'block';
+                logMessage(`Sign in error: ${error.message}`, 'error');
+            }
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            try {
+                await auth.signOut();
+                logMessage('Signed out successfully', 'success');
+            } catch (error) {
+                logMessage(`Sign out error: ${error.message}`, 'error');
+            }
+        });
+
+        // Logging functions
+        function logMessage(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // Update log count
+            const count = logContainer.children.length;
+            document.getElementById('log-count').textContent = `${count} ${count === 1 ? 'entry' : 'entries'}`;
+            
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        document.getElementById('clear-log-btn').addEventListener('click', () => {
+            logContainer.innerHTML = '<div class="log-entry log-info">Log cleared</div>';
+            document.getElementById('log-count').textContent = '1 entry';
+        });
+
+        // Progress functions
+        function updateProgress(step, totalSteps, message) {
+            const percentage = Math.round((step / totalSteps) * 100);
+            progressFill.style.width = `${percentage}%`;
+            progressText.textContent = `${percentage}%`;
+            currentStep.textContent = message;
+        }
+
+        // Statistics functions
+        function updateStats() {
+            const schoolId = document.getElementById('school-id').value;
+            const stats = [
+                { label: 'School ID', value: schoolId },
+                { label: 'Academic Year', value: document.getElementById('academic-year').value },
+                { label: 'Students', value: document.getElementById('student-count').value },
+                { label: 'Teachers', value: document.getElementById('teacher-count').value },
+                { label: 'Classes', value: document.getElementById('class-count').value }
+            ];
+            
+            statsContainer.innerHTML = stats.map(stat => `
+                <div class="stat-card">
+                    <div class="stat-value">${stat.value}</div>
+                    <div class="stat-label">${stat.label}</div>
+                </div>
+            `).join('');
+        }
+
+        // Data generation functions
+        function generateRandomId() {
+            return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+
+        function getRandomElement(array) {
+            return array[Math.floor(Math.random() * array.length)];
+        }
+
+        function getRandomNumber(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        // Main data writing function
+        document.getElementById('write-data-btn').addEventListener('click', async () => {
+            if (isWriting) return;
+            
+            isWriting = true;
+            const writeBtn = document.getElementById('write-data-btn');
+            const writeBtnText = document.getElementById('write-btn-text');
+            const writeLoading = document.getElementById('write-loading');
+            
+            writeBtn.disabled = true;
+            writeBtnText.textContent = 'Writing Data...';
+            writeLoading.style.display = 'inline-block';
+            
+            const schoolId = document.getElementById('school-id').value;
+            const academicYear = document.getElementById('academic-year').value;
+            const studentCount = parseInt(document.getElementById('student-count').value);
+            const teacherCount = parseInt(document.getElementById('teacher-count').value);
+            const classCount = parseInt(document.getElementById('class-count').value);
+            
+            const totalSteps = 15; // Number of major steps
+            let currentStep = 0;
+            
+            try {
+                logMessage('Starting data generation...', 'info');
+                
+                // Step 1: Create School
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating school...');
+                await createSchool(schoolId);
+                
+                // Step 2: Create Academic Year
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating academic year...');
+                const academicYearId = await createAcademicYear(schoolId, academicYear);
+                
+                // Step 3: Create Classes
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating classes...');
+                const classIds = await createClasses(schoolId, academicYear, classCount);
+                
+                // Step 4: Create Sections for each class
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating sections...');
+                const sectionIds = await createSections(schoolId, academicYear, classIds);
+                
+                // Step 5: Create Subjects
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating subjects...');
+                const subjectIds = await createSubjects(schoolId);
+                
+                // Step 6: Create Teachers
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating teachers...');
+                const teacherIds = await createTeachers(schoolId, teacherCount);
+                
+                // Step 7: Create Class Subjects
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating class subjects...');
+                const classSubjectIds = await createClassSubjects(schoolId, academicYear, classIds, sectionIds, subjectIds, teacherIds);
+                
+                // Step 8: Create Teacher Assignments
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating teacher assignments...');
+                await createTeacherAssignments(schoolId, academicYear, teacherIds, classSubjectIds);
+                
+                // Step 9: Create Students
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating students...');
+                const studentIds = await createStudents(schoolId, studentCount);
+                
+                // Step 10: Create Enrollments
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating enrollments...');
+                const enrollmentIds = await createEnrollments(schoolId, academicYearId, studentIds, classIds, sectionIds);
+                
+                // Step 11: Create Fee Structures
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating fee structures...');
+                const feeStructureIds = await createFeeStructures(schoolId, classIds, sectionIds);
+                
+                // Step 12: Create Discounts
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating discounts...');
+                const discountIds = await createDiscounts(schoolId, classIds);
+                
+                // Step 13: Create Invoices
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating invoices...');
+                await createInvoices(schoolId, academicYear, studentIds, enrollmentIds, feeStructureIds, discountIds);
+                
+                // Step 14: Create Announcements
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating announcements...');
+                await createAnnouncements(schoolId);
+                
+                // Step 15: Create User Roles
+                currentStep++;
+                updateProgress(currentStep, totalSteps, 'Creating user roles...');
+                await createUserRoles(schoolId);
+                
+                logMessage('✅ All data written successfully!', 'success');
+                
+            } catch (error) {
+                logMessage(`❌ Error writing data: ${error.message}`, 'error');
+                console.error(error);
+            } finally {
+                isWriting = false;
+                writeBtn.disabled = false;
+                writeBtnText.textContent = 'Write All Data to Firebase';
+                writeLoading.style.display = 'none';
+                updateStats();
+            }
+        });
+
+        // Individual data creation functions
+        async function createSchool(schoolId) {
+            const schoolData = {
+                schoolName: 'Dilshad Institute Of Science',
+                schoolCode: 'DIS-001',
+                schoolLogo: 'https://example.com/logo.png',
+                address: 'New Baneshwor, Kathmandu, Nepal',
+                contactPhone: '+977-1-4781234',
+                contactEmail: 'info@dilshadscience.edu.np',
+                approved: true,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            await db.collection('schools').doc(schoolId).set(schoolData);
+            logMessage(`Created school: ${schoolData.schoolName}`, 'success');
+            return schoolId;
+        }
+
+        async function createAcademicYear(schoolId, academicYear) {
+            const yearId = generateRandomId();
+            const yearData = {
+                yearName: academicYear,
+                startDate: '2024-04-14',
+                endDate: '2025-03-29',
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            };
+            
+            await db.collection('schools').doc(schoolId).collection('academicYears').doc(yearId).set(yearData);
+            logMessage(`Created academic year: ${academicYear}`, 'success');
+            return yearId;
+        }
+
+        async function createClasses(schoolId, academicYear, count) {
+            const classIds = [];
+            const selectedClasses = sampleData.classNames.slice(0, Math.min(count, sampleData.classNames.length));
+            
+            for (let i = 0; i < selectedClasses.length; i++) {
+                const classId = generateRandomId();
+                const classData = {
+                    className: selectedClasses[i],
+                    academicYear: academicYear,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('classes').doc(classId).set(classData);
+                classIds.push(classId);
+                logMessage(`Created class: ${selectedClasses[i]}`, 'info');
+            }
+            
+            return classIds;
+        }
+
+        async function createSections(schoolId, academicYear, classIds) {
+            const sectionIds = [];
+            
+            for (const classId of classIds) {
+                for (let i = 0; i < 2; i++) { // 2 sections per class
+                    const sectionId = generateRandomId();
+                    const sectionData = {
+                        sectionName: sampleData.sectionNames[i],
+                        classID: classId,
+                        academicYear: academicYear,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    await db.collection('schools').doc(schoolId).collection('sections').doc(sectionId).set(sectionData);
+                    sectionIds.push(sectionId);
+                    logMessage(`Created section: ${sampleData.sectionNames[i]}`, 'info');
+                }
+            }
+            
+            return sectionIds;
+        }
+
+        async function createSubjects(schoolId) {
+            const subjectIds = [];
+            
+            for (const subject of sampleData.subjects) {
+                const subjectId = generateRandomId();
+                const subjectData = {
+                    subjectName: subject,
+                    creditHours: getRandomNumber(3, 5),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('subjects').doc(subjectId).set(subjectData);
+                subjectIds.push(subjectId);
+                logMessage(`Created subject: ${subject}`, 'info');
+            }
+            
+            return subjectIds;
+        }
+
+        async function createTeachers(schoolId, count) {
+            const teacherIds = [];
+            
+            for (let i = 0; i < count; i++) {
+                const teacherId = generateRandomId();
+                const firstName = getRandomElement(sampleData.firstNames);
+                const lastName = getRandomElement(sampleData.lastNames);
+                const teacherName = `${firstName} ${lastName}`;
+                
+                const teacherData = {
+                    teacherName: teacherName,
+                    phoneNumber: `+977-98${getRandomNumber(1000000, 9999999)}`,
+                    email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@dilshadscience.edu.np`,
+                    profileImage: `https://i.pravatar.cc/150?img=${getRandomNumber(1, 70)}`,
+                    subjects: [getRandomElement(sampleData.teacherSubjects)],
+                    approved: true,
+                    joinedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('teachers').doc(teacherId).set(teacherData);
+                teacherIds.push(teacherId);
+                logMessage(`Created teacher: ${teacherName}`, 'info');
+            }
+            
+            return teacherIds;
+        }
+
+        async function createClassSubjects(schoolId, academicYear, classIds, sectionIds, subjectIds, teacherIds) {
+            const classSubjectIds = [];
+            
+            // Assign subjects to each class-section combination
+            for (const classId of classIds) {
+                for (const sectionId of sectionIds) {
+                    // Assign 3-5 subjects per class-section
+                    const subjectCount = getRandomNumber(3, 5);
+                    const selectedSubjects = [];
+                    
+                    for (let i = 0; i < subjectCount; i++) {
+                        const subjectId = getRandomElement(subjectIds);
+                        if (!selectedSubjects.includes(subjectId)) {
+                            selectedSubjects.push(subjectId);
+                        }
+                    }
+                    
+                    for (const subjectId of selectedSubjects) {
+                        const classSubjectId = generateRandomId();
+                        const classSubjectData = {
+                            classID: classId,
+                            sectionID: sectionId,
+                            subjectID: subjectId,
+                            teacherID: getRandomElement(teacherIds),
+                            academicYear: academicYear,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+                        
+                        await db.collection('schools').doc(schoolId).collection('classSubjects').doc(classSubjectId).set(classSubjectData);
+                        classSubjectIds.push(classSubjectId);
+                    }
+                }
+            }
+            
+            logMessage(`Created ${classSubjectIds.length} class-subject assignments`, 'success');
+            return classSubjectIds;
+        }
+
+        async function createTeacherAssignments(schoolId, academicYear, teacherIds, classSubjectIds) {
+            // Already assigned in classSubjects creation
+            logMessage(`Created teacher assignments`, 'success');
+            return teacherIds;
+        }
+
+        async function createStudents(schoolId, count) {
+            const studentIds = [];
+            
+            for (let i = 0; i < count; i++) {
+                const studentId = generateRandomId();
+                const firstName = getRandomElement(sampleData.firstNames);
+                const lastName = getRandomElement(sampleData.lastNames);
+                const studentName = `${firstName} ${lastName}`;
+                
+                const studentData = {
+                    registrationNumber: `DIS-${String(i + 1).padStart(4, '0')}`,
+                    studentName: studentName,
+                    dateOfBirth: `${getRandomNumber(2005, 2015)}-${String(getRandomNumber(1, 12)).padStart(2, '0')}-${String(getRandomNumber(1, 28)).padStart(2, '0')}`,
+                    studentGender: getRandomElement(['Male', 'Female']),
+                    motherName: `Mrs. ${getRandomElement(sampleData.lastNames)}`,
+                    fatherName: `Mr. ${getRandomElement(sampleData.lastNames)}`,
+                    permanentAddress: {
+                        province: getRandomElement(sampleData.provinces),
+                        district: getRandomElement(sampleData.districts),
+                        municipality: getRandomElement(sampleData.municipalities),
+                        wardNo: getRandomNumber(1, 15).toString()
+                    },
+                    phoneNumber: `+977-98${getRandomNumber(1000000, 9999999)}`,
+                    registeredAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    enrollmentID: '',
+                    currentClassID: '',
+                    currentSectionID: '',
+                    feeStructureID: '',
+                    discountID: '',
+                    studentSignature: `signature_${studentId}.png`,
+                    profileImage: `https://i.pravatar.cc/150?img=${getRandomNumber(1, 70)}`,
+                    approved: true
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('students').doc(studentId).set(studentData);
+                studentIds.push(studentId);
+                logMessage(`Created student: ${studentName} (${studentData.registrationNumber})`, 'info');
+            }
+            
+            return studentIds;
+        }
+
+        async function createEnrollments(schoolId, academicYearId, studentIds, classIds, sectionIds) {
+            const enrollmentIds = [];
+            let rollNumber = 1;
+            
+            for (let i = 0; i < studentIds.length; i++) {
+                const enrollmentId = generateRandomId();
+                const classId = getRandomElement(classIds);
+                const sectionId = getRandomElement(sectionIds.filter(s => s.startsWith(classId.substring(0, 5)) || true));
+                
+                const enrollmentData = {
+                    studentID: studentIds[i],
+                    academicYearID: academicYearId,
+                    classID: classId,
+                    sectionID: sectionId,
+                    rollNumber: rollNumber++,
+                    feeStructureID: '',
+                    discountID: '',
+                    feeOverrides: [],
+                    active: true,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('enrollments').doc(enrollmentId).set(enrollmentData);
+                enrollmentIds.push(enrollmentId);
+                
+                // Update student with enrollment info
+                await db.collection('schools').doc(schoolId).collection('students').doc(studentIds[i]).update({
+                    enrollmentID: enrollmentId,
+                    currentClassID: classId,
+                    currentSectionID: sectionId
+                });
+            }
+            
+            logMessage(`Created ${enrollmentIds.length} enrollments`, 'success');
+            return enrollmentIds;
+        }
+
+        async function createFeeStructures(schoolId, classIds, sectionIds) {
+            const feeStructureIds = [];
+            
+            for (const classId of classIds) {
+                for (const sectionId of sectionIds) {
+                    const feeStructureId = generateRandomId();
+                    const feeStructureData = {
+                        classID: classId,
+                        sectionID: sectionId,
+                        items: sampleData.feeItems.map(item => ({ ...item })),
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    await db.collection('schools').doc(schoolId).collection('feeStructures').doc(feeStructureId).set(feeStructureData);
+                    feeStructureIds.push(feeStructureId);
+                }
+            }
+            
+            logMessage(`Created ${feeStructureIds.length} fee structures`, 'success');
+            return feeStructureIds;
+        }
+
+        async function createDiscounts(schoolId, classIds) {
+            const discountIds = [];
+            
+            for (const discount of sampleData.discountTypes) {
+                const discountId = generateRandomId();
+                const discountData = {
+                    name: discount.name,
+                    type: discount.type,
+                    value: discount.value,
+                    applicableClassIDs: classIds.slice(0, getRandomNumber(1, classIds.length)),
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('discounts').doc(discountId).set(discountData);
+                discountIds.push(discountId);
+            }
+            
+            logMessage(`Created ${discountIds.length} discounts`, 'success');
+            return discountIds;
+        }
+
+        async function createInvoices(schoolId, academicYear, studentIds, enrollmentIds, feeStructureIds, discountIds) {
+            const invoiceIds = [];
+            const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            
+            for (let i = 0; i < studentIds.length; i++) {
+                // Create invoice for 3 months
+                for (let j = 0; j < 3; j++) {
+                    const invoiceId = generateRandomId();
+                    const subTotal = sampleData.feeItems.reduce((sum, item) => sum + item.amount, 0);
+                    const discountAmount = getRandomNumber(0, 500);
+                    const totalDue = subTotal - discountAmount;
+                    const amountPaid = getRandomNumber(0, totalDue);
+                    const balanceDue = totalDue - amountPaid;
+                    
+                    const invoiceData = {
+                        invoiceNumber: `INV-${String(invoiceIds.length + 1).padStart(6, '0')}`,
+                        studentID: studentIds[i],
+                        enrollmentID: enrollmentIds[i],
+                        academicYear: academicYear,
+                        billingMonth: months[getRandomNumber(0, 11)],
+                        issueDate: new Date().toISOString().split('T')[0],
+                        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                        items: sampleData.feeItems.map(item => ({ ...item })),
+                        subTotal: subTotal,
+                        discountAmount: discountAmount,
+                        totalDue: totalDue,
+                        amountPaid: amountPaid,
+                        balanceDue: balanceDue,
+                        status: amountPaid === 0 ? 'unpaid' : amountPaid === totalDue ? 'paid' : 'partial',
+                        preparedBy: 'Admin',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    await db.collection('schools').doc(schoolId).collection('invoices').doc(invoiceId).set(invoiceData);
+                    invoiceIds.push(invoiceId);
+                }
+            }
+            
+            logMessage(`Created ${invoiceIds.length} invoices`, 'success');
+            return invoiceIds;
+        }
+
+        async function createAnnouncements(schoolId) {
+            const announcements = [
+                {
+                    title: 'Welcome to New Academic Year',
+                    description: 'We welcome all students and parents to the new academic year 2024-2025. Classes will begin from April 14, 2024.',
+                    postedBy: 'Principal'
+                },
+                {
+                    title: 'Parent-Teacher Meeting',
+                    description: 'The first parent-teacher meeting will be held on April 20, 2024. All parents are requested to attend.',
+                    postedBy: 'Administration'
+                },
+                {
+                    title: 'Examination Schedule',
+                    description: 'First terminal examination will commence from June 10, 2024. Detailed schedule will be published soon.',
+                    postedBy: 'Examination Department'
+                }
+            ];
+            
+            for (const announcement of announcements) {
+                const announcementId = generateRandomId();
+                const announcementData = {
+                    ...announcement,
+                    postedAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('announcements').doc(announcementId).set(announcementData);
+            }
+            
+            logMessage('Created announcements', 'success');
+        }
+
+        async function createUserRoles(schoolId) {
+            const roles = [
+                {
+                    roleName: 'Admin',
+                    permissions: ['read', 'write', 'delete', 'manage_users', 'manage_finance']
+                },
+                {
+                    roleName: 'Teacher',
+                    permissions: ['read', 'write_attendance', 'write_results', 'read_students']
+                },
+                {
+                    roleName: 'Accountant',
+                    permissions: ['read', 'write_finance', 'manage_invoices', 'read_students']
+                },
+                {
+                    roleName: 'Parent',
+                    permissions: ['read_attendance', 'read_results', 'read_fees']
+                }
+            ];
+            
+            for (const role of roles) {
+                const roleId = generateRandomId();
+                const roleData = {
+                    ...role,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                
+                await db.collection('schools').doc(schoolId).collection('userRoles').doc(roleId).set(roleData);
+            }
+            
+            logMessage('Created user roles', 'success');
+        }
+
+        // Clear data function
+        document.getElementById('clear-data-btn').addEventListener('click', async () => {
+            if (!confirm('This will delete ALL data for the specified school ID. Are you sure?')) {
+                return;
+            }
+            
+            const schoolId = document.getElementById('school-id').value;
+            const writeBtn = document.getElementById('write-data-btn');
+            
+            writeBtn.disabled = true;
+            
+            try {
+                logMessage('Starting to clear data...', 'warning');
+                
+                // Get all collections and delete documents
+                const collections = [
+                    'academicYears', 'classes', 'sections', 'students', 'enrollments',
+                    'subjects', 'classSubjects', 'teachers', 'teacherAssignments',
+                    'feeStructures', 'discounts', 'invoices', 'payments',
+                    'announcements', 'userRoles', 'auditLogs', 'settings'
+                ];
+                
+                for (const collection of collections) {
+                    try {
+                        const snapshot = await db.collection('schools').doc(schoolId).collection(collection).get();
+                        const batch = db.batch();
+                        
+                        snapshot.docs.forEach(doc => {
+                            batch.delete(doc.ref);
+                        });
+                        
+                        await batch.commit();
+                        logMessage(`Cleared ${snapshot.size} documents from ${collection}`, 'info');
+                    } catch (error) {
+                        logMessage(`Error clearing ${collection}: ${error.message}`, 'error');
+                    }
+                }
+                
+                // Delete the school document itself
+                await db.collection('schools').doc(schoolId).delete();
+                
+                logMessage('✅ All data cleared successfully!', 'success');
+                
+            } catch (error) {
+                logMessage(`❌ Error clearing data: ${error.message}`, 'error');
+            } finally {
+                writeBtn.disabled = false;
+                updateStats();
+            }
+        });
+
+        // View in Firebase Console
+        document.getElementById('view-data-btn').addEventListener('click', () => {
+            const schoolId = document.getElementById('school-id').value;
+            const projectId = firebaseConfig.projectId;
+            const url = `https://console.firebase.google.com/project/${projectId}/firestore/data/~2Fschools~2F${schoolId}`;
+            window.open(url, '_blank');
+        });
+
+        // Update stats when inputs change
+        document.querySelectorAll('#school-id, #academic-year, #student-count, #teacher-count, #class-count').forEach(input => {
+            input.addEventListener('change', updateStats);
+        });
+
+        // Initialize the app
+        window.addEventListener('load', initApp);
+    </script>
+</body>
+</html>
