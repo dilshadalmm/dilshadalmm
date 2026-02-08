@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marks Entry Portal</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        body {
+            font-family: 'Oswald', sans-serif;
+            background-color: #f0f2f5;
+            letter-spacing: 0.01em;
+            overflow-x: hidden;
+        }
+
+        .container-rounded {
+            border-radius: 4px;
+        }
+
+        .table-container {
+            background: #ffffff;
+            border-radius: 4px;
+            overflow: auto;
+            position: relative;
+            padding: 0 !important;
+            min-height: 40px;
+            max-height: 240px;
+            /* Scrollbar styling */
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 #f1f5f9;
+        }
+
+        /* WebKit scrollbar styling */
+        .table-container::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .table-container::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 4px;
+        }
+
+        .table-container::-webkit-scrollbar-thumb {
+            background-color: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .table-container::-webkit-scrollbar-thumb:hover {
+            background-color: #94a3b8;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 11px;
+            text-transform: uppercase;
+            table-layout: auto;
+        }
+
+        /* Fixed Headers */
+        th {
+            background-color: #1a2a3a;
+            color: white;
+            padding: 8px 12px;
+            text-align: center;
+            font-weight: 500;
+            white-space: nowrap;
+            border: 0.5px solid #2c3e50;
+            position: sticky;
+            z-index: 30;
+            min-width: 20px;
+            max-width: none;
+        }
+
+        thead tr:first-child th { top: 0; }
+        thead tr:last-child th { top: 33px; }
+
+        /* FIXED S.N. COLUMN LOGIC */
+        thead tr:first-child th:first-child {
+            left: 0;
+            z-index: 40;
+        }
+
+        tbody td:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 10;
+            background-color: inherit;
+            border-right: 1px solid #cbd5e1;
+        }
+
+        td {
+            border: 0.5px solid #e2e8f0;
+            padding: 0 8px;
+            white-space: nowrap;
+            height: 40px;
+            min-width: 20px;
+            max-width: none;
+        }
+
+        /* Text truncation for long content */
+        td, th {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 200px;
+        }
+
+        tbody tr:nth-child(even) { background-color: #f8fafc; }
+        tbody tr:nth-child(odd) { background-color: #ffffff; }
+        tr:hover { background-color: #f1f5f9 !important; }
+
+        .table-input {
+            background: transparent;
+            border: 1px solid transparent;
+            padding: 4px;
+            font-weight: 600;
+            color: #334155;
+            outline: none;
+            border-radius: 2px;
+            text-align: inherit;
+            pointer-events: none;
+            font-family: 'Oswald', sans-serif;
+            font-size: 11px;
+            text-transform: uppercase;
+            width: 100%;
+            min-width: 20px;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        tr.editing .editable-input {
+            background: white;
+            border-color: #3b82f6;
+            pointer-events: auto;
+        }
+
+        .readonly-input {
+            pointer-events: none !important;
+            background: #f8fafc !important;
+            border-color: transparent !important;
+            color: #64748b !important;
+        }
+
+        .header-field {
+            border: none;
+            border-bottom: 1px solid #94a3b8;
+            background: transparent;
+            font-weight: 600;
+            font-size: 12px;
+            padding: 0 4px;
+            outline: none;
+            text-transform: uppercase;
+            color: #1e293b;
+            font-family: 'Oswald', sans-serif;
+        }
+
+        .action-btn {
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 2px;
+            font-weight: bold;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            font-family: 'Oswald', sans-serif;
+            border: none;
+            cursor: pointer;
+        }
+
+        .name-cell-input { 
+            min-width: 150px;
+            max-width: 200px;
+        }
+        .subject-cell-input { 
+            min-width: 160px;
+            max-width: 200px;
+        }
+
+        /* UPDATE button states */
+        .update-btn-default {
+            background-color: #6b7280 !important;
+            color: white !important;
+        }
+        
+        .update-btn-editing {
+            background-color: #10b981 !important;
+            color: white !important;
+        }
+        
+        .update-btn-updated {
+            background-color: #6b7280 !important;
+            color: white !important;
+        }
+
+        /* Notification System */
+        .notification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #10b981;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 4px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            z-index: 1000;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            display: none;
+            animation: fadeInOut 2.5s ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+            10% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            90% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+        }
+
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            border: 2px solid #f3f4f6;
+            border-top: 2px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media print {
+            .no-print { display: none; }
+            body { background: white; padding: 0; }
+            .table-container { 
+                border: none; 
+                height: auto; 
+                overflow: visible; 
+                min-height: auto;
+                max-height: none;
+            }
+            th { background-color: #000 !important; color: white !important; border: 1px solid #333; position: static; }
+            td { border: 1px solid #ccc; position: static !important; }
+        }
+
+        /* Auth Modal */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .auth-modal {
+            background: white;
+            width: 40%;
+            min-width: 300px;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .auth-body {
+            padding: 20px;
+        }
+        
+        .auth-field {
+            margin-bottom: 16px;
+        }
+        
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            border-radius: 2px;
+            font-family: 'Oswald', sans-serif;
+        }
+        
+        .auth-input:focus {
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .auth-error.show {
+            display: block;
+        }
+        
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            border-radius: 2px;
+            font-family: 'Oswald', sans-serif;
+        }
+        
+        .auth-button:hover {
+            background: #2563eb;
+        }
+        
+        .auth-button:active {
+            background: #1d4ed8;
+        }
+        
+        .auth-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        /* Teacher Info Card Styles */
+        .glass-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }
+
+        .stat-card {
+            border-radius: 4px;
+        }
+    </style>
+</head>
+
+<body class="p-2 md:p-4">
+    <!-- Notification Element -->
+    <div id="notification" class="notification"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <main id="app-container" class="w-[98%] mx-auto space-y-4">
+        <!-- Content will be dynamically loaded here -->
+    </main>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+
+        // State Manager for Marks Entry App
+        class MarksEntryStateManager {
+            constructor() {
+                this.schoolID = null;
+                this.examID = null;
+                this.subjectID = null;
+                this.teacherID = null;
+                this.examData = null;
+                this.classID = null;
+                this.sectionID = null;
+                this.academicYearID = null;
+                this.subjectData = null;
+                this.teacherData = null;
+                this.enrollments = [];
+                this.studentsData = {};
+                this.resultsData = {};
+                this.schoolData = null;
+                this.editedRows = new Set();
+                
+                // Additional data for teacher info panel
+                this.className = null;
+                this.sectionName = null;
+                this.academicYearName = null;
+            }
+            
+            extractURLParams() {
+                const urlParams = new URLSearchParams(window.location.search);
+                this.schoolID = urlParams.get('schoolID');
+                this.examID = urlParams.get('examID');
+                this.subjectID = urlParams.get('subjectID');
+                
+                console.log("URL Parameters:", {
+                    schoolID: this.schoolID,
+                    examID: this.examID,
+                    subjectID: this.subjectID
+                });
+                
+                const requiredParams = ['schoolID', 'examID', 'subjectID'];
+                const missingParams = requiredParams.filter(param => !this[param]);
+                
+                if (missingParams.length > 0) {
+                    throw new Error(`Missing required URL parameters: ${missingParams.join(', ')}`);
+                }
+            }
+            
+            getSchoolPath() {
+                return `schools/${this.schoolID}`;
+            }
+            
+            getExamPath() {
+                return `${this.getSchoolPath()}/exams/${this.examID}`;
+            }
+            
+            getSubjectPath() {
+                return `${this.getSchoolPath()}/subjects/${this.subjectID}`;
+            }
+            
+            getTeacherPath(teacherID) {
+                return `${this.getSchoolPath()}/teachers/${teacherID}`;
+            }
+            
+            getClassSubjectsPath() {
+                return `${this.getSchoolPath()}/classSubjects`;
+            }
+            
+            getEnrollmentsPath() {
+                return `${this.getSchoolPath()}/enrollments`;
+            }
+            
+            getStudentsPath() {
+                return `${this.getSchoolPath()}/students`;
+            }
+            
+            getResultsPath() {
+                return `${this.getSchoolPath()}/results`;
+            }
+            
+            getStudentResultSubjectPath(resultID) {
+                return `${this.getSchoolPath()}/results/${resultID}/subjects/${this.subjectID}`;
+            }
+            
+            markRowEdited(rowIndex) {
+                this.editedRows.add(rowIndex);
+            }
+            
+            clearEditedRows() {
+                this.editedRows.clear();
+            }
+            
+            hasEditedRows() {
+                return this.editedRows.size > 0;
+            }
+        }
+
+        // Marks Entry App
+        class MarksEntryApp {
+            constructor() {
+                this.stateManager = new MarksEntryStateManager();
+                this.db = null;
+                this.auth = null;
+                this.currentUser = null;
+                this.isInitialized = false;
+                this.appContainer = document.getElementById('app-container');
+                this.initialize();
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.showLoading(true);
+                    this.stateManager.extractURLParams();
+                    
+                    firebase.initializeApp(firebaseConfig);
+                    this.db = firebase.firestore();
+                    this.auth = firebase.auth();
+                    
+                    this.db.settings({
+                        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+                    });
+                    
+                    console.log("Firebase initialized successfully");
+                    this.isInitialized = true;
+                    this.setupAuthListener();
+                    
+                } catch (error) {
+                    console.error("Initialization error:", error);
+                    this.showLoading(false);
+                    this.showError(error.message || "Failed to initialize app.");
+                }
+            }
+            
+            setupAuthListener() {
+                this.auth.onAuthStateChanged(async (user) => {
+                    if (user) {
+                        this.currentUser = user;
+                        this.stateManager.teacherID = user.uid;
+                        await this.loadAllData();
+                    } else {
+                        this.currentUser = null;
+                        this.showLoading(false);
+                        this.showSignInPrompt();
+                    }
+                });
+            }
+            
+            async loadAllData() {
+                try {
+                    console.log("Starting to load all data...");
+                    
+                    await this.loadSchoolData();
+                    await this.loadExamData();
+                    await this.loadClassData();
+                    await this.loadSectionData();
+                    await this.loadAcademicYearData();
+                    await this.verifyTeacherPermission();
+                    await this.loadSubjectData();
+                    await this.loadTeacherData();
+                    await this.loadEnrollments();
+                    await this.loadAllStudentsData();
+                    await this.loadOrCreateAllResults();
+                    
+                    this.showLoading(false);
+                    this.renderMarksEntryTable();
+                    
+                } catch (error) {
+                    console.error("Error loading all data:", error);
+                    this.showError(error.message || "Failed to load data.");
+                }
+            }
+            
+            async loadSchoolData() {
+                try {
+                    const schoolPath = this.stateManager.getSchoolPath();
+                    const schoolDoc = await this.db.doc(schoolPath).get();
+                    
+                    if (!schoolDoc.exists) {
+                        throw new Error(`School not found with ID: ${this.stateManager.schoolID}`);
+                    }
+                    
+                    this.stateManager.schoolData = schoolDoc.data();
+                    console.log("School data loaded:", this.stateManager.schoolData);
+                    
+                } catch (error) {
+                    console.error("Error loading school data:", error);
+                    this.stateManager.schoolData = { schoolTitle: this.stateManager.schoolID };
+                }
+            }
+            
+            async loadExamData() {
+                try {
+                    const examPath = this.stateManager.getExamPath();
+                    const examDoc = await this.db.doc(examPath).get();
+                    
+                    if (!examDoc.exists) {
+                        throw new Error(`Exam not found with ID: ${this.stateManager.examID}`);
+                    }
+                    
+                    this.stateManager.examData = examDoc.data();
+                    const examData = this.stateManager.examData;
+                    
+                    this.stateManager.classID = examData.classID || examData.classId || examData.class_id;
+                    this.stateManager.sectionID = examData.sectionID || examData.sectionId || examData.section_id;
+                    this.stateManager.academicYearID = examData.academicYearID || examData.academicYearId || examData.academicYear_id || 
+                                                      examData.academicYearId || examData.academic_year_id;
+                    
+                    console.log("Extracted exam context:", {
+                        classID: this.stateManager.classID,
+                        sectionID: this.stateManager.sectionID,
+                        academicYearID: this.stateManager.academicYearID
+                    });
+                    
+                    if (!this.stateManager.classID || !this.stateManager.sectionID || !this.stateManager.academicYearID) {
+                        throw new Error("Exam document is missing required fields.");
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading exam data:", error);
+                    throw error;
+                }
+            }
+            
+            async loadClassData() {
+                try {
+                    if (!this.stateManager.classID) return;
+                    
+                    const classPath = `${this.stateManager.getSchoolPath()}/classes/${this.stateManager.classID}`;
+                    const classDoc = await this.db.doc(classPath).get();
+                    
+                    if (classDoc.exists) {
+                        const classData = classDoc.data();
+                        this.stateManager.className = classData.className || classData.name || this.stateManager.classID;
+                    } else {
+                        this.stateManager.className = this.stateManager.classID;
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading class data:", error);
+                    this.stateManager.className = this.stateManager.classID;
+                }
+            }
+            
+            async loadSectionData() {
+                try {
+                    if (!this.stateManager.sectionID) return;
+                    
+                    const sectionPath = `${this.stateManager.getSchoolPath()}/sections/${this.stateManager.sectionID}`;
+                    const sectionDoc = await this.db.doc(sectionPath).get();
+                    
+                    if (sectionDoc.exists) {
+                        const sectionData = sectionDoc.data();
+                        this.stateManager.sectionName = sectionData.sectionName || sectionData.name || this.stateManager.sectionID;
+                    } else {
+                        this.stateManager.sectionName = this.stateManager.sectionID;
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading section data:", error);
+                    this.stateManager.sectionName = this.stateManager.sectionID;
+                }
+            }
+            
+            async loadAcademicYearData() {
+                try {
+                    if (!this.stateManager.academicYearID) return;
+                    
+                    const academicYearPath = `${this.stateManager.getSchoolPath()}/academicYears/${this.stateManager.academicYearID}`;
+                    const academicYearDoc = await this.db.doc(academicYearPath).get();
+                    
+                    if (academicYearDoc.exists) {
+                        const academicYearData = academicYearDoc.data();
+                        this.stateManager.academicYearName = academicYearData.academicYearName || academicYearData.name || this.stateManager.academicYearID;
+                    } else {
+                        this.stateManager.academicYearName = this.stateManager.academicYearID;
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading academic year data:", error);
+                    this.stateManager.academicYearName = this.stateManager.academicYearID;
+                }
+            }
+            
+            async verifyTeacherPermission() {
+                try {
+                    const queryParams = {
+                        teacherID: this.stateManager.teacherID,
+                        subjectID: this.stateManager.subjectID,
+                        classID: this.stateManager.classID,
+                        sectionID: this.stateManager.sectionID,
+                        academicYearID: this.stateManager.academicYearID
+                    };
+                    
+                    for (const [key, value] of Object.entries(queryParams)) {
+                        if (!value) {
+                            throw new Error(`Cannot verify teacher permission: ${key} is missing.`);
+                        }
+                    }
+                    
+                    const classSubjectsPath = this.stateManager.getClassSubjectsPath();
+                    
+                    // Try multiple query patterns
+                    const patterns = [
+                        async () => this.db.collection(classSubjectsPath).where('teacherID', '==', queryParams.teacherID).where('subjectID', '==', queryParams.subjectID).get(),
+                        async () => this.db.collection(classSubjectsPath).where('classID', '==', queryParams.classID).where('sectionID', '==', queryParams.sectionID).get(),
+                        async () => this.db.collection(classSubjectsPath).where('academicYearID', '==', queryParams.academicYearID).where('subjectID', '==', queryParams.subjectID).get(),
+                        async () => this.db.collection(classSubjectsPath).where('teacherID', '==', queryParams.teacherID).get(),
+                        async () => this.db.collection(classSubjectsPath).get()
+                    ];
+                    
+                    for (const pattern of patterns) {
+                        try {
+                            const snapshot = await pattern();
+                            if (!snapshot.empty) {
+                                const matchingDoc = snapshot.docs.find(doc => {
+                                    const data = doc.data();
+                                    return data.teacherID === queryParams.teacherID &&
+                                           data.subjectID === queryParams.subjectID &&
+                                           data.classID === queryParams.classID &&
+                                           data.sectionID === queryParams.sectionID &&
+                                           data.academicYearID === queryParams.academicYearID;
+                                });
+                                
+                                if (matchingDoc) {
+                                    console.log("Teacher permission verified");
+                                    return true;
+                                }
+                            }
+                        } catch (error) {
+                            continue;
+                        }
+                    }
+                    
+                    throw new Error("Teacher not assigned to this subject-class-section combination.");
+                    
+                } catch (error) {
+                    console.error("Error verifying teacher permission:", error);
+                    throw error;
+                }
+            }
+            
+            async loadSubjectData() {
+                try {
+                    const subjectPath = this.stateManager.getSubjectPath();
+                    const subjectDoc = await this.db.doc(subjectPath).get();
+                    
+                    if (!subjectDoc.exists) {
+                        throw new Error(`Subject not found with ID: ${this.stateManager.subjectID}`);
+                    }
+                    
+                    this.stateManager.subjectData = subjectDoc.data();
+                    
+                } catch (error) {
+                    console.error("Error loading subject data:", error);
+                    this.stateManager.subjectData = { subjectName: this.stateManager.subjectID };
+                }
+            }
+            
+            async loadTeacherData() {
+                try {
+                    const teacherPath = this.stateManager.getTeacherPath(this.stateManager.teacherID);
+                    const teacherDoc = await this.db.doc(teacherPath).get();
+                    
+                    if (!teacherDoc.exists) {
+                        throw new Error("Teacher profile not found");
+                    }
+                    
+                    this.stateManager.teacherData = teacherDoc.data();
+                    
+                } catch (error) {
+                    console.error("Error loading teacher data:", error);
+                    this.stateManager.teacherData = { 
+                        teacherName: this.currentUser?.email || 'Teacher',
+                        teacherImage: 'https://i.postimg.cc/8cB6w9Zv/Concept_20260111_031429_0000.png'
+                    };
+                }
+            }
+            
+            async loadEnrollments() {
+                try {
+                    const enrollmentsPath = this.stateManager.getEnrollmentsPath();
+                    
+                    if (!this.stateManager.classID || !this.stateManager.sectionID || !this.stateManager.academicYearID) {
+                        throw new Error("Missing required fields for enrollment query.");
+                    }
+                    
+                    let querySnapshot;
+                    try {
+                        querySnapshot = await this.db.collection(enrollmentsPath)
+                            .where('classID', '==', this.stateManager.classID)
+                            .where('sectionID', '==', this.stateManager.sectionID)
+                            .where('academicYearID', '==', this.stateManager.academicYearID)
+                            .where('active', '==', true)
+                            .orderBy('rollNumber')
+                            .get();
+                    } catch (error) {
+                        querySnapshot = await this.db.collection(enrollmentsPath)
+                            .where('classID', '==', this.stateManager.classID)
+                            .where('sectionID', '==', this.stateManager.sectionID)
+                            .where('academicYearID', '==', this.stateManager.academicYearID)
+                            .where('active', '==', true)
+                            .get();
+                    }
+                    
+                    if (querySnapshot.empty) {
+                        this.stateManager.enrollments = [];
+                        return [];
+                    }
+                    
+                    this.stateManager.enrollments = querySnapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    
+                    this.stateManager.enrollments.sort((a, b) => {
+                        const rollA = a.rollNumber || 0;
+                        const rollB = b.rollNumber || 0;
+                        return rollA - rollB;
+                    });
+                    
+                } catch (error) {
+                    console.error("Error loading enrollments:", error);
+                    throw error;
+                }
+            }
+            
+            async loadAllStudentsData() {
+                try {
+                    const studentsPath = this.stateManager.getStudentsPath();
+                    
+                    for (const enrollment of this.stateManager.enrollments) {
+                        try {
+                            const studentPath = `${studentsPath}/${enrollment.studentID}`;
+                            const studentDoc = await this.db.doc(studentPath).get();
+                            
+                            if (studentDoc.exists) {
+                                this.stateManager.studentsData[enrollment.studentID] = studentDoc.data();
+                            } else {
+                                this.stateManager.studentsData[enrollment.studentID] = {
+                                    studentName: `Student ${enrollment.studentID}`,
+                                    registrationNo: enrollment.studentID
+                                };
+                            }
+                        } catch (error) {
+                            console.error(`Error loading student ${enrollment.studentID}:`, error);
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading students data:", error);
+                }
+            }
+            
+            async loadOrCreateAllResults() {
+                try {
+                    const resultsPath = this.stateManager.getResultsPath();
+                    
+                    for (const enrollment of this.stateManager.enrollments) {
+                        const studentID = enrollment.studentID;
+                        const resultID = `${this.stateManager.examID}_${studentID}`;
+                        
+                        try {
+                            const resultPath = `${resultsPath}/${resultID}`;
+                            const resultDoc = await this.db.doc(resultPath).get();
+                            
+                            if (!resultDoc.exists) {
+                                await this.db.doc(resultPath).set({
+                                    examID: this.stateManager.examID,
+                                    studentID: studentID,
+                                    enrollmentID: enrollment.id,
+                                    GPA: 0,
+                                    percentage: 0,
+                                    locked: false,
+                                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                                    updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                                });
+                                
+                                this.stateManager.resultsData[studentID] = {
+                                    id: resultID,
+                                    examID: this.stateManager.examID,
+                                    studentID: studentID,
+                                    enrollmentID: enrollment.id,
+                                    GPA: 0,
+                                    percentage: 0,
+                                    locked: false
+                                };
+                            } else {
+                                this.stateManager.resultsData[studentID] = {
+                                    id: resultID,
+                                    ...resultDoc.data()
+                                };
+                            }
+                            
+                            await this.loadSubjectMarks(resultID, studentID);
+                            
+                        } catch (error) {
+                            console.error(`Error processing result for student ${studentID}:`, error);
+                        }
+                    }
+                    
+                } catch (error) {
+                    console.error("Error loading/creating results:", error);
+                    throw error;
+                }
+            }
+            
+            async loadSubjectMarks(resultID, studentID) {
+                try {
+                    if (!this.stateManager.resultsData[studentID]) {
+                        this.stateManager.resultsData[studentID] = {};
+                    }
+                    
+                    if (!this.stateManager.resultsData[studentID].subjects) {
+                        this.stateManager.resultsData[studentID].subjects = {};
+                    }
+                    
+                    const subjectPath = this.stateManager.getStudentResultSubjectPath(resultID);
+                    const subjectDoc = await this.db.doc(subjectPath).get();
+                    
+                    if (subjectDoc.exists) {
+                        this.stateManager.resultsData[studentID].subjects[this.stateManager.subjectID] = subjectDoc.data();
+                    } else {
+                        this.stateManager.resultsData[studentID].subjects[this.stateManager.subjectID] = {
+                            theoryMarks: '',
+                            practicalMarks: '',
+                            finalMarks: '',
+                            theoryGrade: '',
+                            practicalGrade: '',
+                            finalGrade: '',
+                            gradePoint: '',
+                            enteredBy: '',
+                            updatedAt: null
+                        };
+                    }
+                    
+                } catch (error) {
+                    console.error(`Error loading subject marks for student ${studentID}:`, error);
+                }
+            }
+            
+            showLoading(show) {
+                document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+            }
+            
+            showError(message) {
+                this.appContainer.innerHTML = `
+                    <div class="error-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; text-align: center;">
+                        <div class="error-icon" style="font-size: 48px; color: #ef4444; margin-bottom: 20px;">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="error-title" style="font-size: 20px; font-weight: 700; color: #1f2937; margin-bottom: 12px;">
+                            Error
+                        </div>
+                        <div class="error-message" style="font-size: 14px; color: #6b7280; margin-bottom: 32px; max-width: 400px;">
+                            ${message}
+                        </div>
+                        <button onclick="window.location.reload()" class="auth-button" style="width: auto; padding: 10px 30px;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+            }
+            
+            showSignInPrompt() {
+                this.appContainer.innerHTML = `
+                    <div class="error-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; text-align: center;">
+                        <div class="error-icon" style="font-size: 48px; color: #3b82f6; margin-bottom: 20px;">
+                            <i class="fas fa-sign-in-alt"></i>
+                        </div>
+                        <div class="error-title" style="font-size: 20px; font-weight: 700; color: #1f2937; margin-bottom: 12px;">
+                            Sign In Required
+                        </div>
+                        <div class="error-message" style="font-size: 14px; color: #6b7280; margin-bottom: 32px;">
+                            You need to sign in to access the Marks Entry Portal.
+                        </div>
+                        <button id="sign-in-prompt-button" class="auth-button" style="width: auto; padding: 10px 30px;">
+                            Sign In to Continue
+                        </button>
+                    </div>
+                `;
+                
+                document.getElementById('sign-in-prompt-button')?.addEventListener('click', () => {
+                    this.showAuthModal();
+                });
+            }
+            
+            showAuthModal() {
+                const authModal = document.createElement('div');
+                authModal.className = 'auth-modal-overlay';
+                authModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Sign In to Marks Entry Portal</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="auth-email" class="auth-input" placeholder="teacher@example.com">
+                                <div id="email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="auth-password" class="auth-input" placeholder="••••••••">
+                                <div id="password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="sign-in-button" class="auth-button">Sign In</button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(authModal);
+                this.setupAuthModalEvents(authModal);
+            }
+            
+            setupAuthModalEvents(authModal) {
+                const signInButton = document.getElementById('sign-in-button');
+                const emailInput = document.getElementById('auth-email');
+                const passwordInput = document.getElementById('auth-password');
+                
+                signInButton.addEventListener('click', async () => {
+                    await this.signInWithEmail(emailInput, passwordInput, authModal);
+                });
+                
+                emailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') passwordInput.focus();
+                });
+                
+                passwordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.signInWithEmail(emailInput, passwordInput, authModal);
+                });
+                
+                authModal.addEventListener('click', (e) => {
+                    if (e.target === authModal) authModal.remove();
+                });
+            }
+            
+            async signInWithEmail(emailInput, passwordInput, authModal) {
+                const email = emailInput.value.trim();
+                const password = passwordInput.value.trim();
+                const signInButton = document.getElementById('sign-in-button');
+                const emailError = document.getElementById('email-error');
+                const passwordError = document.getElementById('password-error');
+                
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter your password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                signInButton.textContent = 'Signing In...';
+                signInButton.classList.add('loading');
+                
+                try {
+                    await this.auth.signInWithEmailAndPassword(email, password);
+                    authModal.remove();
+                } catch (error) {
+                    console.error("Sign in error:", error);
+                    signInButton.textContent = 'Sign In';
+                    signInButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-not-found':
+                            emailError.textContent = 'No account found with this email';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/wrong-password':
+                            passwordError.textContent = 'Incorrect password';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            passwordError.textContent = 'Failed to sign in. Please try again';
+                            passwordError.classList.add('show');
+                    }
+                }
+            }
+            
+            showNotification(message) {
+                const notification = document.getElementById('notification');
+                notification.textContent = message;
+                notification.style.display = 'block';
+                
+                setTimeout(() => {
+                    notification.style.display = 'none';
+                }, 2500);
+            }
+            
+            async saveRow(rowIndex) {
+                try {
+                    const enrollment = this.stateManager.enrollments[rowIndex];
+                    if (!enrollment) {
+                        throw new Error("Student not found");
+                    }
+                    
+                    const studentID = enrollment.studentID;
+                    const resultID = this.stateManager.resultsData[studentID]?.id;
+                    
+                    if (!resultID) {
+                        throw new Error("Result not found for student");
+                    }
+                    
+                    const rows = document.querySelectorAll('#dataTable tbody tr');
+                    const row = rows[rowIndex];
+                    
+                    // Collect data from inputs
+                    const theoryMarks = row.querySelector('td:nth-child(9) input').value.trim();
+                    const practicalMarks = row.querySelector('td:nth-child(10) input').value.trim();
+                    const finalMarks = row.querySelector('td:nth-child(11) input').value.trim();
+                    const theoryGrade = row.querySelector('td:nth-child(12) input').value.trim();
+                    const practicalGrade = row.querySelector('td:nth-child(13) input').value.trim();
+                    const finalGrade = row.querySelector('td:nth-child(14) input').value.trim();
+                    const gradePoint = row.querySelector('td:nth-child(15) input').value.trim();
+                    
+                    // Prepare update data - EXACTLY as entered
+                    const updateData = {
+                        theoryMarks: theoryMarks || '',
+                        practicalMarks: practicalMarks || '',
+                        finalMarks: finalMarks || '',
+                        theoryGrade: theoryGrade || '',
+                        practicalGrade: practicalGrade || '',
+                        finalGrade: finalGrade || '',
+                        gradePoint: gradePoint || '',
+                        enteredBy: this.stateManager.teacherID,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    };
+                    
+                    // Update in Firestore
+                    const subjectPath = this.stateManager.getStudentResultSubjectPath(resultID);
+                    await this.db.doc(subjectPath).set(updateData, { merge: true });
+                    
+                    // Update local state
+                    if (!this.stateManager.resultsData[studentID].subjects) {
+                        this.stateManager.resultsData[studentID].subjects = {};
+                    }
+                    this.stateManager.resultsData[studentID].subjects[this.stateManager.subjectID] = updateData;
+                    
+                    // Remove from edited rows
+                    this.stateManager.editedRows.delete(rowIndex);
+                    
+                    // Show notification
+                    this.showNotification('Marks Updated Successfully!');
+                    
+                    // Exit edit mode and reset UPDATE button to gray
+                    this.toggleEditMode(rowIndex);
+                    
+                    // Reset UPDATE button color to gray
+                    const updateButton = row.querySelector('td:last-child button');
+                    if (updateButton) {
+                        updateButton.className = 'action-btn update-btn-default';
+                    }
+                    
+                } catch (error) {
+                    console.error("Error saving row:", error);
+                    this.showNotification('Failed to save marks!');
+                }
+            }
+            
+            async saveAllEditedRows() {
+                try {
+                    const editedRows = Array.from(this.stateManager.editedRows);
+                    if (editedRows.length === 0) {
+                        this.showNotification('No changes to save.');
+                        return;
+                    }
+                    
+                    this.showNotification(`Saving ${editedRows.length} record(s)...`);
+                    
+                    for (const rowIndex of editedRows) {
+                        await this.saveRow(rowIndex);
+                    }
+                    
+                    this.stateManager.clearEditedRows();
+                    
+                } catch (error) {
+                    console.error("Error saving all rows:", error);
+                    this.showNotification('Failed to save marks!');
+                }
+            }
+            
+            toggleEditMode(rowIndex) {
+                const rows = document.querySelectorAll('#dataTable tbody tr');
+                const row = rows[rowIndex];
+                const isEditing = row.classList.toggle('editing');
+                
+                const editButton = row.querySelector('.edit-trigger');
+                const updateButton = row.querySelector('td:last-child button');
+                
+                if (editButton) {
+                    editButton.textContent = isEditing ? 'LOCK' : 'EDIT';
+                    editButton.classList.toggle('bg-orange-500', isEditing);
+                    editButton.classList.toggle('bg-blue-100', !isEditing);
+                    editButton.classList.toggle('text-white', isEditing);
+                    editButton.classList.toggle('text-blue-700', !isEditing);
+                }
+                
+                if (updateButton) {
+                    if (isEditing) {
+                        updateButton.className = 'action-btn update-btn-editing';
+                    } else {
+                        updateButton.className = 'action-btn update-btn-default';
+                    }
+                }
+                
+                if (isEditing) {
+                    this.stateManager.markRowEdited(rowIndex);
+                }
+            }
+            
+            formatDate(timestamp) {
+                if (!timestamp) return '';
+                
+                try {
+                    if (timestamp.toDate) {
+                        const date = timestamp.toDate();
+                        return date.toISOString().split('T')[0];
+                    } else if (typeof timestamp === 'string') {
+                        return timestamp;
+                    } else if (typeof timestamp === 'number') {
+                        const date = new Date(timestamp);
+                        return date.toISOString().split('T')[0];
+                    }
+                } catch (error) {
+                    console.error("Error formatting date:", error);
+                }
+                return '';
+            }
+            
+            calculateHighestPercentage() {
+                let highest = 0;
+                const enrollments = this.stateManager.enrollments;
+                
+                for (const enrollment of enrollments) {
+                    const studentID = enrollment.studentID;
+                    const resultData = this.stateManager.resultsData[studentID];
+                    
+                    if (resultData && resultData.percentage) {
+                        const percentage = parseFloat(resultData.percentage);
+                        if (!isNaN(percentage) && percentage > highest) {
+                            highest = percentage;
+                        }
+                    }
+                }
+                
+                return highest.toFixed(1);
+            }
+            
+            renderMarksEntryTable() {
+                const examData = this.stateManager.examData;
+                const subjectData = this.stateManager.subjectData;
+                const teacherData = this.stateManager.teacherData;
+                const enrollments = this.stateManager.enrollments;
+                const schoolData = this.stateManager.schoolData;
+                
+                if (!enrollments || enrollments.length === 0) {
+                    this.showError("No students found for this class-section");
+                    return;
+                }
+                
+                // Format exam dates
+                const examStartedAt = this.formatDate(examData?.startedAt);
+                const examEndedAt = this.formatDate(examData?.endedAt);
+                const examDateRange = examStartedAt && examEndedAt ? 
+                    `${examStartedAt} TO ${examEndedAt}` : 
+                    (examStartedAt || examEndedAt || 'Not specified');
+                
+                // Get teacher ID (first 10 characters)
+                const teacherID = this.stateManager.teacherID ? 
+                    this.stateManager.teacherID.substring(0, 10) : '_________';
+                
+                // Calculate highest percentage
+                const highestPercentage = this.calculateHighestPercentage();
+                
+                // Generate table rows
+                let tableRowsHtml = '';
+                
+                enrollments.forEach((enrollment, index) => {
+                    const studentID = enrollment.studentID;
+                    const studentData = this.stateManager.studentsData[studentID] || {};
+                    const resultData = this.stateManager.resultsData[studentID] || {};
+                    const subjectMarks = resultData.subjects?.[this.stateManager.subjectID] || {};
+                    
+                    // Format date of birth
+                    let dateOfBirth = '';
+                    if (studentData.dateOfBirth) {
+                        if (studentData.dateOfBirth.toDate) {
+                            dateOfBirth = studentData.dateOfBirth.toDate().toISOString().split('T')[0];
+                        } else if (typeof studentData.dateOfBirth === 'string') {
+                            dateOfBirth = studentData.dateOfBirth;
+                        }
+                    }
+                    
+                    tableRowsHtml += `
+                        <tr>
+                            <td class="text-center font-bold">${index + 1}</td>
+                            <td class="no-print text-center">
+                                <button onclick="app.toggleEditMode(${index})" class="edit-trigger action-btn bg-blue-100 text-blue-700 hover:bg-blue-200">
+                                    EDIT
+                                </button>
+                            </td>
+                            <td><input type="text" class="table-input name-cell-input readonly-input" value="${studentData.studentName || ''}" readonly></td>
+                            <td><input type="text" class="table-input readonly-input" value="${studentData.registrationNo || studentID}" readonly></td>
+                            <td><input type="text" class="table-input w-12 text-center readonly-input" value="${enrollment.rollNumber || ''}" readonly></td>
+                            <td><input type="text" class="table-input w-24 text-center readonly-input" value="${dateOfBirth}" readonly></td>
+                            <td><input type="text" class="table-input subject-cell-input readonly-input" value="${subjectData.subjectName || this.stateManager.subjectID}" readonly></td>
+                            <td><input type="text" class="table-input w-16 text-center readonly-input" value="${subjectData.creditHours || ''}" readonly></td>
+                            <td><input type="number" min="0" max="100" class="table-input w-12 text-center editable-input" 
+                                   value="${subjectMarks.theoryMarks || ''}" 
+                                   placeholder="TH"></td>
+                            <td><input type="number" min="0" max="100" class="table-input w-12 text-center editable-input" 
+                                   value="${subjectMarks.practicalMarks || ''}" 
+                                   placeholder="PR"></td>
+                            <td><input type="number" min="0" max="200" class="table-input w-16 text-center font-bold editable-input" 
+                                   value="${subjectMarks.finalMarks || ''}"
+                                   placeholder="Total"></td>
+                            <td><input type="text" class="table-input w-12 text-center editable-input" 
+                                   value="${subjectMarks.theoryGrade || ''}"
+                                   placeholder="TH Grade"></td>
+                            <td><input type="text" class="table-input w-12 text-center editable-input" 
+                                   value="${subjectMarks.practicalGrade || ''}"
+                                   placeholder="PR Grade"></td>
+                            <td><input type="text" class="table-input w-16 text-center text-blue-700 font-bold editable-input" 
+                                   value="${subjectMarks.finalGrade || ''}"
+                                   placeholder="Final Grade"></td>
+                            <td><input type="text" class="table-input w-16 text-center editable-input" 
+                                   value="${subjectMarks.gradePoint || ''}"
+                                   placeholder="Point"></td>
+                            <td class="no-print text-center">
+                                <button onclick="app.saveRow(${index})" class="action-btn update-btn-default">
+                                    UPDATE
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                const marksEntryHtml = `
+                    <!-- Header Area -->
+                    <div class="bg-white p-4 shadow-sm border-t-4 border-[#1a2a3a] container-rounded">
+                        <div class="flex flex-wrap justify-between items-center gap-3">
+                            <div class="flex items-center gap-4">
+                                <img src="https://i.postimg.cc/KcVvrkz3/Concept_20251225_020546_0000.png" class="w-10 h-10 border p-1" alt="Logo">
+                                <div>
+                                    <h1 class="text-xl font-bold text-gray-800 leading-none">${schoolData?.schoolTitle || 'DILSHAD INSTITUTE'}</h1>
+                                    <p class="text-[10px] tracking-widest text-gray-500 font-medium uppercase">Detailed Academic Record Editor</p>
+                                </div>
+                            </div>
+                            
+                            <div class="flex items-center gap-2 no-print">
+                                <button onclick="app.saveAllEditedRows()" class="bg-[#1a2a3a] hover:bg-black text-white px-4 py-2 container-rounded text-[10px] font-bold tracking-widest uppercase flex items-center gap-2 transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
+                                    Update All
+                                </button>
+                                <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 container-rounded text-[10px] font-bold tracking-widest uppercase flex items-center gap-2 transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                    Print Record
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Teacher Information & Stats Section -->
+                    <div class="space-y-4">
+                        <!-- Teacher Profile Card -->
+                        <div class="glass-card p-5 shadow-sm border-t-4 border-[#1a2a3a]">
+                            <div class="flex items-start justify-between">
+                                <div class="space-y-1">
+                                    <h2 class="text-2xl font-bold text-gray-900 uppercase">${teacherData.teacherName || this.currentUser?.email || 'Teacher'}</h2>
+                                    <p class="text-sm text-blue-800 font-medium uppercase">Teacher ID: ${teacherID}</p>
+                                </div>
+                                <img src="${teacherData.teacherImage || 'https://i.postimg.cc/8cB6w9Zv/Concept_20260111_031429_0000.png'}" alt="Profile Image" class="w-20 h-20 object-cover border border-gray-200">
+                            </div>
+                            
+                            <div class="grid grid-cols-2 gap-y-4 gap-x-4 mt-6 pt-4 border-t border-gray-100 uppercase text-[11px]">
+                                <div class="col-span-1">
+                                    <p class="text-gray-400 font-medium">Class</p>
+                                    <p class="font-bold text-gray-800 border-b border-gray-200">${this.stateManager.className || this.stateManager.classID || 'N/A'}</p>
+                                </div>
+                                <div class="col-span-1">
+                                    <p class="text-gray-400 font-medium">Section</p>
+                                    <p class="font-bold text-gray-800 border-b border-gray-200">${this.stateManager.sectionName || this.stateManager.sectionID || 'N/A'}</p>
+                                </div>
+                                <div class="col-span-2">
+                                    <p class="text-gray-400 font-medium">Subject</p>
+                                    <p class="font-bold text-gray-800 border-b border-gray-200">${subjectData.subjectName || this.stateManager.subjectID}</p>
+                                </div>
+                                <div class="col-span-1">
+                                    <p class="text-gray-400 font-medium">Academic Year</p>
+                                    <p class="font-bold text-gray-800 border-b border-gray-200">${this.stateManager.academicYearName || this.stateManager.academicYearID || 'N/A'}</p>
+                                </div>
+                                <div class="col-span-1">
+                                    <p class="text-gray-400 font-medium">Exam</p>
+                                    <p class="font-bold text-gray-800 border-b border-gray-200">${examData?.examTitle || this.stateManager.examID}</p>
+                                </div>
+                                <div class="col-span-2">
+                                    <p class="text-gray-400 font-medium">Conducted From ... To ...</p>
+                                    <p class="font-bold text-gray-800 border-b border-gray-200 text-xs">${examDateRange}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Summary Stats -->
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="stat-card bg-gray-900 p-4 text-white shadow-md">
+                                <p class="text-[10px] uppercase opacity-70 tracking-widest">Total Participants</p>
+                                <p class="text-4xl font-bold mt-1">${enrollments.length}</p>
+                                <p class="text-[10px] mt-2 border-t border-white/20 pt-1 uppercase">Active Students</p>
+                            </div>
+                            <div class="stat-card bg-[#1a2a3a] p-4 text-white shadow-md">
+                                <p class="text-[10px] uppercase opacity-70 tracking-widest">Highest Percentage</p>
+                                <p class="text-4xl font-bold mt-1">${highestPercentage}%</p>
+                                <p class="text-[10px] mt-2 border-t border-white/20 pt-1 uppercase">Top Performer</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Marks Entry Table -->
+                    <div class="table-container">
+                        <table id="dataTable">
+                            <thead>
+                                <tr>
+                                    <th rowspan="2">S.N.</th>
+                                    <th rowspan="2" class="no-print">ACTION</th>
+                                    <th rowspan="2">Student Name</th>
+                                    <th rowspan="2">Student ID</th>
+                                    <th rowspan="2">Roll No</th>
+                                    <th rowspan="2">Date of Birth</th>
+                                    <th rowspan="2">Subjects</th>
+                                    <th rowspan="2">Credit Hours</th>
+                                    <th colspan="2">Obtained Marks</th>
+                                    <th rowspan="2">Final Mark</th>
+                                    <th colspan="2">Obtained Grade</th>
+                                    <th rowspan="2">Final Grade</th>
+                                    <th rowspan="2">Grade Point</th>
+                                    <th rowspan="2" class="no-print">ACTION</th>
+                                </tr>
+                                <tr>
+                                    <th class="bg-[#243447]">TH</th>
+                                    <th class="bg-[#243447]">PR</th>
+                                    <th class="bg-[#243447]">TH</th>
+                                    <th class="bg-[#243447]">PR</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRowsHtml}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="flex justify-between items-center no-print px-1 py-4">
+                        <p class="text-[10px] text-gray-400 font-medium uppercase tracking-widest">Dilshad Management System v2.0 • Showing ${enrollments.length} Entries</p>
+                        <button onclick="app.auth.signOut()" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 container-rounded text-[10px] font-bold tracking-widest uppercase shadow-md transition-all flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                            LOGOUT
+                        </button>
+                    </div>
+                `;
+                
+                this.appContainer.innerHTML = marksEntryHtml;
+            }
+        }
+        
+        // Initialize App
+        let app;
+        
+        window.addEventListener('load', () => {
+            app = new MarksEntryApp();
+        });
+        
+        // Make app available globally
+        window.app = app;
+    </script>
+</body>
+</html>
