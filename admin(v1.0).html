@@ -1,0 +1,1918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Console - Management System</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Oswald Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+    <style>
+        body {
+            font-family: 'Oswald', sans-serif;
+        }
+        select {
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+        }
+        /* Remove calendar/clock icons from date/time/timestamp inputs */
+        input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            display: none;
+            -webkit-appearance: none;
+        }
+        .input-field {
+            width: 100%;
+            padding-top: 0.375rem;
+            padding-bottom: 0.375rem;
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+            border-radius: 0.125rem;
+            border: 1px solid #cbd5e1;
+            outline: none;
+            font-weight: 400;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            background-color: white;
+        }
+        .input-field:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 1px #3b82f6;
+        }
+        .label-text {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #4b5563;
+            margin-bottom: 0.125rem;
+        }
+        .option-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.5rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.125rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            background-color: white;
+            user-select: none;
+        }
+        .option-card.selected-green {
+            background-color: #f0fdf4;
+            border-color: #22c55e;
+            box-shadow: 0 0 0 1px #22c55e;
+        }
+        .option-card.selected-red {
+            background-color: #fef2f2;
+            border-color: #ef4444;
+            box-shadow: 0 0 0 1px #ef4444;
+        }
+        .tick-container {
+            width: 1.25rem;
+            height: 1.25rem;
+            border-radius: 9999px;
+            border: 1px solid #d1d5db;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .selected-green .tick-container {
+            background-color: #16a34a;
+            border-color: #16a34a;
+        }
+        .selected-red .tick-container {
+            background-color: #dc2626;
+            border-color: #dc2626;
+        }
+        .menu-btn {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .menu-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* ===== AUTH MODAL STYLES (from index10.html) ===== */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .auth-modal {
+            background: white;
+            width: 40%;
+            min-width: 300px;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+            border-radius: 4px !important;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .auth-body {
+            padding: 20px;
+        }
+        
+        .auth-field {
+            margin-bottom: 16px;
+        }
+        
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            border-radius: 0 !important;
+        }
+        
+        .auth-input:focus {
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .auth-error.show {
+            display: block;
+        }
+        
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .auth-button:hover {
+            background: #2563eb;
+        }
+        
+        .auth-button:active {
+            background: #1d4ed8;
+        }
+        
+        .auth-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .auth-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        
+        .signup-link {
+            color: #3b82f6;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .signup-link:hover {
+            text-decoration: underline;
+        }
+        
+        /* ===== SIGN IN PROMPT STYLES ===== */
+        .signin-prompt-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .signin-icon {
+            font-size: 64px;
+            color: #6b7280;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .signin-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .signin-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        .signin-button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-top: 16px;
+        }
+        
+        /* ===== LOADING STYLES ===== */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            position: relative;
+        }
+        
+        .loading-spinner::before,
+        .loading-spinner::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            animation: modern-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+        }
+        
+        .loading-spinner::before {
+            border: 3px solid rgba(59, 130, 246, 0.2);
+            border-top-color: #3b82f6;
+        }
+        
+        .loading-spinner::after {
+            border: 3px solid transparent;
+            border-top-color: #3b82f6;
+            animation-delay: -0.6s;
+        }
+        
+        @keyframes modern-spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        
+        /* ===== ERROR MESSAGE STYLES ===== */
+        .error-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        /* ===== ACCESS DENIED STYLES ===== */
+        .access-denied-container {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        /* Hidden class */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-200 py-4 flex flex-col items-center text-slate-800">
+
+    <!-- AUTHENTICATION STATE -->
+    <div id="authStateContainer">
+        <!-- Sign In Prompt (shown when not authenticated) -->
+        <div id="signinPrompt" class="signin-prompt-container hidden">
+            <div class="signin-icon">
+                <i class="fas fa-lock"></i>
+            </div>
+            <div class="signin-title">Admin Portal Login</div>
+            <div class="signin-message">
+                Please sign in with your admin credentials to access the management console.
+            </div>
+            <button id="sign-in-prompt-button" class="signin-button">
+                Sign In to Admin Portal
+            </button>
+        </div>
+        
+        <!-- Loading State -->
+        <div id="loadingState" class="loading-overlay hidden">
+            <div class="loading-spinner"></div>
+            <div class="mt-4 text-lg font-semibold text-gray-700">Checking admin permissions...</div>
+        </div>
+        
+        <!-- Access Denied State -->
+        <div id="accessDeniedState" class="access-denied-container hidden">
+            <div class="error-icon">
+                <i class="fas fa-ban"></i>
+            </div>
+            <div class="error-title">Access Denied</div>
+            <div class="error-message" id="accessDeniedMessage">
+                You don't have permission to access the admin portal.
+            </div>
+            <button id="logoutButton" class="signin-button" style="background: #ef4444;">
+                Sign Out
+            </button>
+        </div>
+    </div>
+
+    <!-- ADMIN PORTAL CONTENT (only shown when authenticated and authorized) -->
+    <div id="adminPortalContent" class="hidden">
+        <!-- DASHBOARD VIEW -->
+        <div id="dashboardView" class="w-[90vw] max-w-4xl bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col">
+            <header class="bg-slate-900 px-6 py-8 text-white text-center border-b-4 border-blue-600">
+                <h1 class="text-3xl font-bold tracking-tight uppercase">Admin Control Panel</h1>
+                <p class="text-slate-400 text-sm mt-2 tracking-widest font-light">Select a module to manage your educational content</p>
+                <div class="mt-4 flex justify-between items-center text-sm">
+                    <span id="adminWelcome" class="text-slate-300">Welcome, Admin</span>
+                    <button id="adminLogoutButton" class="px-3 py-1 bg-rose-600 hover:bg-rose-700 rounded text-white text-xs uppercase tracking-wider">
+                        Sign Out
+                    </button>
+                </div>
+            </header>
+            
+            <div class="p-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <button onclick="navigateTo('programFormView')" class="menu-btn flex flex-col items-center justify-center p-6 bg-white border-2 border-rose-500 rounded-sm shadow-md group hover:bg-rose-50">
+                    <i data-lucide="graduation-cap" class="w-12 h-12 text-rose-500 mb-3"></i>
+                    <span class="text-lg font-bold text-rose-600">Add Programs</span>
+                </button>
+
+                <button onclick="navigateTo('subjectFormView')" class="menu-btn flex flex-col items-center justify-center p-6 bg-white border-2 border-indigo-500 rounded-sm shadow-md group hover:bg-indigo-50">
+                    <i data-lucide="book-open" class="w-12 h-12 text-indigo-500 mb-3"></i>
+                    <span class="text-lg font-bold text-indigo-600">Add Subjects</span>
+                </button>
+
+                <button onclick="navigateTo('chapterFormView')" class="menu-btn flex flex-col items-center justify-center p-6 bg-white border-2 border-emerald-500 rounded-sm shadow-md group hover:bg-emerald-50">
+                    <i data-lucide="layers" class="w-12 h-12 text-emerald-500 mb-3"></i>
+                    <span class="text-lg font-bold text-emerald-600">Add Chapters</span>
+                </button>
+
+                <button onclick="navigateTo('questionFormView')" class="menu-btn flex flex-col items-center justify-center p-6 bg-white border-2 border-blue-500 rounded-sm shadow-md group hover:bg-blue-50">
+                    <i data-lucide="plus-circle" class="w-12 h-12 text-blue-500 mb-3"></i>
+                    <span class="text-lg font-bold text-blue-600">Add Questions</span>
+                </button>
+
+                <button onclick="navigateTo('lectureFormView')" class="menu-btn flex flex-col items-center justify-center p-6 bg-white border-2 border-orange-500 rounded-sm shadow-md group hover:bg-orange-50">
+                    <i data-lucide="video" class="w-12 h-12 text-orange-500 mb-3"></i>
+                    <span class="text-lg font-bold text-orange-600">Add Lectures</span>
+                </button>
+
+                <button onclick="navigateTo('participantFormView')" class="menu-btn flex flex-col items-center justify-center p-6 bg-white border-2 border-purple-500 rounded-sm shadow-md group hover:bg-purple-50">
+                    <i data-lucide="users" class="w-12 h-12 text-purple-500 mb-3"></i>
+                    <span class="text-lg font-bold text-purple-600">Add Participants</span>
+                </button>
+            </div>
+            
+            <footer class="bg-slate-50 py-4 px-6 border-t border-slate-200 text-center text-slate-400 text-xs tracking-widest uppercase">
+                Admin Console Management Suite &bull; v2.8
+            </footer>
+        </div>
+
+        <!-- ADD PROGRAM FORM VIEW -->
+        <div id="programFormView" class="hidden w-[97vw] bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col mb-10">
+            <header class="bg-slate-900 px-6 py-3 text-white border-b-2 border-rose-600 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <button onclick="navigateTo('dashboardView')" class="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                    <h1 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+                        <i data-lucide="graduation-cap" class="w-5 h-5 text-rose-500"></i>
+                        Add Program
+                    </h1>
+                </div>
+                <div class="text-slate-500 text-[10px] uppercase tracking-widest font-light">Program Entry Mode</div>
+            </header>
+
+            <form id="programForm" class="p-4 flex flex-col items-center">
+                <div class="w-[95%] space-y-6">
+                    <div class="space-y-0.5">
+                        <label class="label-text">1. programTitle</label>
+                        <input type="text" name="programTitle" placeholder="Program Title" class="input-field" required>
+                    </div>
+                    <div class="space-y-0.5">
+                        <label class="label-text">2. description</label>
+                        <textarea name="description" placeholder="Program description..." class="input-field min-h-[120px]" required></textarea>
+                    </div>
+
+                    <div class="pt-4 pb-8 flex gap-4">
+                        <button type="submit" class="flex-grow bg-rose-600 hover:bg-rose-700 text-white font-bold py-3 px-6 rounded-sm shadow-lg text-base uppercase tracking-widest">Create Program</button>
+                        <button type="button" onclick="navigateTo('dashboardView')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-sm text-sm uppercase tracking-widest">Cancel</button>
+                    </div>
+                </div>
+            </form>
+            <div id="programOutputContainer" class="hidden bg-slate-900 mx-6 mb-6 p-4 rounded-sm border-l-4 border-rose-500 shadow-inner">
+                <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-2">Program JSON Preview</h4>
+                <pre class="json-preview text-rose-300 text-[11px] font-mono overflow-auto max-h-[250px]"></pre>
+            </div>
+        </div>
+
+        <!-- ADD SUBJECTS FORM VIEW -->
+        <div id="subjectFormView" class="hidden w-[97vw] bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col mb-10">
+            <header class="bg-slate-900 px-6 py-3 text-white border-b-2 border-indigo-600 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <button onclick="navigateTo('dashboardView')" class="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                    <h1 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+                        <i data-lucide="book-open" class="w-5 h-5 text-indigo-500"></i>
+                        Add Subject
+                    </h1>
+                </div>
+                <div class="text-slate-500 text-[10px] uppercase tracking-widest font-light">Subject Entry Mode</div>
+            </header>
+
+            <form id="subjectForm" class="p-4 flex flex-col items-center">
+                <div class="w-[95%] space-y-6">
+                    <section class="bg-slate-50 p-5 border border-slate-200 rounded-sm shadow-sm">
+                        <div class="max-w-md space-y-0.5">
+                            <label class="label-text">Select Program</label>
+                            <select name="programId" class="input-field h-9" required>
+                                <option value="">Select Program...</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div class="lg:col-span-8 space-y-4">
+                            <div class="space-y-0.5">
+                                <label class="label-text">1. title</label>
+                                <input type="text" name="title" placeholder="Subject Title" class="input-field" required>
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">2. description</label>
+                                <textarea name="description" placeholder="Subject description..." class="input-field min-h-[100px]"></textarea>
+                            </div>
+                        </div>
+                        <div class="lg:col-span-4 space-y-4">
+                            <div class="space-y-0.5">
+                                <label class="label-text">3. order</label>
+                                <input type="number" name="order" class="input-field" value="1">
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">6. thumbnailUrl</label>
+                                <input type="url" name="thumbnailUrl" class="input-field" placeholder="Asset URL">
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">7. categories</label>
+                                <input type="text" name="categories" class="input-field" placeholder="Physics, Mechanics, etc.">
+                            </div>
+                        </div>
+                    </div>
+
+                    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4 border-t border-slate-100">
+                        <div class="space-y-0.5">
+                            <label class="label-text">5. mentorName</label>
+                            <input type="text" name="mentorName" class="input-field" placeholder="Instructor Name">
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">4. mentorUrl</label>
+                            <input type="url" name="mentorUrl" class="input-field" placeholder="Mentor Photo URL">
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">8. joinedStudents</label>
+                            <input type="number" name="joinedStudents" class="input-field" value="0">
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">9. lecturesCounts</label>
+                            <input type="number" name="lecturesCounts" class="input-field" value="0">
+                        </div>
+                    </section>
+
+                    <section class="grid grid-cols-1 md:grid-cols-2 gap-6 pb-4">
+                        <div class="space-y-0.5">
+                            <label class="label-text">10. price</label>
+                            <input type="text" name="price" class="input-field" placeholder="Free / $49.99">
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">11. rating</label>
+                            <input type="number" step="0.1" max="5" min="0" name="rating" class="input-field" value="4.5">
+                        </div>
+                    </section>
+
+                    <div class="pt-4 pb-8 flex gap-4">
+                        <button type="submit" class="flex-grow bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-sm shadow-lg text-base uppercase tracking-widest">Create Subject</button>
+                        <button type="button" onclick="navigateTo('dashboardView')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-sm text-sm uppercase tracking-widest">Cancel</button>
+                    </div>
+                </div>
+            </form>
+            <div id="subjectOutputContainer" class="hidden bg-slate-900 mx-6 mb-6 p-4 rounded-sm border-l-4 border-indigo-500 shadow-inner">
+                <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-2">Subject JSON Preview</h4>
+                <pre class="json-preview text-indigo-300 text-[11px] font-mono overflow-auto max-h-[250px]"></pre>
+            </div>
+        </div>
+
+        <!-- ADD CHAPTER FORM VIEW -->
+        <div id="chapterFormView" class="hidden w-[97vw] bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col mb-10">
+            <header class="bg-slate-900 px-6 py-3 text-white border-b-2 border-emerald-600 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <button onclick="navigateTo('dashboardView')" class="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                    <h1 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+                        <i data-lucide="layers" class="w-5 h-5 text-emerald-500"></i>
+                        Add Chapter
+                    </h1>
+                </div>
+                <div class="text-slate-500 text-[10px] uppercase tracking-widest font-light">Chapter Entry Mode</div>
+            </header>
+
+            <form id="chapterForm" class="p-4 flex flex-col items-center">
+                <div class="w-[95%] space-y-6">
+                    <!-- Selection Group -->
+                    <section class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-5 border border-slate-200 rounded-sm shadow-sm">
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Program</label>
+                            <select name="programId" class="input-field h-9" required>
+                                <option value="">Select Program...</option>
+                            </select>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Subject</label>
+                            <select name="subjectId" class="input-field h-9" required>
+                                <option value="">Select Subject...</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <!-- Chapter Details -->
+                    <section class="grid grid-cols-1 md:grid-cols-12 gap-6 pt-4">
+                        <div class="md:col-span-9 space-y-0.5">
+                            <label class="label-text">1. chapterTitle</label>
+                            <input type="text" name="chapterTitle" placeholder="Enter chapter name" class="input-field" required>
+                        </div>
+                        <div class="md:col-span-3 space-y-0.5">
+                            <label class="label-text">2. chapterOrder</label>
+                            <input type="number" name="chapterOrder" placeholder="e.g. 1" class="input-field" value="1" required>
+                        </div>
+                    </section>
+
+                    <div class="pt-4 pb-8 flex gap-4">
+                        <button type="submit" class="flex-grow bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-sm shadow-lg text-base uppercase tracking-widest">Add Chapter</button>
+                        <button type="button" onclick="navigateTo('dashboardView')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-sm text-sm uppercase tracking-widest">Cancel</button>
+                    </div>
+                </div>
+            </form>
+            <div id="chapterOutputContainer" class="hidden bg-slate-900 mx-6 mb-6 p-4 rounded-sm border-l-4 border-emerald-500 shadow-inner">
+                <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-2">Chapter JSON Preview</h4>
+                <pre class="json-preview text-emerald-300 text-[11px] font-mono overflow-auto max-h-[250px]"></pre>
+            </div>
+        </div>
+
+        <!-- ADD LECTURE FORM VIEW -->
+        <div id="lectureFormView" class="hidden w-[97vw] bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col mb-10">
+            <header class="bg-slate-900 px-6 py-3 text-white border-b-2 border-orange-600 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <button onclick="navigateTo('dashboardView')" class="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                    <h1 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+                        <i data-lucide="video" class="w-5 h-5 text-orange-500"></i>
+                        Add Lecture
+                    </h1>
+                </div>
+                <div class="text-slate-500 text-[10px] uppercase tracking-widest font-light">Lecture Entry Mode</div>
+            </header>
+
+            <form id="lectureForm" class="p-4 flex flex-col items-center">
+                <div class="w-[95%] space-y-6">
+                    <!-- Selection Group -->
+                    <section class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-5 border border-slate-200 rounded-sm shadow-sm">
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Program</label>
+                            <select name="programId" class="input-field h-9" required>
+                                <option value="">Select Program...</option>
+                            </select>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Subject</label>
+                            <select name="subjectId" class="input-field h-9" required>
+                                <option value="">Select Subject...</option>
+                            </select>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Chapter</label>
+                            <select name="chapterId" class="input-field h-9" required>
+                                <option value="">Select Chapter...</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-4">
+                        <div class="lg:col-span-9 space-y-4">
+                            <div class="space-y-0.5">
+                                <label class="label-text">1. lectureTitle</label>
+                                <input type="text" name="lectureTitle" placeholder="Lecture Title" class="input-field" required>
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">3. description</label>
+                                <textarea name="description" placeholder="Lecture description..." class="input-field min-h-[100px]"></textarea>
+                            </div>
+                        </div>
+                        <div class="lg:col-span-3 space-y-4">
+                            <div class="space-y-0.5">
+                                <label class="label-text">2. lectureOrder</label>
+                                <input type="number" name="lectureOrder" class="input-field" value="1" required>
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">4. lectureUrl</label>
+                                <input type="url" name="lectureUrl" class="input-field" placeholder="Video URL" required>
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">7. thumbnailUrl</label>
+                                <input type="url" name="thumbnailUrl" class="input-field" placeholder="Thumbnail URL">
+                            </div>
+                        </div>
+                    </div>
+
+                    <section class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-slate-100">
+                        <div class="space-y-0.5">
+                            <label class="label-text">5. mentorName</label>
+                            <input type="text" name="mentorName" class="input-field" placeholder="Instructor Name">
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">6. mentorProfile</label>
+                            <input type="url" name="mentorProfile" class="input-field" placeholder="Mentor Photo URL">
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">8. uploadedAt</label>
+                            <input type="datetime-local" name="uploadedAt" class="input-field" required>
+                        </div>
+                    </section>
+
+                    <div class="pt-4 pb-8 flex gap-4">
+                        <button type="submit" class="flex-grow bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-6 rounded-sm shadow-lg text-base uppercase tracking-widest">Upload Lecture</button>
+                        <button type="button" onclick="navigateTo('dashboardView')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-sm text-sm uppercase tracking-widest">Cancel</button>
+                    </div>
+                </div>
+            </form>
+            <div id="lectureOutputContainer" class="hidden bg-slate-900 mx-6 mb-6 p-4 rounded-sm border-l-4 border-orange-500 shadow-inner">
+                <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-2">Lecture JSON Preview</h4>
+                <pre class="json-preview text-orange-300 text-[11px] font-mono overflow-auto max-h-[250px]"></pre>
+            </div>
+        </div>
+
+        <!-- ADD QUESTIONS FORM VIEW -->
+        <div id="questionFormView" class="hidden w-[97vw] bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col mb-10">
+            <header class="bg-slate-900 px-6 py-3 text-white border-b-2 border-blue-600 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <button onclick="navigateTo('dashboardView')" class="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                    <h1 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+                        <i data-lucide="plus-circle" class="w-5 h-5 text-blue-500"></i>
+                        Add Questions
+                    </h1>
+                </div>
+                <div class="text-slate-500 text-[10px] uppercase tracking-widest font-light">Question Entry Mode</div>
+            </header>
+
+            <form id="questionForm" class="p-4 flex flex-col items-center">
+                <div class="w-[95%] space-y-6">
+                    <section class="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-5 border border-slate-200 rounded-sm shadow-sm">
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Program</label>
+                            <select name="programId" class="input-field h-9" required>
+                                <option value="">Select Program...</option>
+                            </select>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Subject</label>
+                            <select name="subjectId" class="input-field h-9" required>
+                                <option value="">Select Subject...</option>
+                            </select>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Chapter</label>
+                            <select name="chapterId" class="input-field h-9" required>
+                                <option value="">Select Chapter...</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                        <div class="lg:col-span-9 space-y-0.5">
+                            <label class="label-text">1. question</label>
+                            <textarea name="question" placeholder="Enter question text..." class="input-field min-h-[90px] text-base leading-snug" required></textarea>
+                        </div>
+                        <div class="lg:col-span-3 space-y-4">
+                            <div class="space-y-0.5">
+                                <label class="label-text">2. questionUrl</label>
+                                <input type="url" name="questionUrl" class="input-field" placeholder="Asset URL">
+                            </div>
+                            <div class="space-y-0.5">
+                                <label class="label-text">4. order</label>
+                                <input type="number" name="order" class="input-field" value="1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <section class="space-y-2">
+                        <label class="label-text">3. options</label>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="option-card selected" onclick="setCorrectIndex(0)">
+                                <div class="badge w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border bg-green-600 border-green-700 text-white">A</div>
+                                <input type="text" class="option-input flex-grow bg-transparent outline-none text-sm font-medium h-7" placeholder="Option 1" required onclick="event.stopPropagation()">
+                                <div class="tick-container"><i data-lucide="check" class="w-3.5 h-3.5 text-white"></i></div>
+                            </div>
+                            <div class="option-card" onclick="setCorrectIndex(1)">
+                                <div class="badge w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border bg-slate-100 border-slate-300 text-slate-400">B</div>
+                                <input type="text" class="option-input flex-grow bg-transparent outline-none text-sm font-medium h-7" placeholder="Option 2" required onclick="event.stopPropagation()">
+                                <div class="tick-container"><i data-lucide="check" class="w-3.5 h-3.5 text-white hidden"></i></div>
+                            </div>
+                            <div class="option-card" onclick="setCorrectIndex(2)">
+                                <div class="badge w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border bg-slate-100 border-slate-300 text-slate-400">C</div>
+                                <input type="text" class="option-input flex-grow bg-transparent outline-none text-sm font-medium h-7" placeholder="Option 3" required onclick="event.stopPropagation()">
+                                <div class="tick-container"><i data-lucide="check" class="w-3.5 h-3.5 text-white hidden"></i></div>
+                            </div>
+                            <div class="option-card" onclick="setCorrectIndex(3)">
+                                <div class="badge w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border bg-slate-100 border-slate-300 text-slate-400">D</div>
+                                <input type="text" class="option-input flex-grow bg-transparent outline-none text-sm font-medium h-7" placeholder="Option 4" required onclick="event.stopPropagation()">
+                                <div class="tick-container"><i data-lucide="check" class="w-3.5 h-3.5 text-white hidden"></i></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-4 border-t border-slate-100">
+                        <div class="lg:col-span-6 space-y-0.5">
+                            <label class="label-text">5. explanation</label>
+                            <textarea name="explanation" class="input-field min-h-[70px]" placeholder="Solution details..."></textarea>
+                        </div>
+                        <div class="lg:col-span-3 space-y-0.5">
+                            <label class="label-text">6. explanationUrl</label>
+                            <input type="url" name="explanationUrl" class="input-field" placeholder="Link URL">
+                        </div>
+                        <div class="lg:col-span-3 space-y-0.5">
+                            <label class="label-text">7. explanationVideoUrl</label>
+                            <input type="url" name="explanationVideoUrl" class="input-field" placeholder="Video URL">
+                        </div>
+                    </section>
+
+                    <div class="pt-4 pb-8 flex gap-4">
+                        <button type="submit" class="flex-grow bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-sm shadow-lg text-base uppercase tracking-widest">Submit Question</button>
+                        <button type="button" onclick="navigateTo('dashboardView')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-sm text-sm uppercase tracking-widest">Cancel</button>
+                    </div>
+                </div>
+            </form>
+
+            <div id="questionOutputContainer" class="hidden bg-slate-900 mx-6 mb-6 p-4 rounded-sm border-l-4 border-green-500 shadow-inner">
+                <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-2">Question JSON Preview</h4>
+                <pre class="json-preview text-blue-300 text-[11px] font-mono overflow-auto max-h-[250px]"></pre>
+            </div>
+        </div>
+
+        <!-- ADD PARTICIPANT FORM VIEW -->
+        <div id="participantFormView" class="hidden w-[97vw] bg-white shadow-2xl rounded-sm border border-slate-300 overflow-hidden flex flex-col mb-10">
+            <header class="bg-slate-900 px-6 py-3 text-white border-b-2 border-purple-600 flex justify-between items-center">
+                <div class="flex items-center gap-4">
+                    <button onclick="navigateTo('dashboardView')" class="p-1 hover:bg-slate-800 rounded-full transition-colors">
+                        <i data-lucide="arrow-left" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                    <h1 class="text-xl font-bold flex items-center gap-2 tracking-tight">
+                        <i data-lucide="users" class="w-5 h-5 text-purple-500"></i>
+                        Add Participant
+                    </h1>
+                </div>
+                <div class="text-slate-500 text-[10px] uppercase tracking-widest font-light">Participant Entry Mode</div>
+            </header>
+
+            <form id="participantForm" class="p-4 flex flex-col items-center">
+                <div class="w-[95%] space-y-6">
+                    <!-- Selection Group -->
+                    <section class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-5 border border-slate-200 rounded-sm shadow-sm">
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Program</label>
+                            <select name="programId" class="input-field h-9" required>
+                                <option value="">Select Program...</option>
+                            </select>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">Select Subject</label>
+                            <select name="subjectId" class="input-field h-9" required>
+                                <option value="">Select Subject...</option>
+                            </select>
+                        </div>
+                    </section>
+
+                    <!-- User ID Field -->
+                    <section class="pt-4">
+                        <div class="space-y-0.5">
+                            <label class="label-text">1. UserId</label>
+                            <input type="text" name="userId" placeholder="Enter unique user identifier" class="input-field" required>
+                        </div>
+                    </section>
+
+                    <!-- Dates Group -->
+                    <section class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                        <div class="space-y-0.5">
+                            <label class="label-text">2. subscribedAt</label>
+                            <input type="datetime-local" name="subscribedAt" class="input-field" required>
+                        </div>
+                        <div class="space-y-0.5">
+                            <label class="label-text">3. expiredAt</label>
+                            <input type="datetime-local" name="expiredAt" class="input-field" required>
+                        </div>
+                    </section>
+
+                    <!-- Approval Status -->
+                    <section class="pt-2">
+                        <label class="label-text">4. approved</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div id="approveOption" class="option-card selected-green flex items-center justify-between" onclick="toggleParticipantApproval(true)">
+                                <span class="text-sm font-bold uppercase tracking-widest">Approved</span>
+                                <div class="tick-container"><i data-lucide="check" class="w-3.5 h-3.5 text-white"></i></div>
+                            </div>
+                            <div id="rejectOption" class="option-card flex items-center justify-between" onclick="toggleParticipantApproval(false)">
+                                <span class="text-sm font-bold uppercase tracking-widest">Pending</span>
+                                <div class="tick-container"><i data-lucide="check" class="w-3.5 h-3.5 text-white hidden"></i></div>
+                            </div>
+                        </div>
+                        <input type="hidden" name="approved" id="participantApprovedValue" value="true">
+                    </section>
+
+                    <div class="pt-4 pb-8 flex gap-4">
+                        <button type="submit" class="flex-grow bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-sm shadow-lg text-base uppercase tracking-widest">Register Participant</button>
+                        <button type="button" onclick="navigateTo('dashboardView')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-3 px-6 rounded-sm text-sm uppercase tracking-widest">Cancel</button>
+                    </div>
+                </div>
+            </form>
+
+            <div id="participantOutputContainer" class="hidden bg-slate-900 mx-6 mb-6 p-4 rounded-sm border-l-4 border-purple-500 shadow-inner">
+                <h4 class="text-[10px] text-slate-400 uppercase font-bold mb-2">Participant JSON Preview</h4>
+                <pre class="json-preview text-purple-300 text-[11px] font-mono overflow-auto max-h-[250px]"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- AUTH MODAL (dynamically injected) -->
+    <div id="authModalContainer"></div>
+
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-3 rounded-full text-sm shadow-2xl opacity-0 pointer-events-none transition-opacity duration-300 z-50">
+        Message goes here
+    </div>
+
+    <script>
+        // Firebase configuration (same as index10.html)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+
+        // Global variables
+        let currentUser = null;
+        let adminPermissionData = null;
+        let allowedPrograms = [];
+        let authModal = null;
+        let db = null;
+        let auth = null;
+        let correctIndex = 0;
+
+        // Initialize Firebase
+        function initializeFirebase() {
+            try {
+                firebase.initializeApp(firebaseConfig);
+                auth = firebase.auth();
+                db = firebase.firestore();
+                console.log("Firebase initialized successfully");
+                
+                // Set up auth state listener
+                auth.onAuthStateChanged(handleAuthStateChange);
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                showError("Firebase initialization failed. Please refresh the page.");
+            }
+        }
+
+        // Handle authentication state changes
+        async function handleAuthStateChange(user) {
+            if (user) {
+                // User is signed in
+                currentUser = user;
+                console.log("User signed in:", user.uid);
+                
+                // Show loading state
+                showLoadingState();
+                
+                // Check admin permissions
+                const hasPermission = await checkAdminPermission(user.uid);
+                
+                if (hasPermission) {
+                    // User is authorized as admin
+                    showAdminPortal();
+                    updateAdminWelcomeMessage();
+                } else {
+                    // User is not authorized as admin
+                    showAccessDenied("You don't have admin permissions.");
+                }
+            } else {
+                // User is signed out
+                currentUser = null;
+                adminPermissionData = null;
+                allowedPrograms = [];
+                showSignInPrompt();
+            }
+        }
+
+        // Check admin permission in Firestore
+        async function checkAdminPermission(userUid) {
+            try {
+                const permissionDoc = await db.collection('programs')
+                    .doc('adminPermission')
+                    .collection('adminUId')
+                    .doc(userUid)
+                    .get();
+                
+                if (!permissionDoc.exists) {
+                    console.log("Admin permission document does not exist for user:", userUid);
+                    return false;
+                }
+                
+                const data = permissionDoc.data();
+                
+                // Check if approved is true
+                if (data.approved !== true) {
+                    console.log("Admin not approved");
+                    return false;
+                }
+                
+                // Check if expiredAt is in the future
+                const now = new Date();
+                const expiredAt = data.expiredAt?.toDate();
+                
+                if (!expiredAt || now >= expiredAt) {
+                    console.log("Admin permission expired");
+                    return false;
+                }
+                
+                // Store permission data and allowed programs
+                adminPermissionData = data;
+                allowedPrograms = data.allowedPrograms || [];
+                
+                console.log("Admin permission granted. Allowed programs:", allowedPrograms);
+                return true;
+                
+            } catch (error) {
+                console.error("Error checking admin permission:", error);
+                return false;
+            }
+        }
+
+        // Show sign in prompt
+        function showSignInPrompt() {
+            hideAllStates();
+            document.getElementById('signinPrompt').classList.remove('hidden');
+        }
+
+        // Show loading state
+        function showLoadingState() {
+            hideAllStates();
+            document.getElementById('loadingState').classList.remove('hidden');
+        }
+
+        // Show access denied state
+        function showAccessDenied(message) {
+            hideAllStates();
+            document.getElementById('accessDeniedState').classList.remove('hidden');
+            document.getElementById('accessDeniedMessage').textContent = message;
+        }
+
+        // Show admin portal
+        function showAdminPortal() {
+            hideAllStates();
+            document.getElementById('adminPortalContent').classList.remove('hidden');
+            document.getElementById('dashboardView').classList.remove('hidden');
+            populateProgramSelects();
+            lucide.createIcons(); // Reinitialize icons
+        }
+
+        // Hide all auth states
+        function hideAllStates() {
+            document.getElementById('signinPrompt').classList.add('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+            document.getElementById('accessDeniedState').classList.add('hidden');
+            document.getElementById('adminPortalContent').classList.add('hidden');
+        }
+
+        // Update admin welcome message
+        function updateAdminWelcomeMessage() {
+            const welcomeElement = document.getElementById('adminWelcome');
+            if (currentUser && currentUser.email) {
+                welcomeElement.textContent = `Welcome, ${currentUser.email}`;
+            }
+        }
+
+        // Show auth modal (copied from index10.html)
+        function showAuthModal() {
+            authModal = document.createElement('div');
+            authModal.className = 'auth-modal-overlay';
+            authModal.innerHTML = `
+                <div class="auth-modal">
+                    <div class="auth-header">
+                        <div class="auth-title">Admin Portal Sign In</div>
+                    </div>
+                    <div class="auth-body">
+                        <div class="auth-field">
+                            <label class="auth-label">Enter Email</label>
+                            <input type="email" id="auth-email" class="auth-input" placeholder="admin@example.com">
+                            <div id="email-error" class="auth-error"></div>
+                        </div>
+                        
+                        <div class="auth-field">
+                            <label class="auth-label">Enter Password</label>
+                            <input type="password" id="auth-password" class="auth-input" placeholder="••••••••">
+                            <div id="password-error" class="auth-error"></div>
+                        </div>
+                        
+                        <button id="sign-in-button" class="auth-button">Sign In</button>
+                    </div>
+                    <div class="auth-footer">
+                        Admin access only
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('authModalContainer').appendChild(authModal);
+            setupAuthModalEvents();
+        }
+
+        // Setup auth modal events
+        function setupAuthModalEvents() {
+            const signInButton = document.getElementById('sign-in-button');
+            const emailInput = document.getElementById('auth-email');
+            const passwordInput = document.getElementById('auth-password');
+            
+            signInButton.addEventListener('click', signInWithEmail);
+            
+            emailInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    passwordInput.focus();
+                }
+            });
+            
+            passwordInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    signInWithEmail();
+                }
+            });
+            
+            authModal.addEventListener('click', (e) => {
+                if (e.target === authModal) {
+                    hideAuthModal();
+                }
+            });
+        }
+
+        // Sign in with email and password
+        async function signInWithEmail() {
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+            const signInButton = document.getElementById('sign-in-button');
+            const emailError = document.getElementById('email-error');
+            const passwordError = document.getElementById('password-error');
+            
+            // Clear previous errors
+            emailError.textContent = '';
+            emailError.classList.remove('show');
+            passwordError.textContent = '';
+            passwordError.classList.remove('show');
+            
+            // Basic validation
+            if (!email) {
+                emailError.textContent = 'Please enter your email';
+                emailError.classList.add('show');
+                return;
+            }
+            
+            if (!password) {
+                passwordError.textContent = 'Please enter your password';
+                passwordError.classList.add('show');
+                return;
+            }
+            
+            signInButton.textContent = 'Signing In...';
+            signInButton.classList.add('loading');
+            
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+                hideAuthModal();
+            } catch (error) {
+                console.error("Sign in error:", error);
+                signInButton.textContent = 'Sign In';
+                signInButton.classList.remove('loading');
+                
+                switch (error.code) {
+                    case 'auth/invalid-email':
+                        emailError.textContent = 'Invalid email address';
+                        emailError.classList.add('show');
+                        break;
+                    case 'auth/user-disabled':
+                        emailError.textContent = 'This account has been disabled';
+                        emailError.classList.add('show');
+                        break;
+                    case 'auth/user-not-found':
+                        emailError.textContent = 'No account found with this email';
+                        emailError.classList.add('show');
+                        break;
+                    case 'auth/wrong-password':
+                        passwordError.textContent = 'Incorrect password';
+                        passwordError.classList.add('show');
+                        break;
+                    case 'auth/too-many-requests':
+                        passwordError.textContent = 'Too many failed attempts. Try again later';
+                        passwordError.classList.add('show');
+                        break;
+                    default:
+                        passwordError.textContent = 'Failed to sign in. Please try again';
+                        passwordError.classList.add('show');
+                }
+            }
+        }
+
+        // Hide auth modal
+        function hideAuthModal() {
+            if (authModal && authModal.parentNode) {
+                authModal.parentNode.removeChild(authModal);
+                authModal = null;
+            }
+        }
+
+        // Sign out
+        async function signOut() {
+            try {
+                await auth.signOut();
+                showToast('Signed out successfully');
+            } catch (error) {
+                console.error("Sign out error:", error);
+                showToast('Error signing out');
+            }
+        }
+
+        // Show toast message
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 2000);
+        }
+
+        // Show error message
+        function showError(message) {
+            alert(`Error: ${message}`);
+        }
+
+        // Populate program selects with allowed programs
+        async function populateProgramSelects() {
+            if (!allowedPrograms || allowedPrograms.length === 0) {
+                console.log("No allowed programs to populate");
+                return;
+            }
+            
+            try {
+                // Fetch program details for each allowed program
+                const programPromises = allowedPrograms.map(programId => 
+                    db.collection('programs').doc(programId).get()
+                );
+                
+                const programDocs = await Promise.all(programPromises);
+                const programs = [];
+                
+                programDocs.forEach((doc, index) => {
+                    if (doc.exists) {
+                        programs.push({
+                            id: allowedPrograms[index],
+                            title: doc.data().programTitle || `Program ${allowedPrograms[index]}`
+                        });
+                    }
+                });
+                
+                // Populate all program selects
+                const programSelects = document.querySelectorAll('select[name="programId"]');
+                programSelects.forEach(select => {
+                    // Clear existing options except the first one
+                    const firstOption = select.options[0];
+                    select.innerHTML = '';
+                    select.appendChild(firstOption);
+                    
+                    // Add program options
+                    programs.forEach(program => {
+                        const option = document.createElement('option');
+                        option.value = program.id;
+                        option.textContent = program.title;
+                        select.appendChild(option);
+                    });
+                });
+                
+                // Set up change listeners for subject and chapter population
+                setupHierarchicalSelects();
+                
+            } catch (error) {
+                console.error("Error populating program selects:", error);
+            }
+        }
+
+        // Setup hierarchical selects (program → subject → chapter)
+        function setupHierarchicalSelects() {
+            // When program changes, populate subjects
+            document.querySelectorAll('select[name="programId"]').forEach(select => {
+                select.addEventListener('change', async function() {
+                    const programId = this.value;
+                    const subjectSelect = this.closest('form').querySelector('select[name="subjectId"]');
+                    const chapterSelect = this.closest('form').querySelector('select[name="chapterId"]');
+                    
+                    if (subjectSelect) {
+                        await populateSubjects(programId, subjectSelect);
+                    }
+                    if (chapterSelect) {
+                        chapterSelect.innerHTML = '<option value="">Select Chapter...</option>';
+                    }
+                });
+            });
+            
+            // When subject changes, populate chapters
+            document.querySelectorAll('select[name="subjectId"]').forEach(select => {
+                select.addEventListener('change', async function() {
+                    const programId = this.closest('form').querySelector('select[name="programId"]').value;
+                    const subjectId = this.value;
+                    const chapterSelect = this.closest('form').querySelector('select[name="chapterId"]');
+                    
+                    if (chapterSelect && programId && subjectId) {
+                        await populateChapters(programId, subjectId, chapterSelect);
+                    }
+                });
+            });
+        }
+
+        // Populate subjects for a program
+        async function populateSubjects(programId, subjectSelect) {
+            if (!programId || !allowedPrograms.includes(programId)) {
+                subjectSelect.innerHTML = '<option value="">Select Subject...</option>';
+                return;
+            }
+            
+            try {
+                const subjectsSnapshot = await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .orderBy('order', 'asc')
+                    .get();
+                
+                subjectSelect.innerHTML = '<option value="">Select Subject...</option>';
+                
+                subjectsSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.data().title || `Subject ${doc.id}`;
+                    subjectSelect.appendChild(option);
+                });
+                
+            } catch (error) {
+                console.error("Error populating subjects:", error);
+                subjectSelect.innerHTML = '<option value="">Select Subject...</option>';
+            }
+        }
+
+        // Populate chapters for a subject
+        async function populateChapters(programId, subjectId, chapterSelect) {
+            if (!programId || !subjectId || !allowedPrograms.includes(programId)) {
+                chapterSelect.innerHTML = '<option value="">Select Chapter...</option>';
+                return;
+            }
+            
+            try {
+                const chaptersSnapshot = await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .doc(subjectId)
+                    .collection('chapters')
+                    .orderBy('chapterOrder', 'asc')
+                    .get();
+                
+                chapterSelect.innerHTML = '<option value="">Select Chapter...</option>';
+                
+                chaptersSnapshot.forEach(doc => {
+                    const option = document.createElement('option');
+                    option.value = doc.id;
+                    option.textContent = doc.data().chapterTitle || `Chapter ${doc.id}`;
+                    chapterSelect.appendChild(option);
+                });
+                
+            } catch (error) {
+                console.error("Error populating chapters:", error);
+                chapterSelect.innerHTML = '<option value="">Select Chapter...</option>';
+            }
+        }
+
+        // Navigation function
+        function navigateTo(viewId) {
+            ['dashboardView', 'programFormView', 'subjectFormView', 'chapterFormView', 'questionFormView', 'participantFormView', 'lectureFormView'].forEach(v => {
+                const el = document.getElementById(v);
+                if (el) el.classList.add('hidden');
+            });
+            document.getElementById(viewId).classList.remove('hidden');
+            window.scrollTo(0, 0);
+        }
+
+        // Question form functions
+        function setCorrectIndex(index) {
+            correctIndex = index;
+            const cards = document.querySelectorAll('#questionFormView .option-card');
+            cards.forEach((card, idx) => {
+                const badge = card.querySelector('.badge');
+                const tickIcon = card.querySelector('.tick-container i');
+                if (idx === index) {
+                    card.classList.add('selected');
+                    badge.className = 'badge w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border bg-green-600 border-green-700 text-white';
+                    if (tickIcon) tickIcon.classList.remove('hidden');
+                } else {
+                    card.classList.remove('selected');
+                    badge.className = 'badge w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border bg-slate-100 border-slate-300 text-slate-400';
+                    if (tickIcon) tickIcon.classList.add('hidden');
+                }
+            });
+        }
+
+        function toggleParticipantApproval(val) {
+            const approvedValueInput = document.getElementById('participantApprovedValue');
+            const approveOpt = document.getElementById('approveOption');
+            const rejectOpt = document.getElementById('rejectOption');
+
+            approvedValueInput.value = val;
+            
+            if(val) {
+                approveOpt.classList.add('selected-green');
+                approveOpt.querySelector('i').classList.remove('hidden');
+                rejectOpt.classList.remove('selected-red');
+                rejectOpt.querySelector('i').classList.add('hidden');
+            } else {
+                rejectOpt.classList.add('selected-red');
+                rejectOpt.querySelector('i').classList.remove('hidden');
+                approveOpt.classList.remove('selected-green');
+                approveOpt.querySelector('i').classList.add('hidden');
+            }
+        }
+
+        // ===== FIREBASE FORM HANDLERS =====
+
+        // 1. ADD PROGRAM FORM
+        document.getElementById('programForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!currentUser) {
+                showToast('Please sign in first');
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const programTitle = formData.get('programTitle').trim();
+            const description = formData.get('description').trim();
+            
+            if (!programTitle) {
+                showToast('Please enter a program title');
+                return;
+            }
+            
+            try {
+                // Generate a unique ID for the program
+                const programId = generateId();
+                
+                // Create program document
+                await db.collection('programs').doc(programId).set({
+                    programTitle: programTitle,
+                    description: description,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                // Update admin's allowedPrograms array
+                await db.collection('programs')
+                    .doc('adminPermission')
+                    .collection('adminUId')
+                    .doc(currentUser.uid)
+                    .update({
+                        allowedPrograms: firebase.firestore.FieldValue.arrayUnion(programId)
+                    });
+                
+                // Update local allowedPrograms
+                allowedPrograms.push(programId);
+                
+                // Reset form
+                this.reset();
+                
+                // Show success message
+                showToast('Program created successfully!');
+                
+                // Navigate back to dashboard
+                navigateTo('dashboardView');
+                
+                // Update program selects
+                setTimeout(() => populateProgramSelects(), 500);
+                
+            } catch (error) {
+                console.error("Error creating program:", error);
+                showToast('Failed to create program: ' + error.message);
+            }
+        });
+
+        // 2. ADD SUBJECT FORM
+        document.getElementById('subjectForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!currentUser || !adminPermissionData) {
+                showToast('Please sign in with admin permissions');
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const programId = formData.get('programId');
+            const title = formData.get('title').trim();
+            
+            if (!programId) {
+                showToast('Please select a program');
+                return;
+            }
+            
+            if (!allowedPrograms.includes(programId)) {
+                showToast('You do not have permission to add subjects to this program');
+                return;
+            }
+            
+            if (!title) {
+                showToast('Please enter a subject title');
+                return;
+            }
+            
+            try {
+                // Generate a unique ID for the subject
+                const subjectId = generateId();
+                
+                // Create subject document
+                await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .doc(subjectId)
+                    .set({
+                        title: title,
+                        description: formData.get('description') || '',
+                        order: parseInt(formData.get('order')) || 1,
+                        mentorUrl: formData.get('mentorUrl') || '',
+                        mentorName: formData.get('mentorName') || '',
+                        thumbnailUrl: formData.get('thumbnailUrl') || '',
+                        categories: formData.get('categories') || 'General',
+                        joinedStudents: parseInt(formData.get('joinedStudents')) || 0,
+                        lecturesCounts: parseInt(formData.get('lecturesCounts')) || 0,
+                        price: formData.get('price') || 'Free',
+                        rating: parseFloat(formData.get('rating')) || 4.5
+                    });
+                
+                // Reset form
+                this.reset();
+                
+                // Show success message
+                showToast('Subject created successfully!');
+                
+                // Navigate back to dashboard
+                navigateTo('dashboardView');
+                
+            } catch (error) {
+                console.error("Error creating subject:", error);
+                showToast('Failed to create subject: ' + error.message);
+            }
+        });
+
+        // 3. ADD CHAPTER FORM
+        document.getElementById('chapterForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!currentUser || !adminPermissionData) {
+                showToast('Please sign in with admin permissions');
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const programId = formData.get('programId');
+            const subjectId = formData.get('subjectId');
+            const chapterTitle = formData.get('chapterTitle').trim();
+            const chapterOrder = parseInt(formData.get('chapterOrder')) || 1;
+            
+            if (!programId || !subjectId) {
+                showToast('Please select a program and subject');
+                return;
+            }
+            
+            if (!allowedPrograms.includes(programId)) {
+                showToast('You do not have permission to add chapters to this program');
+                return;
+            }
+            
+            if (!chapterTitle) {
+                showToast('Please enter a chapter title');
+                return;
+            }
+            
+            try {
+                // Generate a unique ID for the chapter
+                const chapterId = generateId();
+                
+                // Create chapter document
+                await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .doc(subjectId)
+                    .collection('chapters')
+                    .doc(chapterId)
+                    .set({
+                        chapterTitle: chapterTitle,
+                        chapterOrder: chapterOrder
+                    });
+                
+                // Reset form
+                this.reset();
+                
+                // Show success message
+                showToast('Chapter added successfully!');
+                
+                // Navigate back to dashboard
+                navigateTo('dashboardView');
+                
+            } catch (error) {
+                console.error("Error adding chapter:", error);
+                showToast('Failed to add chapter: ' + error.message);
+            }
+        });
+
+        // 4. ADD LECTURE FORM
+        document.getElementById('lectureForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!currentUser || !adminPermissionData) {
+                showToast('Please sign in with admin permissions');
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const programId = formData.get('programId');
+            const subjectId = formData.get('subjectId');
+            const chapterId = formData.get('chapterId');
+            const lectureTitle = formData.get('lectureTitle').trim();
+            const lectureUrl = formData.get('lectureUrl').trim();
+            
+            if (!programId || !subjectId || !chapterId) {
+                showToast('Please select a program, subject, and chapter');
+                return;
+            }
+            
+            if (!allowedPrograms.includes(programId)) {
+                showToast('You do not have permission to add lectures to this program');
+                return;
+            }
+            
+            if (!lectureTitle) {
+                showToast('Please enter a lecture title');
+                return;
+            }
+            
+            if (!lectureUrl) {
+                showToast('Please enter a lecture URL');
+                return;
+            }
+            
+            try {
+                // Generate a unique ID for the lecture
+                const lectureId = generateId();
+                
+                // Parse uploadedAt datetime
+                const uploadedAt = new Date(formData.get('uploadedAt'));
+                if (isNaN(uploadedAt.getTime())) {
+                    showToast('Invalid upload date/time');
+                    return;
+                }
+                
+                // Create lecture document
+                await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .doc(subjectId)
+                    .collection('chapters')
+                    .doc(chapterId)
+                    .collection('lectures')
+                    .doc(lectureId)
+                    .set({
+                        lectureTitle: lectureTitle,
+                        lectureOrder: parseInt(formData.get('lectureOrder')) || 1,
+                        description: formData.get('description') || '',
+                        lectureUrl: lectureUrl,
+                        mentorName: formData.get('mentorName') || '',
+                        mentorProfile: formData.get('mentorProfile') || '',
+                        thumbnailUrl: formData.get('thumbnailUrl') || '',
+                        uploadedAt: firebase.firestore.Timestamp.fromDate(uploadedAt)
+                    });
+                
+                // Reset form
+                this.reset();
+                
+                // Show success message
+                showToast('Lecture uploaded successfully!');
+                
+                // Navigate back to dashboard
+                navigateTo('dashboardView');
+                
+            } catch (error) {
+                console.error("Error uploading lecture:", error);
+                showToast('Failed to upload lecture: ' + error.message);
+            }
+        });
+
+        // 5. ADD QUESTION FORM
+        document.getElementById('questionForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!currentUser || !adminPermissionData) {
+                showToast('Please sign in with admin permissions');
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const programId = formData.get('programId');
+            const subjectId = formData.get('subjectId');
+            const chapterId = formData.get('chapterId');
+            const question = formData.get('question').trim();
+            
+            if (!programId || !subjectId || !chapterId) {
+                showToast('Please select a program, subject, and chapter');
+                return;
+            }
+            
+            if (!allowedPrograms.includes(programId)) {
+                showToast('You do not have permission to add questions to this program');
+                return;
+            }
+            
+            if (!question) {
+                showToast('Please enter a question');
+                return;
+            }
+            
+            // Get options from form
+            const options = Array.from(document.querySelectorAll('#questionFormView .option-input'))
+                .map(input => input.value.trim())
+                .filter(option => option !== '');
+            
+            if (options.length === 0) {
+                showToast('Please enter at least one option');
+                return;
+            }
+            
+            try {
+                // Generate a unique ID for the question
+                const questionId = generateId();
+                
+                // Create question document
+                await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .doc(subjectId)
+                    .collection('chapters')
+                    .doc(chapterId)
+                    .collection('questions')
+                    .doc(questionId)
+                    .set({
+                        question: question,
+                        questionUrl: formData.get('questionUrl') || '',
+                        options: options,
+                        correctIndex: correctIndex,
+                        order: parseInt(formData.get('order')) || 1,
+                        explanation: formData.get('explanation') || '',
+                        explanationUrl: formData.get('explanationUrl') || '',
+                        explanationVideoUrl: formData.get('explanationVideoUrl') || ''
+                    });
+                
+                // Reset form
+                this.reset();
+                setCorrectIndex(0); // Reset to first option
+                
+                // Show success message
+                showToast('Question submitted successfully!');
+                
+                // Navigate back to dashboard
+                navigateTo('dashboardView');
+                
+            } catch (error) {
+                console.error("Error submitting question:", error);
+                showToast('Failed to submit question: ' + error.message);
+            }
+        });
+
+        // 6. ADD PARTICIPANT FORM
+        document.getElementById('participantForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            if (!currentUser || !adminPermissionData) {
+                showToast('Please sign in with admin permissions');
+                return;
+            }
+            
+            const formData = new FormData(this);
+            const programId = formData.get('programId');
+            const subjectId = formData.get('subjectId');
+            const userId = formData.get('userId').trim();
+            
+            if (!programId || !subjectId) {
+                showToast('Please select a program and subject');
+                return;
+            }
+            
+            if (!allowedPrograms.includes(programId)) {
+                showToast('You do not have permission to add participants to this program');
+                return;
+            }
+            
+            if (!userId) {
+                showToast('Please enter a user ID');
+                return;
+            }
+            
+            // Parse datetime values
+            const subscribedAt = new Date(formData.get('subscribedAt'));
+            const expiredAt = new Date(formData.get('expiredAt'));
+            
+            if (isNaN(subscribedAt.getTime()) || isNaN(expiredAt.getTime())) {
+                showToast('Invalid date/time values');
+                return;
+            }
+            
+            if (expiredAt <= subscribedAt) {
+                showToast('Expiration date must be after subscription date');
+                return;
+            }
+            
+            const approved = formData.get('approved') === 'true';
+            
+            try {
+                // Create participant permission document
+                await db.collection('programs')
+                    .doc(programId)
+                    .collection('subjects')
+                    .doc(subjectId)
+                    .collection('permissions')
+                    .doc(userId)
+                    .set({
+                        subscribedAt: firebase.firestore.Timestamp.fromDate(subscribedAt),
+                        expiredAt: firebase.firestore.Timestamp.fromDate(expiredAt),
+                        approved: approved
+                    });
+                
+                // Reset form
+                this.reset();
+                toggleParticipantApproval(true); // Reset to approved
+                
+                // Show success message
+                showToast('Participant registered successfully!');
+                
+                // Navigate back to dashboard
+                navigateTo('dashboardView');
+                
+            } catch (error) {
+                console.error("Error registering participant:", error);
+                showToast('Failed to register participant: ' + error.message);
+            }
+        });
+
+        // Helper function to generate unique IDs
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        }
+
+        // Event listeners for UI elements
+        document.getElementById('sign-in-prompt-button').addEventListener('click', showAuthModal);
+        document.getElementById('logoutButton').addEventListener('click', signOut);
+        document.getElementById('adminLogoutButton').addEventListener('click', signOut);
+
+        // Initialize the application
+        window.addEventListener('DOMContentLoaded', () => {
+            initializeFirebase();
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
