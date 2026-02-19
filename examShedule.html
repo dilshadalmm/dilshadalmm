@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BE COMPUTER | NEXT-GEN HUB</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #ffffff;
+            --accent-blue: #0066ff;
+            --accent-red: #ff3333;
+            --text-main: #000000;
+            --text-mute: #888888;
+        }
+
+        /* Essential Restrictions */
+        * {
+            -webkit-tap-highlight-color: transparent;
+            user-select: none !important;
+            -webkit-user-select: none !important;
+            scrollbar-width: none !important;
+            -ms-overflow-style: none !important;
+        }
+
+        ::-webkit-scrollbar { display: none !important; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            background: #fcfcfc;
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+        }
+
+        .main-wrapper {
+            width: 98%;
+            height: 100vh;
+            margin: 0 auto;
+            overflow-y: auto;
+            padding: 2rem 0;
+        }
+
+        /* Premium Minimalist Card */
+        .glass-row {
+            background: #ffffff;
+            border: 1px solid #f0f0f0;
+            border-radius: 1px; /* Sharp modern edges */
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            position: relative;
+            margin-bottom: 0.75rem;
+        }
+
+        .glass-row:hover {
+            border-color: #000;
+            transform: scale(1.002);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.04);
+            z-index: 10;
+        }
+
+        .row-content {
+            display: grid;
+            grid-template-columns: 100px 1fr 140px 180px;
+            align-items: center;
+            padding: 1.5rem 2rem;
+        }
+
+        @media (max-width: 1024px) {
+            .row-content { grid-template-columns: 80px 1fr 120px; }
+            .status-tag { display: none; }
+        }
+
+        @media (max-width: 768px) {
+            .row-content { grid-template-columns: 1fr; text-align: center; gap: 1rem; padding: 2rem; }
+        }
+
+        /* Typography & Clock */
+        .clock-heavy {
+            font-size: 5rem;
+            font-weight: 800;
+            letter-spacing: -0.05em;
+            line-height: 0.9;
+            color: #000;
+        }
+
+        .seconds-mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.25rem;
+            color: var(--accent-blue);
+        }
+
+        .subject-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            text-transform: uppercase;
+        }
+
+        /* Minimal Progress */
+        .nano-progress {
+            height: 2px;
+            background: #f0f0f0;
+            width: 100%;
+            margin-top: 10px;
+            position: relative;
+        }
+
+        .nano-fill {
+            position: absolute;
+            height: 100%;
+            left: 0;
+            top: 0;
+            background: #000;
+            transition: width 2s ease;
+        }
+
+        .urgent-text { color: var(--accent-red); }
+        .urgent-fill { background: var(--accent-red); }
+
+        /* Status Tag */
+        .status-tag {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.2em;
+            padding: 8px 16px;
+            border: 1px solid #eee;
+            text-transform: uppercase;
+            text-align: center;
+        }
+
+        .badge-urgent { border-color: #ffcccc; color: #ff3333; background: #fff5f5; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div class="main-wrapper space-y-12">
+        
+        <!-- Minimalist Header -->
+        <header class="flex flex-col md:flex-row justify-between items-end p-8 border-b border-black">
+            <div class="space-y-2">
+                <div class="flex items-center gap-4">
+                    <img src="https://i.postimg.cc/KcVvrkz3/Concept_20251225_020546_0000.png" class="w-10 h-10 grayscale brightness-0" alt="Logo">
+                    <h1 class="text-3xl font-extrabold tracking-tighter">BE COMPUTER</h1>
+                </div>
+                <p class="text-[11px] font-medium tracking-[0.5em] text-gray-400 uppercase">2081 Semester Monitoring Service</p>
+            </div>
+            
+            <div class="text-right mt-8 md:mt-0">
+                <div class="flex items-start justify-end">
+                    <span id="time-main" class="clock-heavy">00:00</span>
+                    <span id="time-sec" class="seconds-mono ml-2">00</span>
+                </div>
+                <div id="date-main" class="text-[12px] font-bold tracking-widest text-black mt-2"></div>
+            </div>
+        </header>
+
+        <!-- Exam Table View -->
+        <main class="space-y-2">
+            <div class="px-8 flex justify-between text-[10px] font-bold uppercase tracking-[0.3em] text-gray-400 mb-4">
+                <span>Ref. Date</span>
+                <span>Course Details</span>
+                <span>T-Minus</span>
+                <span class="status-tag border-0 p-0">State</span>
+            </div>
+            
+            <div id="exam-list">
+                <!-- Injected Rows -->
+            </div>
+        </main>
+
+        <!-- Minimal Footer -->
+        <footer class="p-8 flex flex-col md:flex-row justify-between items-center text-[10px] font-bold uppercase tracking-[0.4em] text-gray-300">
+            <div class="flex items-center gap-2">
+                <div class="w-1 h-1 bg-black rounded-full"></div>
+                <span>Syncronized via UESC Neural Link</span>
+            </div>
+            <span>Academic Registry v5.0</span>
+        </footer>
+    </div>
+
+    <script>
+        const exams = [
+            { name: "Programming In C", date: "2026-03-17", code: "CT-401" },
+            { name: "Basic Electrical Engineering", date: "2026-03-25", code: "EE-401" },
+            { name: "Applied Physics", date: "2026-04-04", code: "SH-401" },
+            { name: "Calculus I", date: "2026-04-09", code: "SH-402" },
+            { name: "Communication Techniques", date: "2026-04-13", code: "SH-403" }
+        ];
+
+        function updateClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, '0');
+            const m = String(now.getMinutes()).padStart(2, '0');
+            const s = String(now.getSeconds()).padStart(2, '0');
+            
+            document.getElementById('time-main').textContent = `${h}:${m}`;
+            document.getElementById('time-sec').textContent = s;
+            
+            const options = { day: '2-digit', month: 'long', year: 'numeric' };
+            document.getElementById('date-main').textContent = now.toLocaleDateString('en-GB', options).toUpperCase();
+        }
+
+        function renderExams() {
+            const container = document.getElementById('exam-list');
+            const now = new Date();
+            const sorted = [...exams].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            container.innerHTML = sorted.map(exam => {
+                const eDate = new Date(exam.date);
+                const diff = Math.ceil((eDate - now) / (1000 * 60 * 60 * 24));
+                const urgent = diff <= 10;
+                const progress = Math.max(2, Math.min(100, (1 - (diff / 45)) * 100));
+
+                return `
+                    <div class="glass-row">
+                        <div class="row-content">
+                            <!-- Date -->
+                            <div class="flex flex-col">
+                                <span class="text-[12px] font-extrabold">${eDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }).toUpperCase()}</span>
+                                <span class="text-[9px] text-gray-400 font-bold">${eDate.getFullYear()}</span>
+                            </div>
+
+                            <!-- Subject -->
+                            <div class="flex flex-col pr-8">
+                                <div class="flex items-center gap-4 mb-1">
+                                    <span class="font-mono text-[10px] text-gray-400">${exam.code}</span>
+                                    <h3 class="subject-title ${urgent ? 'text-black' : 'text-gray-800'}">${exam.name}</h3>
+                                </div>
+                                <div class="nano-progress">
+                                    <div class="nano-fill ${urgent ? 'urgent-fill' : ''}" style="width: ${progress}%"></div>
+                                </div>
+                            </div>
+
+                            <!-- Countdown -->
+                            <div class="flex flex-col items-center md:items-end">
+                                <div class="flex items-baseline gap-1">
+                                    <span class="text-4xl font-extrabold tabular-nums ${urgent ? 'urgent-text' : ''}">${diff > 0 ? (diff < 10 ? '0'+diff : diff) : '00'}</span>
+                                    <span class="text-[10px] font-bold text-gray-400 uppercase">Days</span>
+                                </div>
+                            </div>
+
+                            <!-- Status -->
+                            <div class="status-tag ${urgent ? 'badge-urgent' : ''}">
+                                ${urgent ? 'Immediate Action' : 'In Preparation'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Lock Zoom & Gestures
+        window.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+        window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
+        setInterval(updateClock, 1000);
+        updateClock();
+        renderExams();
+    </script>
+</body>
+</html>
+
