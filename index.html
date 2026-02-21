@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Q&A · Academic Portal</title>
+
+    <!-- Tailwind (lightweight) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts: Newsreader for body, Anton for logo (optional) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome (icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- KaTeX for LaTeX -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
+
+    <!-- Firebase SDK (same as questionpage) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        /* Prevent scrolling on html, allow inside main container */
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Newsreader', serif;
+            background-color: #ffffff;
+            color: #000000;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #app-wrapper {
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Top bar (simplified, shows chapter name) */
+        .top-bar {
+            background-color: #000000;
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        .chapter-title-display {
+            font-size: 1.1rem;
+            font-weight: 600;
+            text-transform: none;  /* preserve original case */
+            letter-spacing: 0.02em;
+        }
+
+        .profile-icon {
+            width: 32px;
+            height: 32px;
+            background-color: #374151;
+            border-radius: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        /* Scrollable content area */
+        #content-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 12px;
+            background: #f9fafb;
+            scrollbar-width: none;  /* Firefox */
+            -ms-overflow-style: none;  /* IE/Edge */
+        }
+        #content-area::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Q&A item styling */
+        .qa-item {
+            margin-bottom: 24px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            padding: 16px;
+        }
+
+        .question-box {
+            background-color: #374151;
+            color: white;
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            border: none;
+        }
+
+        .answer-text {
+            font-size: 0.95rem;
+            line-height: 1.6;
+            color: #1f2937;
+            padding: 0 4px 8px 4px;
+        }
+
+        /* Video wrapper – square corners, same as questionpage */
+        .video-wrapper {
+            width: 100%;
+            margin: 16px 0 8px 0;
+            background: #000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .video-player-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 */
+            background: #000;
+        }
+
+        /* All the custom YouTube control styles copied from questionpage */
+        .youtube-iframe-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .youtube-iframe-wrapper iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            pointer-events: none;
+        }
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        .modern-control-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 60%, transparent 100%);
+            color: white;
+            padding: 12px 16px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 20;
+            pointer-events: auto;
+        }
+        .video-overlay:hover .modern-control-bar,
+        .modern-control-bar.visible {
+            opacity: 1;
+        }
+        .top-progress-container {
+            width: 100%;
+            height: 3px;
+            background: rgba(255,255,255,0.2);
+            cursor: pointer;
+            position: relative;
+        }
+        .progress-track {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background: #ef4444;
+            transition: width 0.1s linear;
+        }
+        .progress-thumb {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            background: #ef4444;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .top-progress-container:hover .progress-thumb {
+            opacity: 1;
+        }
+        .controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+        }
+        .left-controls, .right-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .control-btn {
+            background: #000;
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 8px;
+            min-width: 40px;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        .control-btn:hover { background: #333; }
+        .time-display {
+            font-size: 12px;
+            font-weight: 500;
+            white-space: nowrap;
+            color: rgba(255,255,255,0.95);
+        }
+        .double-tap-indicator {
+            position: absolute;
+            top: 0;
+            width: 50%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 15;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .double-tap-left {
+            left: 0;
+            background: linear-gradient(to right, rgba(239,68,68,0.7), transparent);
+        }
+        .double-tap-right {
+            right: 0;
+            background: linear-gradient(to left, rgba(239,68,68,0.7), transparent);
+        }
+        .double-tap-indicator.show { opacity: 1; }
+        .video-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            z-index: 5;
+        }
+        .video-loading-spinner {
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .player-error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            font-size: 12px;
+            text-align: center;
+            z-index: 5;
+        }
+
+        /* Sign-in modal (copied from questionpage) */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .auth-modal {
+            background: white;
+            width: 90%;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+            font-weight: 600;
+        }
+        .auth-body { padding: 20px; }
+        .auth-field { margin-bottom: 16px; }
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+        }
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+        }
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        .auth-error.show { display: block; }
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .auth-button.loading { opacity: 0.7; cursor: not-allowed; }
+        .auth-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 13px;
+        }
+        .signup-link { color: #3b82f6; cursor: pointer; }
+
+        /* Loading / error states */
+        .loading-placeholder {
+            text-align: center;
+            padding: 40px 20px;
+            color: #6b7280;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-wrapper">
+        <!-- Top bar with chapter name (dynamic) and profile icon -->
+        <div class="top-bar">
+            <span class="chapter-title-display" id="chapter-title">Loading...</span>
+            <div class="profile-icon" id="profile-icon" title="Sign out">C</div>
+        </div>
+
+        <!-- Main scrollable content -->
+        <div id="content-area"></div>
+    </div>
+
+    <!-- Auth modal container (populated by AuthManager) -->
+    <div id="auth-modal-container"></div>
+
+    <script>
+        // ---------- FIREBASE CONFIG (from questionpage) ----------
+        const firebaseConfig = {
+            apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+            authDomain: "geobazarr.firebaseapp.com",
+            databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+            projectId: "geobazarr",
+            storageBucket: "geobazarr.firebasestorage.app",
+            messagingSenderId: "679949247383",
+            appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // ---------- SIMPLIFIED CACHE (only what we need) ----------
+        const cache = {
+            permission: new Map(),
+            chapterData: null,
+            questions: null
+        };
+
+        // ---------- SESSION MANAGER (copied & trimmed) ----------
+        class SessionManager {
+            constructor() { this.localSessionId = null; }
+            async createSession(userUid) {
+                const sessionId = this.generateSessionId();
+                this.localSessionId = sessionId;
+                localStorage.setItem(`session_${userUid}`, sessionId);
+                try {
+                    await db.collection('sessions').doc(userUid).set({
+                        sessionId, updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+                } catch (e) { console.warn("Session creation failed", e); }
+                return sessionId;
+            }
+            generateSessionId() {
+                return Array.from(crypto.getRandomValues(new Uint32Array(8)), 
+                    dec => ('0' + dec.toString(16)).substr(-2)).join('');
+            }
+            async resumeSession(userUid) {
+                const stored = localStorage.getItem(`session_${userUid}`);
+                if (!stored) return false;
+                this.localSessionId = stored;
+                return true;
+            }
+            clearLocalSession(userUid) {
+                localStorage.removeItem(`session_${userUid}`);
+                this.localSessionId = null;
+            }
+        }
+        const sessionManager = new SessionManager();
+
+        // ---------- PERMISSION MANAGER (simplified) ----------
+        async function checkUserPermissionForSubject(userUid, classId, subjectId) {
+            const key = `${classId}-${subjectId}-${userUid}`;
+            if (cache.permission.has(key)) return cache.permission.get(key);
+            try {
+                const permDoc = await db.collection('class').doc(classId)
+                    .collection('subject').doc(subjectId)
+                    .collection('permissions').doc(userUid).get();
+                if (!permDoc.exists) {
+                    const result = { hasAccess: false };
+                    cache.permission.set(key, result);
+                    return result;
+                }
+                const data = permDoc.data();
+                if (data.approved === true) {
+                    if (data.expiredAt) {
+                        const expired = data.expiredAt.toDate();
+                        if (new Date() > expired) {
+                            const result = { hasAccess: false, expired: true };
+                            cache.permission.set(key, result);
+                            return result;
+                        }
+                    }
+                    const result = { hasAccess: true };
+                    cache.permission.set(key, result);
+                    return result;
+                }
+                return { hasAccess: false };
+            } catch (e) {
+                console.error("Permission check error", e);
+                return { hasAccess: false, error: e.message };
+            }
+        }
+
+        // ---------- YOUTUBE PLAYER (exact copy from questionpage, condensed) ----------
+        const videoPlayers = new Map();
+        let currentlyPlayingVideo = null;
+
+        class SimpleYouTubePlayer {
+            constructor(containerId, videoId) {
+                this.containerId = containerId;
+                this.videoId = videoId;
+                this.player = null;
+                this.updateInterval = null;
+                this.playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+                this.currentRate = 1;
+                this.isPlaying = false;
+                this.init();
+            }
+            init() {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                const iframe = document.createElement('iframe');
+                iframe.id = `yt-${this.containerId}`;
+                iframe.width = '100%'; iframe.height = '100%';
+                iframe.src = `https://www.youtube.com/embed/${this.videoId}?enablejsapi=1&origin=${window.location.origin}&controls=0&disablekb=1&modestbranding=1&fs=0&rel=0&iv_load_policy=3&playsinline=1&autoplay=0`;
+                iframe.frameBorder = '0';
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+                iframe.allowFullscreen = true;
+                iframe.style.pointerEvents = 'none';
+                const wrapper = container.querySelector('.youtube-iframe-wrapper');
+                if (wrapper) { wrapper.innerHTML = ''; wrapper.appendChild(iframe); }
+                this.loadAPI().then(() => this.initPlayer());
+            }
+            loadAPI() {
+                return new Promise((resolve) => {
+                    if (window.YT && window.YT.Player) { resolve(); return; }
+                    const tag = document.createElement('script');
+                    tag.src = 'https://www.youtube.com/iframe_api';
+                    tag.onload = () => {
+                        window.onYouTubeIframeAPIReady = () => { resolve(); };
+                    };
+                    document.head.appendChild(tag);
+                });
+            }
+            initPlayer() {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                const loading = container.querySelector('.video-loading');
+                if (loading) loading.style.display = 'none';
+                try {
+                    this.player = new YT.Player(`yt-${this.containerId}`, {
+                        events: {
+                            onReady: (e) => this.onReady(e),
+                            onStateChange: (e) => this.onStateChange(e),
+                            onError: (e) => this.onError(e)
+                        }
+                    });
+                    this.setupControls(container);
+                } catch (e) { setTimeout(() => this.initPlayer(), 1000); }
+            }
+            onReady(e) {
+                e.target.setVolume(100);
+                e.target.setPlaybackRate(this.currentRate);
+                this.startUpdate();
+            }
+            onStateChange(e) {
+                const container = document.getElementById(this.containerId);
+                const playBtn = container?.querySelector('.play-pause-btn');
+                if (playBtn) {
+                    const playIcon = playBtn.querySelector('.play-icon');
+                    const pauseIcon = playBtn.querySelector('.pause-icon');
+                    if (e.data === YT.PlayerState.PLAYING) {
+                        if (playIcon) playIcon.style.display = 'none';
+                        if (pauseIcon) pauseIcon.style.display = 'block';
+                        this.isPlaying = true;
+                        if (currentlyPlayingVideo && currentlyPlayingVideo !== this) currentlyPlayingVideo.pause();
+                        currentlyPlayingVideo = this;
+                    } else {
+                        if (playIcon) playIcon.style.display = 'block';
+                        if (pauseIcon) pauseIcon.style.display = 'none';
+                        this.isPlaying = false;
+                        if (currentlyPlayingVideo === this) currentlyPlayingVideo = null;
+                    }
+                }
+            }
+            onError(e) { console.warn('YouTube error', e.data); }
+            startUpdate() {
+                if (this.updateInterval) clearInterval(this.updateInterval);
+                this.updateInterval = setInterval(() => this.updateUI(), 500);
+            }
+            updateUI() {
+                const container = document.getElementById(this.containerId);
+                if (!container || !this.player) return;
+                try {
+                    const current = this.player.getCurrentTime() || 0;
+                    const dur = this.player.getDuration() || 0;
+                    const progress = dur > 0 ? (current/dur)*100 : 0;
+                    const track = container.querySelector('.progress-track');
+                    const thumb = container.querySelector('.progress-thumb');
+                    if (track) track.style.width = `${progress}%`;
+                    if (thumb) thumb.style.left = `${progress}%`;
+                    const timeDisplay = container.querySelector('.time-display');
+                    if (timeDisplay) {
+                        const fmt = (s) => { const m = Math.floor(s/60); const sec = Math.floor(s%60); return `${m}:${sec.toString().padStart(2,'0')}`; };
+                        timeDisplay.textContent = `${fmt(current)} / ${fmt(dur)}`;
+                    }
+                } catch (e) {}
+            }
+            setupControls(container) {
+                const playBtn = container.querySelector('.play-pause-btn');
+                if (playBtn) playBtn.addEventListener('click', (e) => { e.stopPropagation(); this.togglePlay(); });
+                const progress = container.querySelector('.top-progress-container');
+                if (progress) progress.addEventListener('click', (e) => { if (!this.player) return; const rect = progress.getBoundingClientRect(); const pct = (e.clientX - rect.left)/rect.width; const time = pct * this.player.getDuration(); this.player.seekTo(time, true); });
+                const volume = container.querySelector('.volume-btn');
+                if (volume) volume.addEventListener('click', (e) => { if (!this.player) return; const vol = this.player.getVolume(); this.player.setVolume(vol>0?0:100); volume.innerHTML = vol>0 ? '<i class="fas fa-volume-mute"></i>' : '<i class="fas fa-volume-up"></i>'; });
+                const full = container.querySelector('.fullscreen-btn');
+                if (full) full.addEventListener('click', (e) => { e.stopPropagation(); this.toggleFullscreen(container); });
+                const speed = container.querySelector('.speed-btn');
+                if (speed) speed.addEventListener('click', (e) => { if (!this.player) return; const idx = this.playbackRates.indexOf(this.currentRate); const next = (idx+1)%this.playbackRates.length; this.currentRate = this.playbackRates[next]; this.player.setPlaybackRate(this.currentRate); speed.textContent = `${this.currentRate}x`; });
+                const overlay = container.querySelector('.video-overlay');
+                if (overlay) {
+                    overlay.addEventListener('click', (e) => { if (e.target.closest('.control-btn')) return; this.togglePlay(); });
+                    let lastTap=0, tapCount=0;
+                    overlay.addEventListener('click', (e) => {
+                        const now = Date.now();
+                        const rect = overlay.getBoundingClientRect();
+                        const leftSide = e.clientX - rect.left < rect.width/2;
+                        if (now - lastTap < 300) {
+                            tapCount++;
+                            if (tapCount === 2) {
+                                if (leftSide) this.seek(-10); else this.seek(20);
+                                tapCount = 0;
+                            }
+                        } else { tapCount = 1; }
+                        lastTap = now;
+                    });
+                }
+            }
+            togglePlay() { if (!this.player) return; this.player.getPlayerState() === YT.PlayerState.PLAYING ? this.player.pauseVideo() : this.player.playVideo(); }
+            seek(sec) { if (!this.player) return; const newTime = this.player.getCurrentTime() + sec; this.player.seekTo(Math.max(0, Math.min(newTime, this.player.getDuration())), true); }
+            toggleFullscreen(container) {
+                const wrapper = container.closest('.video-wrapper');
+                if (!wrapper) return;
+                if (!document.fullscreenElement) wrapper.requestFullscreen();
+                else document.exitFullscreen();
+            }
+            pause() { if (this.player && this.player.pauseVideo) { this.player.pauseVideo(); this.isPlaying = false; } }
+            destroy() { clearInterval(this.updateInterval); if (this.player) this.player.destroy(); }
+        }
+
+        function initVideoPlayers() {
+            document.querySelectorAll('.video-player-container').forEach(cont => {
+                const id = cont.id;
+                const vid = cont.dataset.videoId;
+                if (!videoPlayers.has(id) && vid) {
+                    videoPlayers.set(id, new SimpleYouTubePlayer(id, vid));
+                }
+            });
+        }
+        function cleanupVideoPlayers() {
+            videoPlayers.forEach(p => p.destroy());
+            videoPlayers.clear();
+            currentlyPlayingVideo = null;
+        }
+
+        // ---------- KATEX RENDERING ----------
+        function renderMathInElement(element) {
+            if (typeof renderMathInElement === 'undefined') return;
+            try {
+                renderMathInElement(element, {
+                    delimiters: [
+                        { left: '$$', right: '$$', display: true },
+                        { left: '$', right: '$', display: false },
+                        { left: '\\(', right: '\\)', display: false },
+                        { left: '\\[', right: '\\]', display: true }
+                    ],
+                    throwOnError: false
+                });
+            } catch (e) { console.warn('KaTeX error', e); }
+        }
+
+        // ---------- AUTH MANAGER (simplified) ----------
+        class AuthManager {
+            constructor() {
+                this.currentUser = null;
+                this.authReady = false;
+                this.authReadyPromise = new Promise(resolve => { this.authReadyResolve = resolve; });
+                this.init();
+            }
+            init() {
+                auth.onAuthStateChanged(async (user) => {
+                    this.currentUser = user;
+                    if (user) {
+                        await sessionManager.resumeSession(user.uid);
+                    } else {
+                        if (this.currentUser?.uid) sessionManager.clearLocalSession(this.currentUser.uid);
+                    }
+                    this.authReady = true;
+                    this.authReadyResolve(true);
+                    if (window.app) window.app.onAuthStateChange(user);
+                });
+            }
+            async waitForAuth() { await this.authReadyPromise; }
+            isLoggedIn() { return !!this.currentUser; }
+            async signIn(email, password) {
+                try {
+                    const cred = await auth.signInWithEmailAndPassword(email, password);
+                    await sessionManager.createSession(cred.user.uid);
+                    return true;
+                } catch (e) { throw e; }
+            }
+            async signOut() {
+                if (this.currentUser) sessionManager.clearLocalSession(this.currentUser.uid);
+                await auth.signOut();
+            }
+        }
+        const authManager = new AuthManager();
+
+        // ---------- MAIN APP ----------
+        class QandAApp {
+            constructor() {
+                this.contentDiv = document.getElementById('content-area');
+                this.chapterTitleSpan = document.getElementById('chapter-title');
+                this.profileIcon = document.getElementById('profile-icon');
+                this.classId = null; this.subjectId = null; this.chapterId = null;
+                this.chapterData = null; this.questions = [];
+                this.setupEventListeners();
+                this.loadFromUrl();
+            }
+            loadFromUrl() {
+                const params = new URLSearchParams(window.location.search);
+                this.classId = params.get('classId');
+                this.subjectId = params.get('subjectId');
+                this.chapterId = params.get('chapterId');
+                if (!this.classId || !this.subjectId || !this.chapterId) {
+                    this.showError('Missing class, subject, or chapter ID in URL.');
+                    return;
+                }
+                this.start();
+            }
+            async start() {
+                await authManager.waitForAuth();
+                if (!authManager.isLoggedIn()) {
+                    this.showSignInPrompt();
+                    return;
+                }
+                await this.checkPermissionAndLoad();
+            }
+            async checkPermissionAndLoad() {
+                const user = authManager.currentUser;
+                const perm = await checkUserPermissionForSubject(user.uid, this.classId, this.subjectId);
+                if (!perm.hasAccess) {
+                    this.showAccessDenied();
+                    return;
+                }
+                await this.loadChapterData();
+                await this.loadQuestions();
+            }
+            async loadChapterData() {
+                try {
+                    const doc = await db.collection('class').doc(this.classId)
+                        .collection('subject').doc(this.subjectId)
+                        .collection('chapter').doc(this.chapterId).get();
+                    if (doc.exists) {
+                        this.chapterData = doc.data();
+                        this.chapterTitleSpan.textContent = this.chapterData.chapterTitle || 'Untitled Chapter';
+                    } else {
+                        this.chapterTitleSpan.textContent = 'Chapter';
+                    }
+                } catch (e) {
+                    console.error('Error loading chapter', e);
+                    this.chapterTitleSpan.textContent = 'Error';
+                }
+            }
+            async loadQuestions() {
+                this.showLoading();
+                try {
+                    const snapshot = await db.collection('class').doc(this.classId)
+                        .collection('subject').doc(this.subjectId)
+                        .collection('chapter').doc(this.chapterId)
+                        .collection('question').orderBy('order').get();
+                    this.questions = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        question: doc.data().question || '',
+                        solution: doc.data().solution || '',
+                        videoSolution: doc.data().videoSolution || ''
+                    }));
+                    this.renderQuestions();
+                } catch (e) {
+                    console.error('Error loading questions', e);
+                    this.showError('Failed to load questions.');
+                }
+            }
+            renderQuestions() {
+                if (this.questions.length === 0) {
+                    this.contentDiv.innerHTML = '<div class="loading-placeholder">No questions found.</div>';
+                    return;
+                }
+                let html = '';
+                this.questions.forEach(q => {
+                    html += `<div class="qa-item">`;
+                    html += `<div class="question-box">${q.question}</div>`;
+                    html += `<div class="answer-text">${q.solution}</div>`;
+                    if (q.videoSolution && q.videoSolution.trim()) {
+                        html += this.renderVideoPlayers(q.videoSolution, q.id);
+                    }
+                    html += `</div>`;
+                });
+                this.contentDiv.innerHTML = html;
+                // Render LaTeX
+                renderMathInElement(this.contentDiv);
+                // Init video players after a short delay
+                setTimeout(initVideoPlayers, 300);
+            }
+            renderVideoPlayers(videoUrls, qid) {
+                const urls = videoUrls.split('\n').filter(u => u.trim() !== '');
+                if (urls.length === 0) return '';
+                let out = '';
+                urls.forEach((url, idx) => {
+                    const videoId = this.extractVideoId(url);
+                    if (!videoId) return;
+                    const uniqueId = `video-${qid}-${idx}-${Date.now()}`;
+                    out += `<div class="video-wrapper">`;
+                    out += `<div class="video-player-container" id="${uniqueId}" data-video-id="${videoId}">`;
+                    out += `<div class="double-tap-indicator double-tap-left"><span class="double-tap-text">10 sec</span></div>`;
+                    out += `<div class="double-tap-indicator double-tap-right"><span class="double-tap-text">20 sec</span></div>`;
+                    out += `<div class="youtube-iframe-wrapper"></div>`;
+                    out += `<div class="video-overlay">`;
+                    out += `<div class="modern-control-bar">`;
+                    out += `<div class="top-progress-container"><div class="progress-track"></div><div class="progress-thumb"></div></div>`;
+                    out += `<div class="controls-row">`;
+                    out += `<div class="left-controls"><button class="control-btn play-pause-btn"><svg class="play-icon" width="24" height="24" fill="currentColor" viewBox="0 0 512 512"><path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zM188.3 147.1c7.6-4.2 16.8-4.1 24.3 .5l144 88c7.1 4.4 11.5 12.1 11.5 20.5s-4.4 16.1-11.5 20.5l-144 88c-7.4 4.5-16.7 4.7-24.3 .5s-12.3-12.2-12.3-20.9V168c0-8.7 4.7-16.7 12.3-20.9z"/></svg><svg class="pause-icon" style="display:none;" width="24" height="24" fill="currentColor" viewBox="0 0 512 512"><path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm224-72V328c0 13.3-10.7 24-24 24s-24-10.7-24-24V184c0-13.3 10.7-24 24-24s24 10.7 24 24zm112 0V328c0 13.3-10.7 24-24 24s-24-10.7-24-24V184c0-13.3 10.7-24 24-24s24 10.7 24 24z"/></svg></button></div>`;
+                    out += `<div class="center-controls"><span class="time-display">0:00 / 0:00</span></div>`;
+                    out += `<div class="right-controls"><div class="speed-control"><button class="control-btn speed-btn">1x</button></div><button class="control-btn volume-btn"><i class="fas fa-volume-up"></i></button><button class="control-btn fullscreen-btn"><i class="fas fa-expand"></i></button></div>`;
+                    out += `</div></div><div class="video-loading"><div class="video-loading-spinner"></div><span>Loading video...</span></div></div></div></div>`;
+                    if (idx < urls.length - 1) out += `<div class="video-separator" style="height:1px;background:#000;margin:8px 0;"></div>`;
+                });
+                return out;
+            }
+            extractVideoId(url) {
+                let id = '';
+                if (url.includes('youtube.com/watch?v=')) {
+                    id = url.split('v=')[1];
+                    const amp = id.indexOf('&');
+                    if (amp !== -1) id = id.substring(0, amp);
+                } else if (url.includes('youtu.be/')) {
+                    id = url.split('youtu.be/')[1];
+                    const q = id.indexOf('?');
+                    if (q !== -1) id = id.substring(0, q);
+                } else if (url.includes('embed/')) {
+                    id = url.split('embed/')[1];
+                    const slash = id.indexOf('/');
+                    if (slash !== -1) id = id.substring(0, slash);
+                } else {
+                    id = url.trim();
+                }
+                return id;
+            }
+            showSignInPrompt() {
+                this.contentDiv.innerHTML = `
+                    <div class="loading-placeholder">
+                        <i class="fas fa-lock" style="font-size:48px; color:#9ca3af; margin-bottom:16px;"></i>
+                        <p>Please sign in to view Q&A.</p>
+                        <button id="show-signin-btn" class="auth-button" style="width:auto; margin-top:16px;">Sign In</button>
+                    </div>
+                `;
+                document.getElementById('show-signin-btn')?.addEventListener('click', () => this.showAuthModal());
+            }
+            showAccessDenied() {
+                this.contentDiv.innerHTML = '<div class="loading-placeholder">You do not have access to this subject.</div>';
+            }
+            showError(msg) {
+                this.contentDiv.innerHTML = `<div class="loading-placeholder">${msg}</div>`;
+            }
+            showLoading() {
+                this.contentDiv.innerHTML = '<div class="loading-placeholder">Loading questions...</div>';
+            }
+            showAuthModal() {
+                // Simple modal (copied from questionpage)
+                const modal = document.createElement('div');
+                modal.className = 'auth-modal-overlay';
+                modal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">Sign In</div>
+                        <div class="auth-body">
+                            <div class="auth-field"><label class="auth-label">Email</label><input type="email" id="auth-email" class="auth-input"></div>
+                            <div class="auth-field"><label class="auth-label">Password</label><input type="password" id="auth-password" class="auth-input"></div>
+                            <button id="auth-submit" class="auth-button">Sign In</button>
+                            <div id="auth-error" class="auth-error"></div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                const submit = document.getElementById('auth-submit');
+                submit.addEventListener('click', async () => {
+                    const email = document.getElementById('auth-email').value.trim();
+                    const pwd = document.getElementById('auth-password').value.trim();
+                    if (!email || !pwd) return;
+                    submit.disabled = true;
+                    submit.textContent = 'Signing in...';
+                    try {
+                        await authManager.signIn(email, pwd);
+                        modal.remove();
+                        this.start(); // reload after login
+                    } catch (e) {
+                        const errDiv = document.getElementById('auth-error');
+                        errDiv.textContent = e.message;
+                        errDiv.classList.add('show');
+                        submit.disabled = false;
+                        submit.textContent = 'Sign In';
+                    }
+                });
+                modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+            }
+            setupEventListeners() {
+                this.profileIcon.addEventListener('click', async () => {
+                    if (authManager.isLoggedIn()) {
+                        await authManager.signOut();
+                        window.location.reload();
+                    } else {
+                        this.showAuthModal();
+                    }
+                });
+            }
+            onAuthStateChange(user) {
+                if (user) {
+                    this.profileIcon.textContent = user.email ? user.email[0].toUpperCase() : 'U';
+                } else {
+                    this.profileIcon.textContent = 'C';
+                }
+            }
+        }
+
+        // Start the app when DOM ready
+        window.addEventListener('load', () => {
+            window.app = new QandAApp();
+        });
+    </script>
+</body>
+</html>
