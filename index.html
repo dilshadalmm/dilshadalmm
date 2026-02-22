@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Subject Q&A | Academic Portal</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- MathJax -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true
+            },
+            options: { 
+                enableMenu: false
+            },
+            chtml: {
+                displayAlign: 'center',
+                displayIndent: '0em'
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* Absolute Scrollbar Removal & Security */
+        html {
+            overflow-x: hidden;
+            height: 100%;
+            user-select: none;
+            background-color: #fdfdfb;
+        }
+
+        body {
+            font-family: "Newsreader", serif;
+            background-color: #fdfdfb; 
+            color: #1a1a1a;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100vw;
+            overflow-y: scroll;
+            scrollbar-width: none; 
+            -ms-overflow-style: none; 
+            touch-action: pan-y;
+        }
+
+        body::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Prevent Latex Inversion */
+        mjx-container, .mjx-chtml, .MathJax {
+            color: #1a1a1a !important;
+            filter: none !important;
+        }
+
+        .content-wrapper {
+            padding-top: 20px;
+            padding-bottom: 40px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        /* Header Style */
+        .book-header {
+            width: 98%;
+            text-align: center;
+            margin-bottom: 20px;
+            border-top: 1.2px solid #1a1a1a;
+            border-bottom: 0.6px solid #1a1a1a;
+            padding: 10px 0;
+            box-sizing: border-box;
+        }
+
+        .chapter-title {
+            color: #000000;
+            font-size: 0.95rem;
+            font-weight: 700;
+            font-variant: small-caps;
+            letter-spacing: 0.05em;
+            margin: 0;
+            display: inline-block;
+            border-bottom: 1.2px solid #000000; /* Underlined Chapter Title */
+            padding-bottom: 2px;
+        }
+
+        /* Outer Box Container - 98% width */
+        .qa-container {
+            background-color: #ffffff;
+            border: 1px solid #000000;
+            margin-bottom: 15px;
+            width: 98%; 
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            overflow-wrap: break-word;
+        }
+
+        /* Question Sub-Container */
+        .question-sub-box {
+            background-color: #f6f6f6;
+            border-bottom: 1px solid #000000;
+            padding: 6px 10px;
+        }
+
+        .question-text {
+            color: #000000;
+            width: fit-content;
+            padding-bottom: 1px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            border-bottom: 1px solid #000000;
+            line-height: 1.2;
+            max-width: 100%;
+        }
+
+        /* Answer Content */
+        .answer-padding {
+            padding: 10px;
+        }
+
+        .answer-text {
+            font-size: 0.7rem;
+            font-weight: 400;
+            color: #1a1a1a;
+            padding: 0;
+            line-height: 1.5;
+            text-align: justify;
+            max-width: 100%;
+        }
+
+        .answer-text::after {
+            content: " ◼";
+            font-size: 0.5rem;
+            color: #aaa;
+            margin-left: 3px;
+        }
+
+        /* MathJax Adjustments */
+        .mjx-chtml {
+            margin-top: 6px !important;
+            margin-bottom: 6px !important;
+            font-size: 0.82em !important;
+            max-width: 100%;
+            overflow-x: auto;
+            overflow-y: hidden;
+            display: block;
+        }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <div class="content-wrapper">
+        <!-- Chapter Header -->
+        <header class="book-header">
+            <h1 class="chapter-title">Thermodynamics</h1>
+        </header>
+
+        <!-- Q&A Item 1 -->
+        <div class="qa-container">
+            <div class="question-sub-box">
+                <div class="question-text">State the First Law of Thermodynamics and express it mathematically.</div>
+            </div>
+            <div class="answer-padding">
+                <div class="answer-text">
+                    The First Law of Thermodynamics is a fundamental principle of physics that acts as a version of the law of conservation of energy, specifically adapted for thermodynamic systems. It states that the total energy of an isolated system is constant; energy can be transformed from one form to another, but can be neither created nor destroyed.
+                    $$\Delta U = Q - W$$
+                    In this expression, $\Delta U$ represents the change in internal energy of the system, $Q$ denotes the heat energy added to the system, and $W$ indicates the work done by the system on its surroundings.
+                </div>
+            </div>
+        </div>
+
+        <!-- Q&A Item 2 -->
+        <div class="qa-container">
+            <div class="question-sub-box">
+                <div class="question-text">Mass-Energy Equivalence and its primary equation.</div>
+            </div>
+            <div class="answer-padding">
+                <div class="answer-text">
+                    Mass–energy equivalence is the principle that anything having mass has an equivalent amount of energy and vice versa. This concept, proposed by Albert Einstein, suggests that mass and energy are two forms of the same thing.
+                    $$E = mc^2$$
+                    Here, $E$ is the energy equivalent, $m$ is the mass, and $c$ is the speed of light in a vacuum ($3 \times 10^8$ m/s). This implies that even a small amount of mass can be converted into a tremendous amount of energy.
+                </div>
+            </div>
+        </div>
+
+        <!-- Q&A Item 3 -->
+        <div class="qa-container">
+            <div class="question-sub-box">
+                <div class="question-text">What is the formula for population standard deviation?</div>
+            </div>
+            <div class="answer-padding">
+                <div class="answer-text">
+                    The population standard deviation is a measure of the amount of variation or dispersion of a set of values in an entire population. It is calculated as the square root of the variance.
+                    $$\sigma = \sqrt{\frac{\sum_{i=1}^{N} (x_i - \mu)^2}{N}}$$
+                    Where $\sigma$ is the population standard deviation, $N$ is the size of the population, $x_i$ refers to each value from the population, and $\mu$ is the population mean.
+                </div>
+            </div>
+        </div>
+
+        <!-- Q&A Item 4 -->
+        <div class="qa-container">
+            <div class="question-sub-box">
+                <div class="question-text">Derive the perpendicular distance from a point $P(x_1, y_1, z_1)$ to the plane $Ax + By + Cz + D = 0$.</div>
+            </div>
+            <div class="answer-padding">
+                <div class="answer-text">
+                    Consider a plane $\pi: Ax + By + Cz + D = 0$. Let $P(x_1, y_1, z_1)$ be a point in space. Let $M$ be the foot of the perpendicular from $P$ to the plane. The direction ratios of the normal to the plane are $(A, B, C)$. 
+                    The coordinates of any point on line $PM$ can be expressed as $(x_1 + rA, y_1 + rB, z_1 + rC)$. Since $M$ lies on the plane:
+                    $$A(x_1 + rA) + B(y_1 + rB) + C(z_1 + rC) + D = 0$$
+                    Solving for $r$, we obtain $r = -(Ax_1 + By_1 + Cz_1 + D)/(A^2 + B^2 + C^2)$.
+                    The distance $d = |PM| = |r|\sqrt{A^2 + B^2 + C^2}$.
+                    Substituting $r$, we get:
+                    $$d = \frac{|Ax_1 + By_1 + Cz_1 + D|}{\sqrt{A^2 + B^2 + C^2}}$$
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
+
