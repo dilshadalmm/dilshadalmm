@@ -1,40 +1,39 @@
 import express from "express";
-import fetch from "node-fetch";
 import cors from "cors";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Landing route (optional)
+app.get("/", (req, res) => {
+  res.send("Dilshad Gemini Proxy is live. Use POST /gemini for requests.");
+});
+
 // POST /gemini endpoint
 app.post("/gemini", async (req, res) => {
   try {
-    const { contents } = req.body; // expects frontend format
+    const { contents } = req.body;
 
-    const systemPrompt = "You are Dilshad, a technical Middle School Teacher. Use English only. Keep responses concise. Use LaTeX for math (e.g., $x^2$). Format important content as follows: **important term** (highlighted), __definition__ (underlined), [[formula or equation]] (boxed). The user's request is top priority.";
-
-    // Merge system prompt with user message
-    const payload = {
-      contents: contents.map(item => ({
-        role: item.role,
-        parts: item.parts.map(part => ({
-          text: `${systemPrompt}\n\nUSER PROMPT: ${part.text}`
-        }))
-      }))
+    // Dummy response in the exact structure the frontend expects
+    const dummyResponse = {
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                text: "Hello! This is a test response from your proxy. You can now see messages in the chat."
+              }
+            ]
+          }
+        }
+      ]
     };
 
-    // Replace with your actual Gemini API endpoint
-    const geminiResponse = await fetch("https://api.gemini.com/v1/your-endpoint", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.GEMINI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    // Simulate a small delay like a real API
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    const data = await geminiResponse.json();
-    res.json(data);
+    res.json(dummyResponse);
 
   } catch (err) {
     console.error("Proxy error:", err);
