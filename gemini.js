@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import fetch from "node-fetch"; // Ensure Node 18+ or install node-fetch
 
 const app = express();
 app.use(cors());
@@ -14,30 +15,45 @@ app.get("/", (req, res) => {
 app.post("/gemini", async (req, res) => {
   try {
     const { contents } = req.body;
+    const userMessage = contents?.[0]?.parts?.[0]?.text || "";
 
-    // Dummy response in the exact structure the frontend expects
-    const dummyResponse = {
+    const systemPrompt = "You are Dilshad, a technical Middle School Teacher. Use English only. Keep responses concise. Use LaTeX for math (e.g., $x^2$). Format important content as follows: **important term** (highlighted), __definition__ (underlined), [[formula or equation]] (boxed). The user's request is top priority.";
+
+    // Call Gemini API
+    const geminiResponse = await fetch(
+      "https://api.generativeai.google.com/v1beta2/models/text-bison-001:generate", 
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${process.env.GEMINI_API_KEY}`
+        },
+        body: JSON.stringify({
+          prompt: `${systemPrompt}\n\nUSER PROMPT: ${userMessage}`
+        })
+      }
+    );
+
+    const data = await geminiResponse.json();
+
+    // Ensure frontend-compatible response
+    const textResponse = data?.output_text || "⚠️ No response from Gemini.";
+
+    res.json({
       candidates: [
         {
           content: {
             parts: [
-              {
-                text: "Hello! This is a test response from your proxy. You can now see messages in the chat."
-              }
+              { text: textResponse }
             ]
           }
         }
       ]
-    };
-
-    // Simulate a small delay like a real API
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    res.json(dummyResponse);
+    });
 
   } catch (err) {
     console.error("Proxy error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || "Unknown error" });
   }
 });
 
