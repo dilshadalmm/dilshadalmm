@@ -10,33 +10,36 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
-app.use(express.static(path.join(__dirname, '/')));
 
-// Clients Initialization
+// Clients
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
-// Search Endpoint
 app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
+        const embedModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        
+        let finalQueryText = text || "";
 
-        const model = genAI.getGenerativeModel({ model: "gemini-embedding-2-preview" });
-        const parts = [];
-
-        if (text) parts.push({ text });
+        // 1. If student sent an image, convert image to text description first
         if (imageBase64) {
-            // Ensure we have raw base64 data
+            const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
             const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-            parts.push({ inlineData: { mimeType: "image/png", data: cleanBase64 } });
+            
+            const visionResult = await visionModel.generateContent([
+                "Extract all text, math equations, and describing features from this image for a search query:",
+                { inlineData: { mimeType: "image/png", data: cleanBase64 } }
+            ]);
+            finalQueryText += " " + visionResult.response.text();
         }
 
-        // 1. Generate Multimodal Vector
-        const result = await model.embedContent({ content: { parts } });
+        // 2. CONVERT THE DESCRIPTION INTO A VECTOR (768 dimensions)
+        const result = await embedModel.embedContent(finalQueryText);
         const vector = result.embedding.values;
 
-        // 2. Query Pinecone for top match
+        // 3. SEARCH PINECONE USING THE VECTOR
         const queryResponse = await index.query({
             vector: vector,
             topK: 1,
@@ -44,14 +47,17 @@ app.post('/api/search', async (req, res) => {
         });
 
         if (queryResponse.matches && queryResponse.matches.length > 0) {
-            res.json({ success: true, questionId: queryResponse.matches[0].id });
+            res.json({ 
+                success: true, 
+                questionId: queryResponse.matches[0].id 
+            });
         } else {
             res.status(404).json({ success: false, message: "No match found" });
         }
     } catch (error) {
-        console.error(error);
+        console.error("Backend Error:", error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-app.listen(PORT, () => console.log(`Backend live on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
