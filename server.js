@@ -6,23 +6,29 @@ const { Pinecone } = require('@pinecone-database/pinecone');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// -----------------------------
 // Middleware
+// -----------------------------
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
+// -----------------------------
 // Initialize Gemini
+// -----------------------------
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// -----------------------------
 // Initialize Pinecone
+// -----------------------------
 const pc = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY
 });
 
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
-// --------------------------------------------
-// SEARCH API
-// --------------------------------------------
+// -----------------------------
+// Search API
+// -----------------------------
 app.post('/api/search', async (req, res) => {
   try {
     const { text, imageBase64 } = req.body;
@@ -30,18 +36,19 @@ app.post('/api/search', async (req, res) => {
     if (!text && !imageBase64) {
       return res.status(400).json({
         success: false,
-        message: "No text or image provided"
+        message: "No input text or image provided"
       });
     }
 
     let finalQueryText = text || "";
 
-    // --------------------------------------------
-    // IMAGE → TEXT (Gemini Vision)
-    // --------------------------------------------
+    // -----------------------------
+    // IMAGE → TEXT using Gemini Vision
+    // -----------------------------
     if (imageBase64) {
+
       const visionModel = genAI.getGenerativeModel({
-        model: "gemini-2.5-flash"
+        model: "gemini-2.0-flash"
       });
 
       const cleanBase64 = imageBase64.includes(',')
@@ -49,7 +56,7 @@ app.post('/api/search', async (req, res) => {
         : imageBase64;
 
       const visionResult = await visionModel.generateContent([
-        "Extract all text, math equations, and describing features from this image for a search query.",
+        "Extract all text, math equations and important visual descriptions from this image. Return plain text for search.",
         {
           inlineData: {
             mimeType: "image/png",
@@ -59,27 +66,23 @@ app.post('/api/search', async (req, res) => {
       ]);
 
       const imageText = visionResult.response.text();
+
       finalQueryText = finalQueryText + " " + imageText;
     }
 
-    // --------------------------------------------
-    // TEXT → VECTOR (Embedding)
-    // --------------------------------------------
-    const embedModel = genAI.getGenerativeModel({
-      model: "text-embedding-004"
+    // -----------------------------
+    // TEXT → VECTOR (Gemini Embedding)
+    // -----------------------------
+    const embeddingResponse = await genAI.embedContent({
+      model: "models/embedding-001",
+      content: finalQueryText
     });
 
-    const embedResult = await embedModel.embedContent({
-      content: {
-        parts: [{ text: finalQueryText }]
-      }
-    });
+    const vector = embeddingResponse.embedding.values;
 
-    const vector = embedResult.embedding.values;
-
-    // --------------------------------------------
-    // VECTOR SEARCH (Pinecone)
-    // --------------------------------------------
+    // -----------------------------
+    // Pinecone Vector Search
+    // -----------------------------
     const queryResponse = await index.query({
       vector: vector,
       topK: 5,
@@ -93,27 +96,27 @@ app.post('/api/search', async (req, res) => {
       });
     }
 
-    // Return best match
     const bestMatch = queryResponse.matches[0];
 
-    res.json({
+    return res.json({
       success: true,
       questionId: bestMatch.id
     });
 
   } catch (error) {
+
     console.error("Backend Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: error.message
     });
   }
 });
 
-// --------------------------------------------
-// START SERVER
-// --------------------------------------------
+// -----------------------------
+// Start Server
+// -----------------------------
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
