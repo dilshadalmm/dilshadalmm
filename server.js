@@ -7,12 +7,21 @@ const crypto = require('crypto');
 const fs = require('fs');
 require('dotenv').config();
 
+const Tesseract = require("tesseract.js");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '20mb' })); // increased limit for large images
+app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
+
+// Ensure uploads folder exists
+const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log(`✅ Created uploads folder at ${uploadDir}`);
+}
 
 // Initialize Firebase Admin
 let firebaseInitialized = false;
@@ -39,7 +48,6 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
-
 /**
  * Generate embedding
  */
@@ -57,7 +65,6 @@ async function generateEmbedding(text) {
     throw new Error("No embeddings returned");
 }
 
-
 /**
  * Generate unique question ID
  */
@@ -67,11 +74,9 @@ function generateQuestionId() {
     return `user-${timestamp}-${random}`;
 }
 
-
 /**
  * Run OCR using Tesseract on a local file
  */
-const Tesseract = require("tesseract.js");
 async function runTesseractOCR(imagePath) {
     try {
         const result = await Tesseract.recognize(imagePath, "eng");
@@ -81,7 +86,6 @@ async function runTesseractOCR(imagePath) {
         return "";
     }
 }
-
 
 /**
  * Add new question to Pinecone + Firestore
@@ -111,7 +115,6 @@ async function addNewQuestion(queryText, extractedText = '') {
     return newId;
 }
 
-
 /**
  * Main API: text + imageBase64 input
  */
@@ -122,16 +125,14 @@ app.post('/api/search', async (req, res) => {
         let extractedText = "";
 
         if (imageBase64) {
-            // Save base64 image temporarily
             const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-            const tempPath = `uploads/temp_${Date.now()}.png`;
+
+            const tempPath = `${uploadDir}/temp_${Date.now()}.png`;
             fs.writeFileSync(tempPath, Buffer.from(base64Data, 'base64'));
 
-            // Run OCR
             extractedText = await runTesseractOCR(tempPath);
 
-            // Delete temp file
-            fs.unlink(tempPath, () => {});
+            fs.unlink(tempPath, () => {}); // delete temp file
 
             if (extractedText.trim()) finalQueryText += " " + extractedText;
 
@@ -165,7 +166,6 @@ app.post('/api/search', async (req, res) => {
         res.json([{ id: "#0000" }]);
     }
 });
-
 
 app.get('/health', (req, res) => res.send('Active'));
 
