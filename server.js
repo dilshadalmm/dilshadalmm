@@ -4,6 +4,8 @@ const { GoogleGenAI } = require("@google/genai");
 const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const axios = require('axios');
+const FormData = require('form-data');
 require('dotenv').config();
 
 const app = express();
@@ -109,34 +111,57 @@ async function addNewQuestion(queryText, extractedText = '') {
     return newId;
 }
 
+/**
+ * Send a base64 image to the EasyOCR endpoint and return extracted text.
+ */
+async function sendImageToOCR(base64Image) {
+    try {
+        // Clean base64 string (remove data URL prefix if present)
+        const cleanBase64 = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
+        
+        // Convert to buffer
+        const imageBuffer = Buffer.from(cleanBase64, 'base64');
+
+        // Determine MIME type from the original base64 string (if available)
+        let mimeType = 'image/png'; // default
+        if (base64Image.startsWith('data:')) {
+            const matches = base64Image.match(/^data:([^;]+);/);
+            if (matches) mimeType = matches[1];
+        }
+
+        // Prepare form data
+        const form = new FormData();
+        form.append('image', imageBuffer, {
+            filename: `upload.${mimeType.split('/')[1] || 'png'}`,
+            contentType: mimeType
+        });
+
+        // Send to EasyOCR endpoint
+        const response = await axios.post('https://dilshadalmm.onrender.com/image-to-text/', form, {
+            headers: form.getHeaders()
+        });
+
+        // Assuming response contains a field "text"
+        return response.data.text || '';
+    } catch (error) {
+        console.error('OCR extraction failed:', error.message);
+        return ''; // return empty string on failure
+    }
+}
+
 app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
         let finalQueryText = text || "";
         let extractedText = "";
 
-        // 1. Vision extraction (if image provided)
+        // 1. Vision extraction using EasyOCR (if image provided)
         if (imageBase64) {
-            try {
-                const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-                const visionResponse = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: [{
-                        role: 'user',
-                        parts: [
-                            { text: "Extract all text and any mathematical expressions from this image for a search query. Return only the extracted content." },
-                            { inlineData: { mimeType: 'image/png', data: cleanBase64 } }
-                        ]
-                    }]
-                });
-                extractedText = visionResponse.text || "";
-                if (extractedText.trim()) {
-                    finalQueryText += " " + extractedText;
-                }
-                console.log("Vision extraction completed.");
-            } catch (vErr) {
-                console.error("Vision failed, using text only:", vErr.message);
+            extractedText = await sendImageToOCR(imageBase64);
+            if (extractedText.trim()) {
+                finalQueryText += " " + extractedText;
             }
+            console.log("OCR extraction completed.");
         }
 
         // Ensure we have some text to work with
