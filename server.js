@@ -76,25 +76,17 @@ function generateQuestionId() {
  * Add a new question to Pinecone and Firestore.
  */
 async function addNewQuestion(queryText, extractedText = '') {
-    // Combine original text and extracted image text
     const fullText = [queryText, extractedText].filter(Boolean).join(' ').trim();
-    if (!fullText) {
-        throw new Error('No text to add');
-    }
+    if (!fullText) throw new Error('No text to add');
 
-    // Generate embedding
     const vector = await generateEmbedding(fullText);
-
-    // Generate unique ID
     const newId = generateQuestionId();
 
-    // Upsert to Pinecone
     await index.upsert([{
         id: newId,
         values: vector
     }]);
 
-    // Create Firestore document if available
     if (db) {
         await db.collection('questions').doc(newId).set({
             question: fullText,
@@ -113,39 +105,41 @@ async function addNewQuestion(queryText, extractedText = '') {
 
 /**
  * Send a base64 image to the EasyOCR endpoint and return extracted text.
+ * Supports PNG, JPEG, JPG, WebP, etc.
  */
 async function sendImageToOCR(base64Image) {
     try {
         // Clean base64 string (remove data URL prefix if present)
         const cleanBase64 = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
-        
-        // Convert to buffer
         const imageBuffer = Buffer.from(cleanBase64, 'base64');
 
-        // Determine MIME type from the original base64 string (if available)
-        let mimeType = 'image/png'; // default
+        // Auto-detect MIME type and extension
+        let ext = 'png';
+        let contentType = 'image/png';
         if (base64Image.startsWith('data:')) {
             const matches = base64Image.match(/^data:([^;]+);/);
-            if (matches) mimeType = matches[1];
+            if (matches) {
+                contentType = matches[1];             // e.g., 'image/jpeg'
+                ext = contentType.split('/')[1];      // e.g., 'jpeg'
+            }
         }
 
-        // Prepare form data
         const form = new FormData();
-        form.append('image', imageBuffer, {
-            filename: `upload.${mimeType.split('/')[1] || 'png'}`,
-            contentType: mimeType
+        form.append('file', imageBuffer, {
+            filename: `upload.${ext}`,
+            contentType: contentType
         });
 
-        // Send to EasyOCR endpoint
-        const response = await axios.post('https://dilshadalmm.onrender.com/image-to-text/', form, {
-            headers: form.getHeaders()
-        });
+        const response = await axios.post(
+            'https://dilshadalmm.onrender.com/image-to-text/',
+            form,
+            { headers: form.getHeaders() }
+        );
 
-        // Assuming response contains a field "text"
         return response.data.text || '';
     } catch (error) {
         console.error('OCR extraction failed:', error.message);
-        return ''; // return empty string on failure
+        return '';
     }
 }
 
@@ -155,7 +149,6 @@ app.post('/api/search', async (req, res) => {
         let finalQueryText = text || "";
         let extractedText = "";
 
-        // 1. Vision extraction using EasyOCR (if image provided)
         if (imageBase64) {
             extractedText = await sendImageToOCR(imageBase64);
             if (extractedText.trim()) {
@@ -164,30 +157,24 @@ app.post('/api/search', async (req, res) => {
             console.log("OCR extraction completed.");
         }
 
-        // Ensure we have some text to work with
         if (!finalQueryText || finalQueryText.trim() === '') {
-            // Nothing to search or add – return fallback
             return res.json([{ id: "#0000" }]);
         }
 
-        // 2. Generate embedding for search
         const vector = await generateEmbedding(finalQueryText);
 
-        // 3. Query Pinecone
         const queryResponse = await index.query({
             vector: vector,
             topK: 1,
             includeMetadata: false
         });
 
-        // 4. If good match found, return its ID
         if (queryResponse.matches && queryResponse.matches.length > 0 && queryResponse.matches[0].score > 0.6) {
             const matchId = queryResponse.matches[0].id;
             console.log(`✅ Found match: ${matchId} (score: ${queryResponse.matches[0].score})`);
             return res.json([{ id: matchId }]);
         }
 
-        // 5. No good match – add as new question
         console.log("No sufficient match found, adding as new question...");
         const newId = await addNewQuestion(text || "", extractedText);
         console.log(`✅ New question added with ID: ${newId}`);
@@ -195,7 +182,6 @@ app.post('/api/search', async (req, res) => {
 
     } catch (error) {
         console.error("Critical Backend Error:", error);
-        // Fallback to safe ID
         res.json([{ id: "#0000" }]);
     }
 });
