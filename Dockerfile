@@ -4,12 +4,12 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies with high reliability
-# We add "set -e" and "apt-get clean" to ensure a fresh state
-RUN apt-get update --fix-missing && \
+# Install system dependencies with a retry mechanism
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     libgl1-mesa-glx \
-    libglib2.0-0 \
+    libglib2.0-0 || \
+    (sleep 5 && apt-get update && apt-get install -y --no-install-recommends libgl1-mesa-glx libglib2.0-0) \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -23,5 +23,5 @@ COPY app.py .
 # Expose port for Render
 EXPOSE 8000
 
-# Start the FastAPI server using the PORT variable set in Render
+# Start the FastAPI server
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
