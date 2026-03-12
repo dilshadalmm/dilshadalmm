@@ -27,23 +27,24 @@ const pc = new Pinecone({
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
 // ----------------------
-// API ROUTE
+// SEARCH API
 // ----------------------
 app.post('/api/search', async (req, res) => {
   try {
+
     const { text, imageBase64 } = req.body;
 
     if (!text && !imageBase64) {
-      return res.status(400).json({
+      return res.json({
         success: false,
-        message: "No text or image provided"
+        questionId: "#0000"
       });
     }
 
     let finalQueryText = text || "";
 
     // ----------------------
-    // IMAGE → TEXT (Vision)
+    // IMAGE → TEXT
     // ----------------------
     if (imageBase64) {
 
@@ -56,7 +57,7 @@ app.post('/api/search', async (req, res) => {
         : imageBase64;
 
       const visionResult = await visionModel.generateContent([
-        "Extract all text, math equations and descriptions from this image for search.",
+        "Extract all text and math equations from this image for search.",
         {
           inlineData: {
             mimeType: "image/png",
@@ -95,15 +96,17 @@ app.post('/api/search', async (req, res) => {
     });
 
     if (!queryResponse.matches || queryResponse.matches.length === 0) {
-      return res.status(404).json({
+
+      return res.json({
         success: false,
-        message: "No similar question found"
+        questionId: "#0000"
       });
+
     }
 
     const bestMatch = queryResponse.matches[0];
 
-    res.json({
+    return res.json({
       success: true,
       questionId: bestMatch.id
     });
@@ -112,10 +115,12 @@ app.post('/api/search', async (req, res) => {
 
     console.error("Backend Error:", error);
 
-    res.status(500).json({
+    // Always return fallback ID
+    return res.json({
       success: false,
-      error: error.message
+      questionId: "#0000"
     });
+
   }
 });
 
