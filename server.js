@@ -131,7 +131,7 @@ async function sendImageToOCR(base64Image) {
         });
 
         const response = await axios.post(
-            'https://dilshadalmm.onrender.com/image-to-text/',
+            'https://dilshadalmm.onrender.com/image-to-text',
             form,
             { headers: form.getHeaders() }
         );
