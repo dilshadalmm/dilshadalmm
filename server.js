@@ -6,29 +6,29 @@ const { Pinecone } = require('@pinecone-database/pinecone');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// -----------------------------
+// ----------------------
 // Middleware
-// -----------------------------
+// ----------------------
 app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 
-// -----------------------------
-// Initialize Gemini
-// -----------------------------
+// ----------------------
+// Gemini Setup
+// ----------------------
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// -----------------------------
-// Initialize Pinecone
-// -----------------------------
+// ----------------------
+// Pinecone Setup
+// ----------------------
 const pc = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY
 });
 
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
-// -----------------------------
-// Search API
-// -----------------------------
+// ----------------------
+// API ROUTE
+// ----------------------
 app.post('/api/search', async (req, res) => {
   try {
     const { text, imageBase64 } = req.body;
@@ -36,15 +36,15 @@ app.post('/api/search', async (req, res) => {
     if (!text && !imageBase64) {
       return res.status(400).json({
         success: false,
-        message: "No input text or image provided"
+        message: "No text or image provided"
       });
     }
 
     let finalQueryText = text || "";
 
-    // -----------------------------
-    // IMAGE → TEXT using Gemini Vision
-    // -----------------------------
+    // ----------------------
+    // IMAGE → TEXT (Vision)
+    // ----------------------
     if (imageBase64) {
 
       const visionModel = genAI.getGenerativeModel({
@@ -56,7 +56,7 @@ app.post('/api/search', async (req, res) => {
         : imageBase64;
 
       const visionResult = await visionModel.generateContent([
-        "Extract all text, math equations and important visual descriptions from this image. Return plain text for search.",
+        "Extract all text, math equations and descriptions from this image for search.",
         {
           inlineData: {
             mimeType: "image/png",
@@ -70,19 +70,24 @@ app.post('/api/search', async (req, res) => {
       finalQueryText = finalQueryText + " " + imageText;
     }
 
-    // -----------------------------
-    // TEXT → VECTOR (Gemini Embedding)
-    // -----------------------------
-    const embeddingResponse = await genAI.embedContent({
-      model: "models/embedding-001",
-      content: finalQueryText
+    // ----------------------
+    // TEXT → VECTOR
+    // ----------------------
+    const embedModel = genAI.getGenerativeModel({
+      model: "embedding-001"
     });
 
-    const vector = embeddingResponse.embedding.values;
+    const embeddingResult = await embedModel.embedContent({
+      content: {
+        parts: [{ text: finalQueryText }]
+      }
+    });
 
-    // -----------------------------
-    // Pinecone Vector Search
-    // -----------------------------
+    const vector = embeddingResult.embedding.values;
+
+    // ----------------------
+    // PINECONE SEARCH
+    // ----------------------
     const queryResponse = await index.query({
       vector: vector,
       topK: 5,
@@ -98,7 +103,7 @@ app.post('/api/search', async (req, res) => {
 
     const bestMatch = queryResponse.matches[0];
 
-    return res.json({
+    res.json({
       success: true,
       questionId: bestMatch.id
     });
@@ -107,16 +112,16 @@ app.post('/api/search', async (req, res) => {
 
     console.error("Backend Error:", error);
 
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       error: error.message
     });
   }
 });
 
-// -----------------------------
-// Start Server
-// -----------------------------
+// ----------------------
+// START SERVER
+// ----------------------
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
