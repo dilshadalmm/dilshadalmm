@@ -19,46 +19,55 @@ app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
         
-        // Use stable model names
+        // 1. Setup Models
         const embedModel = genAI.getGenerativeModel({ model: "text-embedding-004" });
         let finalQueryText = text || "";
 
+        // 2. Multimodal Bridge (Image to Text)
         if (imageBase64) {
             try {
                 const visionModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
                 const cleanBase64 = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
                 
                 const visionResult = await visionModel.generateContent([
-                    "Describe this math/educational image briefly for search:",
+                    "Extract text and math from this image for a search query:",
                     { inlineData: { mimeType: "image/png", data: cleanBase64 } }
                 ]);
                 finalQueryText += " " + visionResult.response.text();
             } catch (vErr) {
-                console.error("Vision sub-process failed:", vErr.message);
+                console.error("Vision failed, using text only:", vErr.message);
             }
         }
 
-        // Generate Vector
+        // 3. Generate 768-dimension Vector
         const result = await embedModel.embedContent(finalQueryText);
         const vector = result.embedding.values;
 
-        // Query Pinecone
+        // 4. Query Pinecone
         const queryResponse = await index.query({
             vector: vector,
             topK: 1,
             includeMetadata: false
         });
 
-        // Response Logic
+        // 5. Success Logic - Matching the Frontend's data[0].id expectation
         if (queryResponse.matches && queryResponse.matches.length > 0 && queryResponse.matches[0].score > 0.6) {
-            res.json({ success: true, questionId: queryResponse.matches[0].id });
+            res.json([
+                { id: queryResponse.matches[0].id }
+            ]);
         } else {
-            res.json({ success: true, questionId: "#0000" });
+            // Fallback for no match
+            res.json([
+                { id: "#0000" }
+            ]);
         }
 
     } catch (error) {
-        console.error("Global Backend Error:", error);
-        res.json({ success: true, questionId: "#0000" });
+        console.error("Critical Backend Error:", error);
+        // Fallback for server error
+        res.json([
+            { id: "#0000" }
+        ]);
     }
 });
 
