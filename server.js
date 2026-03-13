@@ -18,10 +18,7 @@ app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // Ensure uploads folder exists
 const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log(`✅ Created uploads folder at ${uploadDir}`);
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Initialize Firebase Admin
 let firebaseInitialized = false;
@@ -33,9 +30,7 @@ try {
         });
         firebaseInitialized = true;
         console.log('✅ Firebase Admin initialized');
-    } else {
-        console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT not set');
-    }
+    } else console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT not set');
 } catch (err) {
     console.error('Failed to initialize Firebase Admin:', err.message);
 }
@@ -61,7 +56,6 @@ async function generateEmbedding(text) {
     });
 
     if (response.embeddings && response.embeddings.length > 0) return response.embeddings[0].values;
-
     throw new Error("No embeddings returned");
 }
 
@@ -105,6 +99,7 @@ async function addNewQuestion(queryText, extractedText = '') {
             comment: "Thank you for your question. Our team will provide an answer soon.",
             videoUrl: "",
             imageUrl: "",
+            embedded: true, // mark as embedded since we already processed
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log(`✅ Added new question to Firestore: ${newId}`);
@@ -114,6 +109,43 @@ async function addNewQuestion(queryText, extractedText = '') {
 
     return newId;
 }
+
+/**
+ * Watcher: auto-embed pending questions in Firestore
+ */
+async function embedPendingQuestions() {
+    if (!db) return;
+    try {
+        const snapshot = await db.collection("questions")
+            .where("embedded", "==", false)
+            .limit(50)
+            .get();
+
+        if (snapshot.empty) return;
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            if (!data.question) continue;
+
+            try {
+                const vector = await generateEmbedding(data.question);
+
+                await index.upsert([{ id: doc.id, values: vector, metadata: { text: data.question } }]);
+
+                await doc.ref.update({ embedded: true });
+
+                console.log(`✅ Auto-embedded question: ${doc.id}`);
+            } catch (err) {
+                console.error(`Failed embedding question ${doc.id}:`, err.message);
+            }
+        }
+    } catch (err) {
+        console.error("Error fetching pending questions:", err.message);
+    }
+}
+
+// Run watcher every 1 minute
+setInterval(embedPendingQuestions, 60 * 1000);
 
 /**
  * Main API: text + imageBase64 input
@@ -126,38 +158,24 @@ app.post('/api/search', async (req, res) => {
 
         if (imageBase64) {
             const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-
             const tempPath = `${uploadDir}/temp_${Date.now()}.png`;
             fs.writeFileSync(tempPath, Buffer.from(base64Data, 'base64'));
 
             extractedText = await runTesseractOCR(tempPath);
-
-            fs.unlink(tempPath, () => {}); // delete temp file
+            fs.unlink(tempPath, () => {});
 
             if (extractedText.trim()) finalQueryText += " " + extractedText;
-
-            console.log("✅ OCR extraction completed");
-            console.log("Extracted Text:", extractedText.substring(0, 200)); // first 200 chars
         }
 
-        if (!finalQueryText || finalQueryText.trim() === '') {
-            return res.json([{ id: "#0000" }]);
-        }
+        if (!finalQueryText || finalQueryText.trim() === '') return res.json([{ id: "#0000" }]);
 
-        // Generate embedding
         const vector = await generateEmbedding(finalQueryText);
-
-        // Query Pinecone
         const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
 
         if (queryResponse.matches && queryResponse.matches.length > 0 && queryResponse.matches[0].score > 0.6) {
-            const matchId = queryResponse.matches[0].id;
-            console.log(`✅ Found match: ${matchId}`);
-            return res.json([{ id: matchId }]);
+            return res.json([{ id: queryResponse.matches[0].id }]);
         }
 
-        // No match → add new question
-        console.log("No match found, adding new question...");
         const newId = await addNewQuestion(text || "", extractedText);
         return res.json([{ id: newId }]);
 
