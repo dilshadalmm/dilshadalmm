@@ -22,23 +22,16 @@ app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // Ensure uploads folder exists
 const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log(`✅ Created uploads folder at ${uploadDir}`);
-}
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // ===================== FIREBASE SETUP =====================
 let firebaseInitialized = false;
 try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT) {
         const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
+        admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
         firebaseInitialized = true;
         console.log('✅ Firebase Admin initialized');
-    } else {
-        console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT not set');
     }
 } catch (err) {
     console.error('Failed to initialize Firebase Admin:', err.message);
@@ -53,26 +46,20 @@ const index = pc.index(process.env.PINECONE_INDEX_NAME);
 // ===================== OCR WORKER POOL =====================
 const scheduler = Tesseract.createScheduler();
 (async () => {
-    for (let i = 0; i < 4; i++) {
-        const worker = await Tesseract.createWorker('eng');
-        await worker.load();
-        await worker.loadLanguage('eng');
-        await worker.initialize('eng');
+    for (let i = 0; i < 2; i++) { // ✅ Reduced to 2 workers for memory
+        const worker = await Tesseract.createWorker();
         scheduler.addWorker(worker);
     }
     console.log("🚀 OCR Workers Online");
 })();
 
 // ===================== UTILITY FUNCTIONS =====================
-
-// Generate unique question ID
 function generateQuestionId() {
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString('hex');
     return `user-${timestamp}-${random}`;
 }
 
-// Generate embedding for a single text
 async function generateEmbedding(text) {
     if (!text || text.trim() === '') throw new Error('Cannot embed empty text');
 
@@ -86,7 +73,6 @@ async function generateEmbedding(text) {
     throw new Error("No embeddings returned");
 }
 
-// Batch embedding
 async function generateEmbeddingsBatch(textList) {
     if (!textList.length) return [];
     const response = await ai.models.embedContent({
@@ -98,18 +84,21 @@ async function generateEmbeddingsBatch(textList) {
 }
 
 // ===================== BACKGROUND WATCHER =====================
+const BATCH_SIZE = 100; // ✅ smaller batch for low memory
 async function embedPendingQuestions() {
     if (!db) return;
+
     const snapshot = await db.collection("questions")
-        .where("embedded", "==", false).limit(1000).get();
+        .where("embedded", "==", false)
+        .limit(BATCH_SIZE)
+        .get();
 
     if (snapshot.empty) return;
 
     const docs = snapshot.docs;
 
-    // Process in batches of 250
-    for (let i = 0; i < docs.length; i += 250) {
-        const chunk = docs.slice(i, i + 250);
+    for (let i = 0; i < docs.length; i += 50) { // further split to 50 per Gemini call
+        const chunk = docs.slice(i, i + 50);
         const texts = chunk.map(d => d.data().question);
 
         try {
@@ -130,7 +119,7 @@ async function embedPendingQuestions() {
         }
     }
 }
-setInterval(embedPendingQuestions, 15000); // Every 15 seconds
+setInterval(embedPendingQuestions, 15000); // every 15s
 
 // ===================== MAIN SEARCH API =====================
 app.post('/api/search', async (req, res) => {
@@ -138,7 +127,7 @@ app.post('/api/search', async (req, res) => {
         const { text, imageBase64 } = req.body;
         let queryText = text || "";
 
-        // OCR if image provided
+        // OCR
         if (imageBase64) {
             const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
             const tempPath = `${uploadDir}/img_${Date.now()}.png`;
@@ -152,7 +141,7 @@ app.post('/api/search', async (req, res) => {
 
         if (!queryText.trim()) return res.json([{ id: "#0000" }]);
 
-        // Real-time search (fast path)
+        // Fast-path search
         const vector = await generateEmbedding(queryText);
         const results = await index.query({ vector, topK: 1 });
 
@@ -160,7 +149,7 @@ app.post('/api/search', async (req, res) => {
             return res.json([{ id: results.matches[0].id }]);
         }
 
-        // New question (surge path)
+        // New question (Surge path)
         const newId = generateQuestionId();
         await db.collection('questions').doc(newId).set({
             question: queryText,
@@ -175,8 +164,8 @@ app.post('/api/search', async (req, res) => {
     }
 });
 
-// Health check
+// ===================== HEALTH CHECK =====================
 app.get('/health', (req, res) => res.send('Active'));
 
-// Start server
+// ===================== START SERVER =====================
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
