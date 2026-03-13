@@ -1,4 +1,4 @@
-Const express = require('express');
+const express = require('express');
 const cors = require('cors');
 const { GoogleGenAI } = require("@google/genai");
 const { Pinecone } = require('@pinecone-database/pinecone');
