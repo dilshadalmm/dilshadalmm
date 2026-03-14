@@ -62,13 +62,20 @@ function generateQuestionId() {
 }
 
 /**
- * Describe an image using Gemini 2.5 Flash Lite
+ * Describe an image using Gemini 2.5 Flash Lite with a structured academic prompt
  * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} detailed description
+ * @returns {Promise<string>} detailed technical description
  */
 async function describeImage(base64Image) {
     try {
-        const prompt = "Provide a highly detailed technical description of this image. If it contains text, transcribe it exactly. If it contains a diagram or math, explain the logic and formulas in detail.";
+        const prompt = `Act as a high-level academic assistant. Analyze the provided image and generate a comprehensive, structured text description for a searchable database.
+
+1. **Transcription**: Extract all printed and handwritten text exactly as shown.
+2. **Mathematical Analysis**: Convert all formulas, equations, and variables into LaTeX format (e.g., use $x^2$ or $\\frac{a}{b}$). Explain the relationships between variables.
+3. **Diagram Breakdown**: If there is a chart, graph, or diagram, describe the type (e.g., "parabola graph"), label all axes, and explain the visual flow or logic.
+4. **Contextual Summary**: Provide a 1-sentence summary of the core academic topic (e.g., "This is a physics problem regarding Newton's Second Law").
+
+**Strict Rule**: Do not use conversational filler like "I can see..." or "This image shows...". Start directly with the technical details.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
