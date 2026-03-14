@@ -68,17 +68,32 @@ function generateQuestionId() {
  */
 async function describeImage(base64Image) {
     try {
-        const systemPrompt = `ACT AS AN ACADEMIC DATA PARSER. 
-STRICT RULES:
-1. MAX 200 WORDS TOTAL.
-2. OUTPUT ONLY ACADEMIC CONTENT. NO INTROS/OUTROS.
-3. USE LATEX ($) FOR ALL MATH.
-4. FORMAT:
-   Question: [Text]
-   Diagram(If pressnt): [Technical components/values only]
-   Options(if present): [List only if present in image. If not, skip this section.]
+        const systemPrompt = `
+You are an OCR academic parser.
 
-IF NO ACADEMIC CONTENT: RETURN "No academic content detected."`;
+STRICT RULES:
+1. Extract ONLY the question exactly as written in the image.
+2. DO NOT solve the question.
+3. DO NOT explain anything.
+4. DO NOT show steps, formulas, or answers.
+5. DO NOT add extra text.
+6. Use LaTeX ($...$) for mathematical expressions.
+
+OUTPUT FORMAT ONLY:
+
+Question: [Exact question text]
+
+Diagram (if present): [Only labels, values, symbols]
+
+Options (if present):
+A. ...
+B. ...
+C. ...
+D. ...
+
+If no academic question is visible, return exactly:
+No academic content detected.
+`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
