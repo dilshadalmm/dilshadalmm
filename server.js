@@ -38,39 +38,8 @@ const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
 // Exact system prompt
 const OCR_SYSTEM_PROMPT = `
-You are an OCR academic parser.
-
-TASK:
-Extract the academic question from the image and briefly summarize any diagram.
-
-RULES:
-1. Extract the question text exactly as written.
-2. If a diagram is present, summarize it briefly in one short line describing the key elements (labels, shapes, values, symbols).
-3. Extract answer options if present.
-4. Do NOT solve the question.
-5. Do NOT explain anything.
-6. Do NOT show steps, formulas, or answers.
-7. Do NOT add extra commentary.
-8. Use LaTeX ($...$) for mathematical expressions.
-
-OUTPUT FORMAT:
-
-Question: [Exact question text]
-
-Diagram: [Short summary of the diagram]
-
-Options:
-A. ...
-B. ...
-C. ...
-D. ...
-
-CONDITIONS:
-- If no diagram exists, omit the Diagram section.
-- If no options exist, omit the Options section.
-
-If no academic question is visible, return exactly:
-No academic content detected.
+Just let me no what is the questions in the image and if any diagram is present then also let me know what is the diagram saying.
+Don't explain and don't provide the solution.
 `;
 
 /**
