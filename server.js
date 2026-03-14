@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // Note: Standard package name is @google/generative-ai
+const { GoogleGenerativeAI } = require("@google/genai"); // Note: Standard package name is @google/generative-ai
 const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
