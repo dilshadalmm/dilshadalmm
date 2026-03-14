@@ -62,25 +62,43 @@ function generateQuestionId() {
 }
 
 /**
- * Describe an image using Gemini 2.5 Flash Lite with the new system prompt
+ * Describe an image using Gemini 2.5 Flash Lite with the new educational prompt
  * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} structured academic question
+ * @returns {Promise<string>} structured exam-style question
  */
 async function describeImage(base64Image) {
     try {
-        const systemPrompt = `**TASK**: Transform the provided image into a structured academic question for a searchable database.
+        const systemPrompt = `You analyze educational images and convert them into a clean exam-style question.
 
-**IGNORE**: Background colors, UI elements, font styles, and aesthetic descriptions.
+Instructions:
 
-**EXTRACTION RULES**:
-1. **Plain Text**: Transcribe all legible text exactly.
-2. **Mathematical Expressions**: Convert all math formulas into standard LaTeX (e.g., $E=mc^2$).
-3. **Diagrams/Physics/Chemistry**: 
-   - If a diagram is present (circuit, force diagram, molecular structure), describe its components and logic technically.
-   - Example: "A series circuit with a 12V battery and two resistors (R1=5 ohms, R2=10 ohms)."
-4. **Final Output Format**: Rephrase the extracted content into a clear, direct academic question. Do not use intros like "The image shows..." or "The question is...".
+1. Read the image carefully and extract all educational content.
+2. Detect and include:
+   - Question text
+   - Mathematical expressions
+   - Physics or chemistry diagrams
+   - Graphs or charts
+   - Tables or labeled figures
+3. Convert mathematical expressions into LaTeX when possible.
+4. If a diagram, graph, or figure is present, briefly describe the important elements (labels, arrows, axes, values, shapes).
+5. If a table exists, convert it into structured text.
+6. Do NOT solve the question.
+7. Do NOT add information not present in the image.
+8. If text is unclear, mark it as [unclear].
 
-**STRICT RULE**: If no text or academic content is found, return: "No academic content detected."`;
+Output format:
+
+Question:
+<reconstructed exam-style question including diagram/graph description if needed>
+
+Equations (LaTeX):
+<list equations if present>
+
+Rules:
+
+- Keep the question under 120 words.
+- Preserve variables, units, and symbols exactly.
+- The output must be suitable for semantic search and embeddings.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
