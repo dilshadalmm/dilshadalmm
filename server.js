@@ -43,19 +43,21 @@ Don't explain and don't provide solution.
 `;
 
 /**
- * Generate embedding
+ * Generate embedding (updated for batching)
  */
-async function generateEmbedding(text) {
-    if (!text || text.trim() === '') throw new Error('Cannot embed empty text');
+async function generateEmbeddingsBatch(texts) {
+    if (!Array.isArray(texts) || texts.length === 0) throw new Error('Cannot embed empty text array');
 
     const response = await ai.models.embedContent({
         model: 'gemini-embedding-001',
-        contents: [text],
+        contents: texts,
         config: { outputDimensionality: 768 }
     });
 
-    if (response.embeddings && response.embeddings.length > 0) return response.embeddings[0].values;
-    throw new Error("No embeddings returned");
+    if (response.embeddings && response.embeddings.length === texts.length) {
+        return response.embeddings.map(e => e.values);
+    }
+    throw new Error("No embeddings returned or mismatch in count");
 }
 
 /**
@@ -119,7 +121,7 @@ async function addNewQuestion(queryText, extractedText = '') {
     const fullText = extractedText || queryText;
     if (!fullText) throw new Error('No text to add');
 
-    const vector = await generateEmbedding(fullText);
+    const vector = (await generateEmbeddingsBatch([fullText]))[0];
     const newId = generateQuestionId();
 
     await index.upsert([{ id: newId, values: vector }]);
@@ -142,34 +144,67 @@ async function addNewQuestion(queryText, extractedText = '') {
 }
 
 /**
- * Watcher: auto-embed pending questions in Firestore
+ * Embed pending questions in batches concurrently
  */
 async function embedPendingQuestions() {
     if (!db) return;
     try {
         const snapshot = await db.collection("questions")
             .where("embedded", "==", false)
-            .limit(50)
+            .limit(5000) // fetch up to 5000 pending requests
             .get();
 
         if (snapshot.empty) return;
 
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            if (!data.question) continue;
+        const docs = snapshot.docs;
+        const BATCH_SIZE = 10; // number of questions per batch
+        const CONCURRENCY = 50; // max concurrent batches
+        const batches = [];
+
+        // Split docs into batches
+        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+            batches.push(docs.slice(i, i + BATCH_SIZE));
+        }
+
+        // Process batches in controlled concurrency
+        let current = 0;
+        async function processNextBatch() {
+            if (current >= batches.length) return;
+            const batch = batches[current++];
+            const texts = batch.map(doc => doc.data().question || "");
 
             try {
-                const vector = await generateEmbedding(data.question);
+                const vectors = await generateEmbeddingsBatch(texts);
 
-                await index.upsert([{ id: doc.id, values: vector, metadata: { text: data.question } }]);
+                const upserts = batch.map((doc, idx) => ({
+                    id: doc.id,
+                    values: vectors[idx],
+                    metadata: { text: texts[idx] }
+                }));
 
-                await doc.ref.update({ embedded: true });
+                await index.upsert(upserts);
 
-                console.log(`✅ Auto-embedded question: ${doc.id}`);
+                // Mark all docs in batch as embedded
+                const updates = batch.map(doc => doc.ref.update({ embedded: true }));
+                await Promise.all(updates);
+
+                console.log(`✅ Embedded batch: ${batch.map(d => d.id).join(', ')}`);
             } catch (err) {
-                console.error(`Failed embedding question ${doc.id}:`, err.message);
+                console.error("Failed embedding batch:", err.message);
             }
+
+            // Recursively process next batch
+            await processNextBatch();
         }
+
+        // Launch concurrent batch processors
+        const workers = [];
+        for (let i = 0; i < CONCURRENCY && i < batches.length; i++) {
+            workers.push(processNextBatch());
+        }
+
+        await Promise.all(workers);
+
     } catch (err) {
         console.error("Error fetching pending questions:", err.message);
     }
@@ -194,7 +229,7 @@ app.post('/api/search', async (req, res) => {
 
         if (!finalQueryText || finalQueryText.trim() === '') return res.json([{ id: "#0000" }]);
 
-        const vector = await generateEmbedding(finalQueryText);
+        const vector = (await generateEmbeddingsBatch([finalQueryText]))[0];
         const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
 
         if (queryResponse.matches && queryResponse.matches.length > 0 && queryResponse.matches[0].score > 0.6) {
