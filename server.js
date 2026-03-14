@@ -4,10 +4,7 @@ const { GoogleGenAI } = require("@google/genai");
 const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const fs = require('fs');
 require('dotenv').config();
-
-const Tesseract = require("tesseract.js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,10 +12,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
-
-// Ensure uploads folder exists
-const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Initialize Firebase Admin
 let firebaseInitialized = false;
@@ -42,6 +35,37 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 // Initialize Pinecone
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
+
+// Exact system prompt from ai_studio_code.java
+const OCR_SYSTEM_PROMPT = `
+You are an OCR academic parser.
+
+STRICT RULES:
+1. Extract ONLY the question exactly as written in the image.
+2. DO NOT solve the question.
+3. DO NOT explain anything.
+4. DO NOT show steps, formulas, or answers.
+5. DO NOT add extra text.
+6. Use LaTeX ($...$) for mathematical expressions.
+
+OUTPUT FORMAT ONLY:
+
+Question: [Exact question text]
+
+Diagram: [Only labels, values, symbols]
+
+Options:
+A. ...
+B. ...
+C. ...
+D. ...
+
+If no academic question is visible, return exactly:
+No academic content detected.
+
+Note: If no diagram and options are visible but question text are visible then return the question only.
+Question: [Extracted question text]
+`;
 
 /**
  * Generate embedding
@@ -69,14 +93,48 @@ function generateQuestionId() {
 }
 
 /**
- * Run OCR using Tesseract on a local file
+ * Run OCR using Gemini 2.5 Flash Lite with the exact system prompt
  */
-async function runTesseractOCR(imagePath) {
+async function runGeminiOCR(imageBase64) {
     try {
-        const result = await Tesseract.recognize(imagePath, "eng");
-        return result.data.text || "";
+        // Remove data URL prefix if present
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-lite',
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: "Extract all text from this image." },
+                        { inlineData: { mimeType: 'image/png', data: base64Data } }
+                    ]
+                }
+            ],
+            config: {
+                systemInstruction: { parts: [{ text: OCR_SYSTEM_PROMPT }] }
+            }
+        });
+
+        // Extract full response text
+        let fullText = "";
+        if (response && response.candidates && response.candidates.length > 0) {
+            const candidate = response.candidates[0];
+            if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+                fullText = candidate.content.parts[0].text || "";
+            }
+        }
+
+        // Parse the question text from the structured output
+        // Expected format: "Question: ..." possibly followed by "Diagram:" and "Options:"
+        const questionMatch = fullText.match(/Question:\s*(.*?)(?:\n\n|\nDiagram:|$)/s);
+        if (questionMatch && questionMatch[1]) {
+            return questionMatch[1].trim();
+        }
+        // Fallback: return the whole extracted text if parsing fails
+        return fullText.trim();
     } catch (error) {
-        console.error("OCR extraction failed:", error.message);
+        console.error("Gemini OCR extraction failed:", error.message);
         return "";
     }
 }
@@ -99,7 +157,7 @@ async function addNewQuestion(queryText, extractedText = '') {
             comment: "Thank you for your question. Our team will provide an answer soon.",
             videoUrl: "",
             imageUrl: "",
-            embedded: true, // mark as embedded since we already processed
+            embedded: true,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log(`✅ Added new question to Firestore: ${newId}`);
@@ -157,13 +215,7 @@ app.post('/api/search', async (req, res) => {
         let extractedText = "";
 
         if (imageBase64) {
-            const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-            const tempPath = `${uploadDir}/temp_${Date.now()}.png`;
-            fs.writeFileSync(tempPath, Buffer.from(base64Data, 'base64'));
-
-            extractedText = await runTesseractOCR(tempPath);
-            fs.unlink(tempPath, () => {});
-
+            extractedText = await runGeminiOCR(imageBase64);
             if (extractedText.trim()) finalQueryText += " " + extractedText;
         }
 
