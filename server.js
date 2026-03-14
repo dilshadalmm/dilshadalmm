@@ -34,57 +34,21 @@ const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Initialize Pinecone
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-// Ensure your Pinecone index is configured with dimension 3072
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
 /**
- * Extract mime type and clean base64 data from a possible data URL
+ * Generate embedding using gemini-embedding-2-preview (3072 dimensions)
  */
-function parseImageBase64(imageBase64) {
-    if (!imageBase64) return null;
-    const matches = imageBase64.match(/^data:image\/([a-zA-Z0-9+.-]+);base64,(.+)$/);
-    if (matches && matches.length === 3) {
-        return {
-            mimeType: `image/${matches[1]}`,
-            data: matches[2]
-        };
-    }
-    return { mimeType: 'image/png', data: imageBase64 };
-}
+async function generateEmbedding(text) {
+    if (!text || text.trim() === '') throw new Error('Cannot embed empty text');
 
-/**
- * Generate multimodal embedding from text and/or image base64
- * @param {string} text - optional text
- * @param {string} imageBase64 - optional base64 image
- * @returns {Promise<number[]>} embedding vector (3072 dimensions)
- */
-async function generateEmbedding(text, imageBase64) {
-    const parts = [];
-
-    if (text && text.trim() !== '') {
-        parts.push({ text: text.trim() });
-    }
-
-    if (imageBase64) {
-        const { mimeType, data } = parseImageBase64(imageBase64);
-        parts.push({
-            inlineData: { mimeType, data }
-        });
-    }
-
-    if (parts.length === 0) {
-        throw new Error('No content provided for embedding');
-    }
-
-    // No outputDimensionality config → defaults to 3072
     const response = await ai.models.embedContent({
         model: 'gemini-embedding-2-preview',
-        contents: [{ parts }]
+        contents: [text],
+        config: { outputDimensionality: 3072 }
     });
 
-    if (response.embeddings && response.embeddings.length > 0) {
-        return response.embeddings[0].values;
-    }
+    if (response.embeddings && response.embeddings.length > 0) return response.embeddings[0].values;
     throw new Error("No embeddings returned");
 }
 
@@ -98,21 +62,55 @@ function generateQuestionId() {
 }
 
 /**
- * Add new multimodal question to Pinecone + Firestore
+ * Describe an image using Gemini 2.5 Flash
+ * @param {string} base64Image - raw base64 string (without data URL prefix)
+ * @returns {Promise<string>} detailed description
  */
-async function addNewQuestion(text = '', imageBase64 = '') {
-    const vector = await generateEmbedding(text, imageBase64);
+async function describeImage(base64Image) {
+    try {
+        const prompt = "Provide a highly detailed technical description of this image. If it contains text, transcribe it exactly. If it contains a diagram or math, explain the logic and formulas in detail.";
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: prompt },
+                        {
+                            inlineData: {
+                                mimeType: 'image/png',  // adjust if you know the actual type
+                                data: base64Image
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+
+        // Extract text from response
+        return response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    } catch (error) {
+        console.error("Image description failed:", error.message);
+        return "";  // fallback to empty description
+    }
+}
+
+/**
+ * Add new question to Pinecone + Firestore
+ */
+async function addNewQuestion(queryText, extractedText = '') {
+    const fullText = [queryText, extractedText].filter(Boolean).join(' ').trim();
+    if (!fullText) throw new Error('No text to add');
+
+    const vector = await generateEmbedding(fullText);
     const newId = generateQuestionId();
 
     await index.upsert([{ id: newId, values: vector }]);
 
     if (db) {
-        let questionText = text.trim();
-        if (!questionText && imageBase64) {
-            questionText = "[Image query]";
-        }
         await db.collection('questions').doc(newId).set({
-            question: questionText || "",
+            question: fullText,
             comment: "Thank you for your question. Our team will provide an answer soon.",
             videoUrl: "",
             imageUrl: "",
@@ -128,7 +126,7 @@ async function addNewQuestion(text = '', imageBase64 = '') {
 }
 
 /**
- * Watcher: auto-embed pending questions in Firestore (legacy support)
+ * Watcher: auto-embed pending questions in Firestore
  */
 async function embedPendingQuestions() {
     if (!db) return;
@@ -145,10 +143,12 @@ async function embedPendingQuestions() {
             if (!data.question) continue;
 
             try {
-                // Note: this only embeds the text field, not any associated image
-                const vector = await generateEmbedding(data.question, null);
+                const vector = await generateEmbedding(data.question);
+
                 await index.upsert([{ id: doc.id, values: vector, metadata: { text: data.question } }]);
+
                 await doc.ref.update({ embedded: true });
+
                 console.log(`✅ Auto-embedded question: ${doc.id}`);
             } catch (err) {
                 console.error(`Failed embedding question ${doc.id}:`, err.message);
@@ -168,25 +168,26 @@ setInterval(embedPendingQuestions, 60 * 1000);
 app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
-        let finalText = text || "";
+        let finalQueryText = text || "";
+        let extractedText = "";
 
-        if (!finalText.trim() && !imageBase64) {
-            return res.json([{ id: "#0000" }]);
+        if (imageBase64) {
+            // Remove data URL prefix if present (e.g., "data:image/png;base64,")
+            const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+            extractedText = await describeImage(base64Data);
+            if (extractedText.trim()) finalQueryText += " " + extractedText;
         }
 
-        const vector = await generateEmbedding(finalText, imageBase64);
+        if (!finalQueryText || finalQueryText.trim() === '') return res.json([{ id: "#0000" }]);
 
-        const queryResponse = await index.query({
-            vector,
-            topK: 1,
-            includeMetadata: false
-        });
+        const vector = await generateEmbedding(finalQueryText);
+        const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
 
         if (queryResponse.matches && queryResponse.matches.length > 0 && queryResponse.matches[0].score > 0.6) {
             return res.json([{ id: queryResponse.matches[0].id }]);
         }
 
-        const newId = await addNewQuestion(finalText, imageBase64);
+        const newId = await addNewQuestion(text || "", extractedText);
         return res.json([{ id: newId }]);
 
     } catch (error) {
