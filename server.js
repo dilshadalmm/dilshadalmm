@@ -62,7 +62,7 @@ function generateQuestionId() {
 }
 
 /**
- * Extract academic content from an image using Gemini 2.5 Flash Lite
+ * Extract academic content from an image using Gemini 3.1 Flash Lite Preview
  * @param {string} base64Image - raw base64 string (without data URL prefix)
  * @returns {Promise<string>} formatted academic content
  */
@@ -96,7 +96,7 @@ No academic content detected.
 `;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-lite',
+            model: 'gemini-3.1-flash-lite-preview',
             systemInstruction: systemPrompt,
             contents: [
                 {
