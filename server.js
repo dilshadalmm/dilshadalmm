@@ -1,13 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenAI } = require("@google/genai");
+const { GoogleGenerativeAI } = require("@google/generative-ai"); // Note: Standard package name is @google/generative-ai
 const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const fs = require('fs');
 require('dotenv').config();
-
-const Tesseract = require("tesseract.js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,10 +12,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
-
-// Ensure uploads folder exists
-const uploadDir = "uploads";
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Initialize Firebase Admin
 let firebaseInitialized = false;
@@ -37,25 +30,29 @@ try {
 const db = firebaseInitialized ? admin.firestore() : null;
 
 // Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Note: Using the standard GoogleGenerativeAI class
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Initialize Pinecone
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
 /**
- * Generate embedding
+ * Generate embedding using text-embedding-004 (Updated to 768 dimensions)
  */
 async function generateEmbedding(text) {
     if (!text || text.trim() === '') throw new Error('Cannot embed empty text');
 
-    const response = await ai.models.embedContent({
-        model: 'gemini-embedding-001',
-        contents: [text],
-        config: { outputDimensionality: 768 }
+    // Using text-embedding-004 which supports the 768 dimension output
+    const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+    
+    const result = await model.embedContent({
+        content: { parts: [{ text }] },
+        outputDimensionality: 768
     });
 
-    if (response.embeddings && response.embeddings.length > 0) return response.embeddings[0].values;
+    const embedding = result.embedding;
+    if (embedding && embedding.values) return embedding.values;
     throw new Error("No embeddings returned");
 }
 
@@ -69,14 +66,53 @@ function generateQuestionId() {
 }
 
 /**
- * Run OCR using Tesseract on a local file
+ * Extract academic content using gemini-flash-lite-latest
+ * @param {string} base64Image - raw base64 string
  */
-async function runTesseractOCR(imagePath) {
+async function describeImage(base64Image) {
     try {
-        const result = await Tesseract.recognize(imagePath, "eng");
-        return result.data.text || "";
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-flash-lite-latest",
+            systemInstruction: `
+You are an OCR academic parser.
+
+STRICT RULES:
+1. Extract ONLY the question exactly as written in the image.
+2. DO NOT solve the question.
+3. DO NOT explain anything.
+4. DO NOT show steps, formulas, or answers.
+5. DO NOT add extra text.
+6. Use LaTeX ($...$) for mathematical expressions.
+
+OUTPUT FORMAT ONLY:
+
+Question: [Exact question text]
+
+Diagram: [Only labels, values, symbols]
+
+Options:
+A. ...
+B. ...
+C. ...
+D. ...
+
+If no academic question is visible, return exactly:
+No academic content detected.
+`
+        });
+
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    mimeType: 'image/png',
+                    data: base64Image
+                }
+            }
+        ]);
+
+        return result.response.text() || "";
     } catch (error) {
-        console.error("OCR extraction failed:", error.message);
+        console.error("Image description failed:", error.message);
         return "";
     }
 }
@@ -91,6 +127,7 @@ async function addNewQuestion(queryText, extractedText = '') {
     const vector = await generateEmbedding(fullText);
     const newId = generateQuestionId();
 
+    // Ensure your Pinecone Index is configured for 768 dimensions
     await index.upsert([{ id: newId, values: vector }]);
 
     if (db) {
@@ -99,19 +136,17 @@ async function addNewQuestion(queryText, extractedText = '') {
             comment: "Thank you for your question. Our team will provide an answer soon.",
             videoUrl: "",
             imageUrl: "",
-            embedded: true, // mark as embedded since we already processed
+            embedded: true,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log(`✅ Added new question to Firestore: ${newId}`);
-    } else {
-        console.log(`⚠️ Firestore not available. ID: ${newId}`);
     }
 
     return newId;
 }
 
 /**
- * Watcher: auto-embed pending questions in Firestore
+ * Watcher: auto-embed pending questions
  */
 async function embedPendingQuestions() {
     if (!db) return;
@@ -129,11 +164,8 @@ async function embedPendingQuestions() {
 
             try {
                 const vector = await generateEmbedding(data.question);
-
-                await index.upsert([{ id: doc.id, values: vector, metadata: { text: data.question } }]);
-
+                await index.upsert([{ id: doc.id, values: vector }]);
                 await doc.ref.update({ embedded: true });
-
                 console.log(`✅ Auto-embedded question: ${doc.id}`);
             } catch (err) {
                 console.error(`Failed embedding question ${doc.id}:`, err.message);
@@ -144,12 +176,8 @@ async function embedPendingQuestions() {
     }
 }
 
-// Run watcher every 1 minute
 setInterval(embedPendingQuestions, 60 * 1000);
 
-/**
- * Main API: text + imageBase64 input
- */
 app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
@@ -158,16 +186,11 @@ app.post('/api/search', async (req, res) => {
 
         if (imageBase64) {
             const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-            const tempPath = `${uploadDir}/temp_${Date.now()}.png`;
-            fs.writeFileSync(tempPath, Buffer.from(base64Data, 'base64'));
-
-            extractedText = await runTesseractOCR(tempPath);
-            fs.unlink(tempPath, () => {});
-
+            extractedText = await describeImage(base64Data);
             if (extractedText.trim()) finalQueryText += " " + extractedText;
         }
 
-        if (!finalQueryText || finalQueryText.trim() === '') return res.json([{ id: "#0000" }]);
+        if (!finalQueryText.trim()) return res.json([{ id: "#0000" }]);
 
         const vector = await generateEmbedding(finalQueryText);
         const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
@@ -181,10 +204,10 @@ app.post('/api/search', async (req, res) => {
 
     } catch (error) {
         console.error("Critical Backend Error:", error);
-        res.json([{ id: "#0000" }]);
+        res.status(500).json([{ id: "#0000", error: "Internal Server Error" }]);
     }
 });
 
 app.get('/health', (req, res) => res.send('Active'));
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT} with 768-dim embeddings`));
