@@ -4,7 +4,10 @@ const { GoogleGenAI } = require("@google/genai");
 const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const fs = require('fs');
 require('dotenv').config();
+
+const Tesseract = require("tesseract.js");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +15,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
+
+// Ensure uploads folder exists
+const uploadDir = "uploads";
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 // Initialize Firebase Admin
 let firebaseInitialized = false;
@@ -37,15 +44,15 @@ const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
 /**
- * Generate embedding using gemini-embedding-2-preview (3072 dimensions)
+ * Generate embedding
  */
 async function generateEmbedding(text) {
     if (!text || text.trim() === '') throw new Error('Cannot embed empty text');
 
     const response = await ai.models.embedContent({
-        model: 'gemini-embedding-2-preview',
+        model: 'gemini-embedding-001',
         contents: [text],
-        config: { outputDimensionality: 3072 }
+        config: { outputDimensionality: 768 }
     });
 
     if (response.embeddings && response.embeddings.length > 0) return response.embeddings[0].values;
@@ -62,62 +69,15 @@ function generateQuestionId() {
 }
 
 /**
- * Extract academic content from an image using Gemini 3.1 Flash Lite Preview
- * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} formatted academic content
+ * Run OCR using Tesseract on a local file
  */
-async function describeImage(base64Image) {
+async function runTesseractOCR(imagePath) {
     try {
-        const systemPrompt = `
-You are an OCR academic parser.
-
-STRICT RULES:
-1. Extract ONLY the question exactly as written in the image.
-2. DO NOT solve the question.
-3. DO NOT explain anything.
-4. DO NOT show steps, formulas, or answers.
-5. DO NOT add extra text.
-6. Use LaTeX ($...$) for mathematical expressions.
-
-OUTPUT FORMAT ONLY:
-
-Question: [Exact question text]
-
-Diagram (if present): [Only labels, values, symbols]
-
-Options (if present):
-A. ...
-B. ...
-C. ...
-D. ...
-
-If no academic question is visible, return exactly:
-No academic content detected.
-`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-lite-preview',
-            systemInstruction: systemPrompt,
-            contents: [
-                {
-                    role: 'user',
-                    parts: [
-                        {
-                            inlineData: {
-                                mimeType: 'image/png',  // adjust if you know the actual type
-                                data: base64Image
-                            }
-                        }
-                    ]
-                }
-            ]
-        });
-
-        // Extract text from response
-        return response.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        const result = await Tesseract.recognize(imagePath, "eng");
+        return result.data.text || "";
     } catch (error) {
-        console.error("Image description failed:", error.message);
-        return "";  // fallback to empty description
+        console.error("OCR extraction failed:", error.message);
+        return "";
     }
 }
 
@@ -139,7 +99,7 @@ async function addNewQuestion(queryText, extractedText = '') {
             comment: "Thank you for your question. Our team will provide an answer soon.",
             videoUrl: "",
             imageUrl: "",
-            embedded: true,
+            embedded: true, // mark as embedded since we already processed
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log(`✅ Added new question to Firestore: ${newId}`);
@@ -197,9 +157,13 @@ app.post('/api/search', async (req, res) => {
         let extractedText = "";
 
         if (imageBase64) {
-            // Remove data URL prefix if present (e.g., "data:image/png;base64,")
             const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-            extractedText = await describeImage(base64Data);
+            const tempPath = `${uploadDir}/temp_${Date.now()}.png`;
+            fs.writeFileSync(tempPath, Buffer.from(base64Data, 'base64'));
+
+            extractedText = await runTesseractOCR(tempPath);
+            fs.unlink(tempPath, () => {});
+
             if (extractedText.trim()) finalQueryText += " " + extractedText;
         }
 
