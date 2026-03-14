@@ -62,51 +62,21 @@ function generateQuestionId() {
 }
 
 /**
- * Describe an image using Gemini 2.5 Flash Lite with the new educational prompt
+ * Describe an image using Gemini 2.5 Flash
  * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} structured exam-style question
+ * @returns {Promise<string>} detailed description
  */
 async function describeImage(base64Image) {
     try {
-        const systemPrompt = `You analyze educational images and convert them into a clean exam-style question.
-
-Instructions:
-
-1. Read the image carefully and extract all educational content.
-2. Detect and include:
-   - Question text
-   - Mathematical expressions
-   - Physics or chemistry diagrams
-   - Graphs or charts
-   - Tables or labeled figures
-3. Convert mathematical expressions into LaTeX when possible.
-4. If a diagram, graph, or figure is present, briefly describe the important elements (labels, arrows, axes, values, shapes).
-5. If a table exists, convert it into structured text.
-6. Do NOT solve the question.
-7. Do NOT add information not present in the image.
-8. If text is unclear, mark it as [unclear].
-
-Output format:
-
-Question:
-<reconstructed exam-style question including diagram/graph description if needed>
-
-Equations (LaTeX):
-<list equations if present>
-
-Rules:
-
-- Keep the question under 120 words.
-- Preserve variables, units, and symbols exactly.
-- The output must be suitable for semantic search and embeddings.`;
+        const prompt = "Provide a highly detailed technical description of this image. If it contains text, transcribe it exactly. If it contains a diagram or math, explain the logic and formulas in detail.";
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-lite',
-            systemInstruction: systemPrompt,
+            model: 'gemini-2.5-flash',
             contents: [
                 {
                     role: 'user',
                     parts: [
+                        { text: prompt },
                         {
                             inlineData: {
                                 mimeType: 'image/png',  // adjust if you know the actual type
