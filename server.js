@@ -62,21 +62,39 @@ function generateQuestionId() {
 }
 
 /**
- * Describe an image using Gemini 2.5 Flash
+ * Extract exam question from an image using Gemini 2.5 Flash Lite
  * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} detailed description
+ * @returns {Promise<string>} clean exam-style question (text only)
  */
 async function describeImage(base64Image) {
     try {
-        const prompt = "Provide a highly detailed technical description of this image. If it contains text, transcribe it exactly. If it contains a diagram or math, explain the logic and formulas in detail.";
+        const systemPrompt = `You extract exam questions from educational images.
+
+Task:
+Read the image and convert its content into a clean, exam-style question.
+
+Rules:
+
+- Output ONLY the question text.
+- Do NOT include explanations, logic, hints, steps, formulas, or solutions.
+- Do NOT describe diagrams, graphs, or tables.
+- If a diagram, graph, or table exists, mention it briefly as part of the question (e.g., "as shown in the figure").
+- Preserve variables, symbols, and units exactly.
+- Convert mathematical expressions into LaTeX if needed.
+- Do NOT invent missing information.
+- If text is unreadable, replace it with [unclear].
+- Keep the question concise and under 120 words.
+
+Output format:
+<Question text only>`;
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.5-flash-lite',
+            systemInstruction: systemPrompt,
             contents: [
                 {
                     role: 'user',
                     parts: [
-                        { text: prompt },
                         {
                             inlineData: {
                                 mimeType: 'image/png',  // adjust if you know the actual type
