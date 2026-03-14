@@ -62,28 +62,33 @@ function generateQuestionId() {
 }
 
 /**
- * Describe an image using Gemini 2.5 Flash Lite with a structured academic prompt
+ * Describe an image using Gemini 2.5 Flash Lite with the new system prompt
  * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} detailed technical description
+ * @returns {Promise<string>} structured academic question
  */
 async function describeImage(base64Image) {
     try {
-        const prompt = `Act as a high-level academic assistant. Analyze the provided image and generate a comprehensive, structured text description for a searchable database.
+        const systemPrompt = `**TASK**: Transform the provided image into a structured academic question for a searchable database.
 
-1. **Transcription**: Extract all printed and handwritten text exactly as shown.
-2. **Mathematical Analysis**: Convert all formulas, equations, and variables into LaTeX format (e.g., use $x^2$ or $\\frac{a}{b}$). Explain the relationships between variables.
-3. **Diagram Breakdown**: If there is a chart, graph, or diagram, describe the type (e.g., "parabola graph"), label all axes, and explain the visual flow or logic.
-4. **Contextual Summary**: Provide a 1-sentence summary of the core academic topic (e.g., "This is a physics problem regarding Newton's Second Law").
+**IGNORE**: Background colors, UI elements, font styles, and aesthetic descriptions.
 
-**Strict Rule**: Do not use conversational filler like "I can see..." or "This image shows...". Start directly with the technical details.`;
+**EXTRACTION RULES**:
+1. **Plain Text**: Transcribe all legible text exactly.
+2. **Mathematical Expressions**: Convert all math formulas into standard LaTeX (e.g., $E=mc^2$).
+3. **Diagrams/Physics/Chemistry**: 
+   - If a diagram is present (circuit, force diagram, molecular structure), describe its components and logic technically.
+   - Example: "A series circuit with a 12V battery and two resistors (R1=5 ohms, R2=10 ohms)."
+4. **Final Output Format**: Rephrase the extracted content into a clear, direct academic question. Do not use intros like "The image shows..." or "The question is...".
+
+**STRICT RULE**: If no text or academic content is found, return: "No academic content detected."`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
+            systemInstruction: systemPrompt,
             contents: [
                 {
                     role: 'user',
                     parts: [
-                        { text: prompt },
                         {
                             inlineData: {
                                 mimeType: 'image/png',  // adjust if you know the actual type
