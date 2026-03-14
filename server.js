@@ -42,9 +42,47 @@ Just let me no what is the questions in the image and if any diagram is present 
 Don't explain and don't provide solution.
 `;
 
-/**
- * Generate embedding (updated for batching)
- */
+// ---- Utility Functions ----
+
+function generateQuestionId() {
+    const timestamp = Date.now();
+    const random = crypto.randomBytes(4).toString('hex');
+    return `user-${timestamp}-${random}`;
+}
+
+async function runGeminiOCR(imageBase64) {
+    try {
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-lite',
+            contents: [
+                {
+                    role: 'user',
+                    parts: [
+                        { text: "Extract all text from this image." },
+                        { inlineData: { mimeType: 'image/png', data: base64Data } }
+                    ]
+                }
+            ],
+            config: {
+                systemInstruction: { parts: [{ text: OCR_SYSTEM_PROMPT }] },
+                generationConfig: { temperature: 0.6, topP: 0.95 },
+                thinkingConfig: { thinkingBudget: 0 }
+            }
+        });
+
+        let fullText = "";
+        if (response?.candidates?.length > 0) {
+            const candidate = response.candidates[0];
+            fullText = candidate?.content?.parts?.[0]?.text || "";
+        }
+        return fullText.trim();
+    } catch (err) {
+        console.error("Gemini OCR extraction failed:", err.message);
+        return "";
+    }
+}
+
 async function generateEmbeddingsBatch(texts) {
     if (!Array.isArray(texts) || texts.length === 0) throw new Error('Cannot embed empty text array');
 
@@ -60,63 +98,6 @@ async function generateEmbeddingsBatch(texts) {
     throw new Error("No embeddings returned or mismatch in count");
 }
 
-/**
- * Generate unique question ID
- */
-function generateQuestionId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(4).toString('hex');
-    return `user-${timestamp}-${random}`;
-}
-
-/**
- * Run OCR using Gemini 2.5 Flash Lite
- */
-async function runGeminiOCR(imageBase64) {
-    try {
-        // Remove data URL prefix if present
-        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-lite',
-            contents: [
-                {
-                    role: 'user',
-                    parts: [
-                        { text: "Extract all text from this image." },
-                        { inlineData: { mimeType: 'image/png', data: base64Data } }
-                    ]
-                }
-            ],
-            config: {
-                systemInstruction: { parts: [{ text: OCR_SYSTEM_PROMPT }] },
-                generationConfig: {
-                    temperature: 0.6,
-                    topP: 0.95
-                },
-                thinkingConfig: { thinkingBudget: 0 }
-            }
-        });
-
-        // Extract full response text (do NOT discard diagram/options)
-        let fullText = "";
-        if (response && response.candidates && response.candidates.length > 0) {
-            const candidate = response.candidates[0];
-            if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
-                fullText = candidate.content.parts[0].text || "";
-            }
-        }
-
-        return fullText.trim();
-    } catch (error) {
-        console.error("Gemini OCR extraction failed:", error.message);
-        return "";
-    }
-}
-
-/**
- * Add new question to Pinecone + Firestore
- */
 async function addNewQuestion(queryText, extractedText = '') {
     const fullText = extractedText || queryText;
     if (!fullText) throw new Error('No text to add');
@@ -143,30 +124,27 @@ async function addNewQuestion(queryText, extractedText = '') {
     return newId;
 }
 
-/**
- * Embed pending questions in batches concurrently
- */
+// ---- Firestore Watcher: Batch Embedding ----
+
 async function embedPendingQuestions() {
     if (!db) return;
     try {
         const snapshot = await db.collection("questions")
             .where("embedded", "==", false)
-            .limit(5000) // fetch up to 5000 pending requests
+            .limit(5000)
             .get();
 
         if (snapshot.empty) return;
 
         const docs = snapshot.docs;
-        const BATCH_SIZE = 10; // number of questions per batch
-        const CONCURRENCY = 50; // max concurrent batches
+        const BATCH_SIZE = 10;
+        const CONCURRENCY = 50;
         const batches = [];
 
-        // Split docs into batches
         for (let i = 0; i < docs.length; i += BATCH_SIZE) {
             batches.push(docs.slice(i, i + BATCH_SIZE));
         }
 
-        // Process batches in controlled concurrency
         let current = 0;
         async function processNextBatch() {
             if (current >= batches.length) return;
@@ -175,7 +153,6 @@ async function embedPendingQuestions() {
 
             try {
                 const vectors = await generateEmbeddingsBatch(texts);
-
                 const upserts = batch.map((doc, idx) => ({
                     id: doc.id,
                     values: vectors[idx],
@@ -183,26 +160,20 @@ async function embedPendingQuestions() {
                 }));
 
                 await index.upsert(upserts);
-
-                // Mark all docs in batch as embedded
-                const updates = batch.map(doc => doc.ref.update({ embedded: true }));
-                await Promise.all(updates);
+                await Promise.all(batch.map(doc => doc.ref.update({ embedded: true })));
 
                 console.log(`✅ Embedded batch: ${batch.map(d => d.id).join(', ')}`);
             } catch (err) {
                 console.error("Failed embedding batch:", err.message);
             }
 
-            // Recursively process next batch
             await processNextBatch();
         }
 
-        // Launch concurrent batch processors
         const workers = [];
         for (let i = 0; i < CONCURRENCY && i < batches.length; i++) {
             workers.push(processNextBatch());
         }
-
         await Promise.all(workers);
 
     } catch (err) {
@@ -213,9 +184,46 @@ async function embedPendingQuestions() {
 // Run watcher every 1 minute
 setInterval(embedPendingQuestions, 60 * 1000);
 
-/**
- * Main API: text + imageBase64 input
- */
+// ---- Real-Time Concurrent Request Batching for /api/search ----
+
+const requestQueue = [];
+const BATCH_SIZE = 10;
+const MAX_WAIT_MS = 100; // process queue if no new requests in 100ms
+let batchTimeout = null;
+
+async function processRequestQueue() {
+    if (batchTimeout) clearTimeout(batchTimeout);
+
+    if (requestQueue.length === 0) return;
+
+    const batch = requestQueue.splice(0, BATCH_SIZE);
+    const texts = batch.map(item => item.finalQueryText);
+
+    try {
+        const vectors = await generateEmbeddingsBatch(texts);
+
+        // Process each request in batch
+        for (let i = 0; i < batch.length; i++) {
+            const vector = vectors[i];
+            const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
+            const reqObj = batch[i];
+
+            if (queryResponse.matches?.[0]?.score > 0.6) {
+                reqObj.res.json([{ id: queryResponse.matches[0].id }]);
+            } else {
+                const newId = await addNewQuestion(reqObj.text || "", reqObj.extractedText);
+                reqObj.res.json([{ id: newId }]);
+            }
+        }
+    } catch (err) {
+        console.error("Batch embedding failed:", err.message);
+        // Fail all requests in batch
+        batch.forEach(item => item.res.json([{ id: "#0000" }]));
+    }
+}
+
+// ---- API Endpoint ----
+
 app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
@@ -229,15 +237,19 @@ app.post('/api/search', async (req, res) => {
 
         if (!finalQueryText || finalQueryText.trim() === '') return res.json([{ id: "#0000" }]);
 
-        const vector = (await generateEmbeddingsBatch([finalQueryText]))[0];
-        const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
+        // Push request to in-memory queue
+        requestQueue.push({ res, text, extractedText, finalQueryText });
 
-        if (queryResponse.matches && queryResponse.matches.length > 0 && queryResponse.matches[0].score > 0.6) {
-            return res.json([{ id: queryResponse.matches[0].id }]);
+        // Trigger batch processing if queue reaches batch size
+        if (requestQueue.length >= BATCH_SIZE) {
+            processRequestQueue();
+        } else if (!batchTimeout) {
+            // Trigger after MAX_WAIT_MS if queue is not full
+            batchTimeout = setTimeout(() => {
+                processRequestQueue();
+                batchTimeout = null;
+            }, MAX_WAIT_MS);
         }
-
-        const newId = await addNewQuestion(text || "", extractedText);
-        return res.json([{ id: newId }]);
 
     } catch (error) {
         console.error("Critical Backend Error:", error);
