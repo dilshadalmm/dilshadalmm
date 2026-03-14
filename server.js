@@ -29,17 +29,16 @@ try {
 }
 const db = firebaseInitialized ? admin.firestore() : null;
 
-// Initialize Gemini (using new multimodal embedding model)
+// Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // Initialize Pinecone
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
+// Ensure your Pinecone index is configured with dimension 3072
 const index = pc.index(process.env.PINECONE_INDEX_NAME);
 
 /**
  * Extract mime type and clean base64 data from a possible data URL
- * @param {string} imageBase64 - raw base64 or data URL
- * @returns {{ mimeType: string, data: string }}
  */
 function parseImageBase64(imageBase64) {
     if (!imageBase64) return null;
@@ -50,46 +49,37 @@ function parseImageBase64(imageBase64) {
             data: matches[2]
         };
     }
-    // Assume plain base64 and default to PNG
-    return {
-        mimeType: 'image/png',
-        data: imageBase64
-    };
+    return { mimeType: 'image/png', data: imageBase64 };
 }
 
 /**
  * Generate multimodal embedding from text and/or image base64
  * @param {string} text - optional text
- * @param {string} imageBase64 - optional base64 image (raw or data URL)
- * @returns {Promise<number[]>} embedding vector (768 dimensions)
+ * @param {string} imageBase64 - optional base64 image
+ * @returns {Promise<number[]>} embedding vector (3072 dimensions)
  */
 async function generateEmbedding(text, imageBase64) {
     const parts = [];
 
-    // Add text part if provided and not empty
     if (text && text.trim() !== '') {
         parts.push({ text: text.trim() });
     }
 
-    // Add image part if provided
     if (imageBase64) {
         const { mimeType, data } = parseImageBase64(imageBase64);
         parts.push({
-            inlineData: {
-                mimeType,
-                data
-            }
+            inlineData: { mimeType, data }
         });
     }
 
     if (parts.length === 0) {
-        throw new Error('No content provided for embedding (text or image required)');
+        throw new Error('No content provided for embedding');
     }
 
+    // No outputDimensionality config → defaults to 3072
     const response = await ai.models.embedContent({
         model: 'gemini-embedding-2-preview',
-        contents: [{ parts }],
-        config: { outputDimensionality: 768 } // Keep 768 to match existing Pinecone index
+        contents: [{ parts }]
     });
 
     if (response.embeddings && response.embeddings.length > 0) {
@@ -109,19 +99,14 @@ function generateQuestionId() {
 
 /**
  * Add new multimodal question to Pinecone + Firestore
- * @param {string} text - original text from user (may be empty)
- * @param {string} imageBase64 - optional base64 image
- * @returns {Promise<string>} new question ID
  */
 async function addNewQuestion(text = '', imageBase64 = '') {
-    // Generate embedding from provided text and/or image
     const vector = await generateEmbedding(text, imageBase64);
     const newId = generateQuestionId();
 
     await index.upsert([{ id: newId, values: vector }]);
 
     if (db) {
-        // Store a meaningful question string in Firestore
         let questionText = text.trim();
         if (!questionText && imageBase64) {
             questionText = "[Image query]";
@@ -131,7 +116,7 @@ async function addNewQuestion(text = '', imageBase64 = '') {
             comment: "Thank you for your question. Our team will provide an answer soon.",
             videoUrl: "",
             imageUrl: "",
-            embedded: true, // already embedded
+            embedded: true,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
         console.log(`✅ Added new question to Firestore: ${newId}`);
@@ -179,22 +164,18 @@ setInterval(embedPendingQuestions, 60 * 1000);
 
 /**
  * Main API: text + imageBase64 input
- * Returns an array with a single object containing the matched or newly created question ID.
  */
 app.post('/api/search', async (req, res) => {
     try {
         const { text, imageBase64 } = req.body;
         let finalText = text || "";
 
-        // No OCR, just use the inputs directly for multimodal embedding
         if (!finalText.trim() && !imageBase64) {
             return res.json([{ id: "#0000" }]);
         }
 
-        // Generate multimodal embedding (combines text and image if both present)
         const vector = await generateEmbedding(finalText, imageBase64);
 
-        // Query Pinecone for similar vectors
         const queryResponse = await index.query({
             vector,
             topK: 1,
@@ -205,18 +186,15 @@ app.post('/api/search', async (req, res) => {
             return res.json([{ id: queryResponse.matches[0].id }]);
         }
 
-        // No good match found → create a new question
         const newId = await addNewQuestion(finalText, imageBase64);
         return res.json([{ id: newId }]);
 
     } catch (error) {
         console.error("Critical Backend Error:", error);
-        // Return a fallback ID on error (consistent with original behavior)
         res.json([{ id: "#0000" }]);
     }
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
