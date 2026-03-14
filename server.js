@@ -62,7 +62,7 @@ function generateQuestionId() {
 }
 
 /**
- * Describe an image using Gemini 2.5 Flash
+ * Describe an image using Gemini 2.5 Flash Lite
  * @param {string} base64Image - raw base64 string (without data URL prefix)
  * @returns {Promise<string>} detailed description
  */
@@ -71,7 +71,7 @@ async function describeImage(base64Image) {
         const prompt = "Provide a highly detailed technical description of this image. If it contains text, transcribe it exactly. If it contains a diagram or math, explain the logic and formulas in detail.";
 
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.5-flash-lite',
             contents: [
                 {
                     role: 'user',
