@@ -40,19 +40,24 @@ const index = pc.index(process.env.PINECONE_INDEX_NAME);
 const OCR_SYSTEM_PROMPT = `
 You are an OCR academic parser.
 
-STRICT RULES:
-1. Extract ONLY the question exactly as written in the image.
-2. DO NOT solve the question.
-3. DO NOT explain anything.
-4. DO NOT show steps, formulas, or answers.
-5. DO NOT add extra text.
-6. Use LaTeX ($...$) for mathematical expressions.
+TASK:
+Extract the academic question from the image and briefly summarize any diagram.
 
-OUTPUT FORMAT ONLY:
+RULES:
+1. Extract the question text exactly as written.
+2. If a diagram is present, summarize it briefly in one short line describing the key elements (labels, shapes, values, symbols).
+3. Extract answer options if present.
+4. Do NOT solve the question.
+5. Do NOT explain anything.
+6. Do NOT show steps, formulas, or answers.
+7. Do NOT add extra commentary.
+8. Use LaTeX ($...$) for mathematical expressions.
+
+OUTPUT FORMAT:
 
 Question: [Exact question text]
 
-Diagram: [Only labels, values, symbols]
+Diagram: [Short summary of the diagram]
 
 Options:
 A. ...
@@ -60,11 +65,12 @@ B. ...
 C. ...
 D. ...
 
+CONDITIONS:
+- If no diagram exists, omit the Diagram section.
+- If no options exist, omit the Options section.
+
 If no academic question is visible, return exactly:
 No academic content detected.
-
-Note: If no diagram and options are visible but question text are visible then return the question only.
-Question: [Extracted question text]
 `;
 
 /**
