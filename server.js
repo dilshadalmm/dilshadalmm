@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenerativeAI } = require("@google/genai"); // Note: Standard package name is @google/generative-ai
+const { GoogleGenAI } = require("@google/genai"); // Note: Standard package name is @google/generative-ai
 const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
@@ -31,7 +31,7 @@ const db = firebaseInitialized ? admin.firestore() : null;
 
 // Initialize Gemini
 // Note: Using the standard GoogleGenerativeAI class
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenAI(process.env.GEMINI_API_KEY);
 
 // Initialize Pinecone
 const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
