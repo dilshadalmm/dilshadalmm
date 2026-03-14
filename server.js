@@ -53,6 +53,7 @@ function generateQuestionId() {
 async function runGeminiOCR(imageBase64) {
     try {
         const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
             contents: [
@@ -76,7 +77,9 @@ async function runGeminiOCR(imageBase64) {
             const candidate = response.candidates[0];
             fullText = candidate?.content?.parts?.[0]?.text || "";
         }
+
         return fullText.trim();
+
     } catch (err) {
         console.error("Gemini OCR extraction failed:", err.message);
         return "";
@@ -84,7 +87,9 @@ async function runGeminiOCR(imageBase64) {
 }
 
 async function generateEmbeddingsBatch(texts) {
-    if (!Array.isArray(texts) || texts.length === 0) throw new Error('Cannot embed empty text array');
+    if (!Array.isArray(texts) || texts.length === 0) {
+        throw new Error('Cannot embed empty text array');
+    }
 
     const response = await ai.models.embedContent({
         model: 'gemini-embedding-001',
@@ -95,6 +100,7 @@ async function generateEmbeddingsBatch(texts) {
     if (response.embeddings && response.embeddings.length === texts.length) {
         return response.embeddings.map(e => e.values);
     }
+
     throw new Error("No embeddings returned or mismatch in count");
 }
 
@@ -116,19 +122,21 @@ async function addNewQuestion(queryText, extractedText = '') {
             embedded: true,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         });
+
         console.log(`✅ Added new question to Firestore: ${newId}`);
-    } else {
-        console.log(`⚠️ Firestore not available. ID: ${newId}`);
     }
 
     return newId;
 }
 
-// ---- Firestore Watcher: Batch Embedding ----
+// ---- Firestore Watcher ----
 
 async function embedPendingQuestions() {
+
     if (!db) return;
+
     try {
+
         const snapshot = await db.collection("questions")
             .where("embedded", "==", false)
             .limit(5000)
@@ -146,13 +154,18 @@ async function embedPendingQuestions() {
         }
 
         let current = 0;
+
         async function processNextBatch() {
+
             if (current >= batches.length) return;
+
             const batch = batches[current++];
             const texts = batch.map(doc => doc.data().question || "");
 
             try {
+
                 const vectors = await generateEmbeddingsBatch(texts);
+
                 const upserts = batch.map((doc, idx) => ({
                     id: doc.id,
                     values: vectors[idx],
@@ -163,6 +176,7 @@ async function embedPendingQuestions() {
                 await Promise.all(batch.map(doc => doc.ref.update({ embedded: true })));
 
                 console.log(`✅ Embedded batch: ${batch.map(d => d.id).join(', ')}`);
+
             } catch (err) {
                 console.error("Failed embedding batch:", err.message);
             }
@@ -171,9 +185,11 @@ async function embedPendingQuestions() {
         }
 
         const workers = [];
+
         for (let i = 0; i < CONCURRENCY && i < batches.length; i++) {
             workers.push(processNextBatch());
         }
+
         await Promise.all(workers);
 
     } catch (err) {
@@ -181,52 +197,92 @@ async function embedPendingQuestions() {
     }
 }
 
-// Run watcher every 1 minute
 setInterval(embedPendingQuestions, 60 * 1000);
 
-// ---- Real-Time Concurrent Request Batching for /api/search ----
+// ---- Real-time request queue ----
 
 const requestQueue = [];
 const BATCH_SIZE = 10;
-const MAX_WAIT_MS = 100; // process queue if no new requests in 100ms
+const MAX_WAIT_MS = 100;
+const MAX_QUEUE_SIZE = 5000;
+
 let batchTimeout = null;
+let isProcessing = false;
 
 async function processRequestQueue() {
-    if (batchTimeout) clearTimeout(batchTimeout);
 
-    if (requestQueue.length === 0) return;
+    if (isProcessing) return;
+    isProcessing = true;
 
-    const batch = requestQueue.splice(0, BATCH_SIZE);
-    const texts = batch.map(item => item.finalQueryText);
-
-    try {
-        const vectors = await generateEmbeddingsBatch(texts);
-
-        // Process each request in batch
-        for (let i = 0; i < batch.length; i++) {
-            const vector = vectors[i];
-            const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
-            const reqObj = batch[i];
-
-            if (queryResponse.matches?.[0]?.score > 0.6) {
-                reqObj.res.json([{ id: queryResponse.matches[0].id }]);
-            } else {
-                const newId = await addNewQuestion(reqObj.text || "", reqObj.extractedText);
-                reqObj.res.json([{ id: newId }]);
-            }
-        }
-    } catch (err) {
-        console.error("Batch embedding failed:", err.message);
-        // Fail all requests in batch
-        batch.forEach(item => item.res.json([{ id: "#0000" }]));
+    if (batchTimeout) {
+        clearTimeout(batchTimeout);
+        batchTimeout = null;
     }
+
+    while (requestQueue.length > 0) {
+
+        const batch = requestQueue.splice(0, BATCH_SIZE);
+        const texts = batch.map(item => item.finalQueryText);
+
+        try {
+
+            const vectors = await generateEmbeddingsBatch(texts);
+
+            const tasks = batch.map(async (reqObj, i) => {
+
+                try {
+
+                    const vector = vectors[i];
+
+                    const queryResponse = await index.query({
+                        vector,
+                        topK: 1,
+                        includeMetadata: false
+                    });
+
+                    if (queryResponse.matches?.[0]?.score > 0.6) {
+                        reqObj.res.json([{ id: queryResponse.matches[0].id }]);
+                    } else {
+                        const newId = await addNewQuestion(reqObj.text || "", reqObj.extractedText);
+                        reqObj.res.json([{ id: newId }]);
+                    }
+
+                } catch (err) {
+                    console.error("Request processing error:", err.message);
+                    reqObj.res.json([{ id: "#0000" }]);
+                }
+
+            });
+
+            await Promise.all(tasks);
+
+        } catch (err) {
+
+            console.error("Batch embedding generation failed:", err.message);
+
+            batch.forEach(item => {
+                try {
+                    item.res.json([{ id: "#0000" }]);
+                } catch {}
+            });
+        }
+    }
+
+    isProcessing = false;
 }
 
 // ---- API Endpoint ----
 
 app.post('/api/search', async (req, res) => {
+
     try {
+
+        if (requestQueue.length > MAX_QUEUE_SIZE) {
+            return res.json([{ id: "#BUSY" }]);
+        }
+
         const { text, imageBase64 } = req.body;
+
         let finalQueryText = text || "";
         let extractedText = "";
 
@@ -235,25 +291,32 @@ app.post('/api/search', async (req, res) => {
             if (extractedText.trim()) finalQueryText += " " + extractedText;
         }
 
-        if (!finalQueryText || finalQueryText.trim() === '') return res.json([{ id: "#0000" }]);
+        if (!finalQueryText || finalQueryText.trim() === '') {
+            return res.json([{ id: "#0000" }]);
+        }
 
-        // Push request to in-memory queue
-        requestQueue.push({ res, text, extractedText, finalQueryText });
+        requestQueue.push({
+            res,
+            text,
+            extractedText,
+            finalQueryText
+        });
 
-        // Trigger batch processing if queue reaches batch size
         if (requestQueue.length >= BATCH_SIZE) {
             processRequestQueue();
         } else if (!batchTimeout) {
-            // Trigger after MAX_WAIT_MS if queue is not full
+
             batchTimeout = setTimeout(() => {
                 processRequestQueue();
-                batchTimeout = null;
             }, MAX_WAIT_MS);
+
         }
 
     } catch (error) {
+
         console.error("Critical Backend Error:", error);
         res.json([{ id: "#0000" }]);
+
     }
 });
 
