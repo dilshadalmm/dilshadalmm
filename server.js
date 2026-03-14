@@ -93,7 +93,7 @@ function generateQuestionId() {
 }
 
 /**
- * Run OCR using Gemini 2.5 Flash Lite with the exact system prompt
+ * Run OCR using Gemini 2.5 Flash Lite with temperature, topP, and thinkingConfig
  */
 async function runGeminiOCR(imageBase64) {
     try {
@@ -112,7 +112,12 @@ async function runGeminiOCR(imageBase64) {
                 }
             ],
             config: {
-                systemInstruction: { parts: [{ text: OCR_SYSTEM_PROMPT }] }
+                systemInstruction: { parts: [{ text: OCR_SYSTEM_PROMPT }] },
+                generationConfig: {
+                    temperature: 0.6,
+                    topP: 0.95
+                },
+                thinkingConfig: { thinkingBudget: 0 }
             }
         });
 
@@ -126,7 +131,6 @@ async function runGeminiOCR(imageBase64) {
         }
 
         // Parse the question text from the structured output
-        // Expected format: "Question: ..." possibly followed by "Diagram:" and "Options:"
         const questionMatch = fullText.match(/Question:\s*(.*?)(?:\n\n|\nDiagram:|$)/s);
         if (questionMatch && questionMatch[1]) {
             return questionMatch[1].trim();
