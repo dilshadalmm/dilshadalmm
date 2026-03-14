@@ -62,31 +62,23 @@ function generateQuestionId() {
 }
 
 /**
- * Extract exam question from an image using Gemini 2.5 Flash Lite
+ * Extract academic content from an image using Gemini 2.5 Flash Lite
  * @param {string} base64Image - raw base64 string (without data URL prefix)
- * @returns {Promise<string>} clean exam-style question (text only)
+ * @returns {Promise<string>} formatted academic content
  */
 async function describeImage(base64Image) {
     try {
-        const systemPrompt = `You extract exam questions from educational images.
+        const systemPrompt = `ACT AS AN ACADEMIC DATA PARSER. 
+STRICT RULES:
+1. MAX 200 WORDS TOTAL.
+2. OUTPUT ONLY ACADEMIC CONTENT. NO INTROS/OUTROS.
+3. USE LATEX ($) FOR ALL MATH.
+4. FORMAT:
+   Question: [Text]
+   Diagram(If pressnt): [Technical components/values only]
+   Options(if present): [List only if present in image. If not, skip this section.]
 
-Task:
-Read the image and convert its content into a clean, exam-style question.
-
-Rules:
-
-- Output ONLY the question text.
-- Do NOT include explanations, logic, hints, steps, formulas, or solutions.
-- Do NOT describe diagrams, graphs, or tables.
-- If a diagram, graph, or table exists, mention it briefly as part of the question (e.g., "as shown in the figure").
-- Preserve variables, symbols, and units exactly.
-- Convert mathematical expressions into LaTeX if needed.
-- Do NOT invent missing information.
-- If text is unreadable, replace it with [unclear].
-- Keep the question concise and under 120 words.
-
-Output format:
-<Question text only>`;
+IF NO ACADEMIC CONTENT: RETURN "No academic content detected."`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
