@@ -50,10 +50,6 @@ function generateQuestionId() {
     return `user-${timestamp}-${random}`;
 }
 
-/**
- * Run OCR on an image using Gemini.
- * Added logging to track each call.
- */
 async function runGeminiOCR(imageBase64) {
     console.log(`[OCR] Calling Gemini at ${new Date().toISOString()}`);
     try {
@@ -103,14 +99,18 @@ async function generateEmbeddingsBatch(texts) {
     throw new Error("No embeddings returned or mismatch in count");
 }
 
-async function addNewQuestion(queryText, extractedText = '') {
+// NEW FUNCTION: Add question with pre-generated vector
+async function addNewQuestionWithVector(queryText, extractedText = '', vector) {
     const fullText = extractedText || queryText;
     if (!fullText) throw new Error('No text to add');
 
-    const vector = (await generateEmbeddingsBatch([fullText]))[0];
     const newId = generateQuestionId();
 
-    await index.upsert([{ id: newId, values: vector }]);
+    await index.upsert([{ 
+        id: newId, 
+        values: vector,
+        metadata: { text: fullText }  // Store text in metadata for future reference
+    }]);
 
     if (db) {
         await db.collection('questions').doc(newId).set({
@@ -127,6 +127,14 @@ async function addNewQuestion(queryText, extractedText = '') {
     }
 
     return newId;
+}
+
+// Keep original for backward compatibility or other uses
+async function addNewQuestion(queryText, extractedText = '') {
+    const fullText = extractedText || queryText;
+    if (!fullText) throw new Error('No text to add');
+    const vector = (await generateEmbeddingsBatch([fullText]))[0];
+    return addNewQuestionWithVector(queryText, extractedText, vector);
 }
 
 // ---- Firestore Watcher: Batch Embedding ----
@@ -193,56 +201,58 @@ setInterval(embedPendingQuestions, 60 * 1000);
 
 const requestQueue = [];
 const BATCH_SIZE = 10;
-const MAX_WAIT_MS = 100; // process queue if no new requests in 100ms
+const MAX_WAIT_MS = 100;
 let batchTimeout = null;
 
-/**
- * Process one batch of requests from the queue.
- * After processing, if there are still items left, schedule the next batch.
- */
 async function processRequestQueue() {
-    // Clear any pending timeout – we're processing now
     if (batchTimeout) {
         clearTimeout(batchTimeout);
         batchTimeout = null;
     }
 
-    // If queue is empty, nothing to do
     if (requestQueue.length === 0) return;
 
-    // Take up to BATCH_SIZE items
     const batch = requestQueue.splice(0, BATCH_SIZE);
     const texts = batch.map(item => item.finalQueryText);
 
     try {
+        // ✅ Generate embeddings ONCE for the entire batch
         const vectors = await generateEmbeddingsBatch(texts);
 
-        // Process each request in batch
+        // Process each request using pre-generated vectors
         for (let i = 0; i < batch.length; i++) {
             const vector = vectors[i];
-            const queryResponse = await index.query({ vector, topK: 1, includeMetadata: false });
+            const queryResponse = await index.query({ 
+                vector, 
+                topK: 1, 
+                includeMetadata: true  // Include metadata to get stored text
+            });
+            
             const reqObj = batch[i];
 
             if (queryResponse.matches?.[0]?.score > 0.6) {
+                // Found existing question
                 reqObj.res.json([{ id: queryResponse.matches[0].id }]);
             } else {
-                const newId = await addNewQuestion(reqObj.text || "", reqObj.extractedText);
+                // ✅ No match found - create new question using EXISTING vector
+                const newId = await addNewQuestionWithVector(
+                    reqObj.text || "", 
+                    reqObj.extractedText,
+                    vector  // Pass the pre-generated vector!
+                );
                 reqObj.res.json([{ id: newId }]);
             }
         }
     } catch (err) {
-        console.error("Batch embedding failed:", err.message);
-        // Fail all requests in batch
+        console.error("Batch processing failed:", err.message);
         batch.forEach(item => item.res.json([{ id: "#0000" }]));
     }
 
-    // After processing this batch, schedule the next batch if the queue is not empty
+    // Continue processing remaining queue items
     if (requestQueue.length > 0) {
-        // If we have enough for a full batch, process immediately (but yield event loop)
         if (requestQueue.length >= BATCH_SIZE) {
             setImmediate(processRequestQueue);
         } else {
-            // Otherwise set a timeout to wait for more requests
             batchTimeout = setTimeout(() => {
                 batchTimeout = null;
                 processRequestQueue();
@@ -269,17 +279,14 @@ app.post('/api/search', async (req, res) => {
         // Push request to in-memory queue
         requestQueue.push({ res, text, extractedText, finalQueryText });
 
-        // Trigger batch processing based on queue size
+        // Trigger batch processing
         if (requestQueue.length >= BATCH_SIZE) {
-            // If we already have a timeout, clear it – we'll process immediately
             if (batchTimeout) {
                 clearTimeout(batchTimeout);
                 batchTimeout = null;
             }
-            // Process immediately (use setImmediate to avoid deep call stack)
             setImmediate(processRequestQueue);
         } else if (!batchTimeout) {
-            // No timeout scheduled yet, set one
             batchTimeout = setTimeout(() => {
                 batchTimeout = null;
                 processRequestQueue();
