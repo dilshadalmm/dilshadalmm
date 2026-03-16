@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const { GoogleGenAI } = require("@google/genai");
 const { Pinecone } = require('@pinecone-database/pinecone');
-const admin = require('firebase-admin');
 const crypto = require('crypto');
 require('dotenv').config();
 
@@ -12,22 +11,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
-
-// Initialize Firebase Admin
-let firebaseInitialized = false;
-try {
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-        admin.initializeApp({
-            credential: admin.credential.cert(serviceAccount)
-        });
-        firebaseInitialized = true;
-        console.log('✅ Firebase Admin initialized');
-    } else console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT not set');
-} catch (err) {
-    console.error('Failed to initialize Firebase Admin:', err.message);
-}
-const db = firebaseInitialized ? admin.firestore() : null;
 
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -46,10 +29,13 @@ Question:
 
 // ---- Utility Functions ----
 
-function generateQuestionId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(4).toString('hex');
-    return `user-${timestamp}-${random}`;
+/**
+ * Generate a deterministic ID based on normalized question text.
+ * Format: qstu_<first 12 chars of SHA256 hash>
+ */
+function generateQuestionId(normalizedQuestion) {
+    const hash = crypto.createHash('sha256').update(normalizedQuestion).digest('hex');
+    return `qstu_${hash.slice(0, 12)}`;
 }
 
 function getMimeTypeFromBase64(base64) {
@@ -75,7 +61,50 @@ async function generateEmbeddingsBatch(texts) {
     throw new Error("No embeddings returned or mismatch in count");
 }
 
-// ---- Normalization ----
+/**
+ * Retry wrapper for Gemini API calls that handles 429 rate limits.
+ * @param {Function} fn - Async function that calls Gemini API.
+ * @param {number} maxRetries - Maximum number of retries (default 3).
+ * @param {number} baseDelay - Base delay in ms (default 1000).
+ * @returns {Promise<any>}
+ */
+async function withRetry(fn, maxRetries = 3, baseDelay = 1000) {
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            // Check if it's a 429 rate limit error
+            const isRateLimit = error.status === 429 || error.code === 429 || 
+                (error.message && error.message.includes('429')) ||
+                (error.details && error.details.some(d => d['@type']?.includes('QuotaFailure')));
+
+            if (!isRateLimit || attempt === maxRetries) {
+                break; // don't retry other errors or if out of retries
+            }
+
+            // Try to extract retry delay from error
+            let delayMs = baseDelay * Math.pow(2, attempt); // exponential backoff
+            if (error.details) {
+                const retryInfo = error.details.find(d => d['@type']?.includes('RetryInfo'));
+                if (retryInfo && retryInfo.retryDelay) {
+                    // retryDelay format like "25s" or "1.5s"
+                    const match = retryInfo.retryDelay.match(/^([\d.]+)s$/);
+                    if (match) {
+                        delayMs = parseFloat(match[1]) * 1000;
+                    }
+                }
+            }
+
+            console.log(`Rate limit hit, retrying in ${delayMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+    }
+    throw lastError;
+}
+
+// ---- Normalization with retry ----
 async function normalizeQuestion(text, imageBase64) {
     try {
         const parts = [];
@@ -91,7 +120,7 @@ async function normalizeQuestion(text, imageBase64) {
             throw new Error('No input provided');
         }
 
-        const response = await ai.models.generateContent({
+        const response = await withRetry(() => ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
             contents: [{ role: 'user', parts }],
             config: {
@@ -99,7 +128,7 @@ async function normalizeQuestion(text, imageBase64) {
                 generationConfig: { temperature: 0.2, topP: 0.95 },
                 thinkingConfig: { thinkingBudget: 0 }
             }
-        });
+        }));
 
         let textResponse = "";
         if (response?.candidates?.length > 0) {
@@ -121,18 +150,18 @@ async function normalizeQuestion(text, imageBase64) {
     }
 }
 
-// ---- AI Solving ----
+// ---- AI Solving with retry ----
 async function solveQuestion(normalizedQuestion) {
     try {
         const prompt = SOLUTION_PROMPT.replace('[Normalized question]', normalizedQuestion);
-        const response = await ai.models.generateContent({
+        const response = await withRetry(() => ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config: {
                 generationConfig: { temperature: 0.4, topP: 0.95, maxOutputTokens: 2000 },
                 thinkingConfig: { thinkingBudget: 0 }
             }
-        });
+        }));
 
         let solution = "";
         if (response?.candidates?.length > 0) {
@@ -145,129 +174,29 @@ async function solveQuestion(normalizedQuestion) {
     }
 }
 
-// ---- Knowledge Base Storage ----
+// ---- Knowledge Base Storage (Pinecone only) ----
 async function addToKnowledgeBase(normalizedQuestion, solution, videoUrl = '', imageUrl = '') {
     if (!normalizedQuestion || !solution) throw new Error('Missing question or solution');
 
-    // Generate embedding
     const vector = (await generateEmbeddingsBatch([normalizedQuestion]))[0];
-    const newId = generateQuestionId();
+    const id = generateQuestionId(normalizedQuestion);
 
-    // Upsert to Pinecone with metadata
+    // Store all metadata in Pinecone
     await index.upsert([{
-        id: newId,
+        id,
         values: vector,
-        metadata: { has_solution: true }
-    }]);
-
-    // Store in Firestore if available
-    if (db) {
-        await db.collection('questions').doc(newId).set({
+        metadata: {
             question: normalizedQuestion,
             solution: solution,
             videoUrl: videoUrl || '',
             imageUrl: imageUrl || '',
-            embedded: true,
-            has_solution: true,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        console.log(`✅ Added solved question to Firestore: ${newId}`);
-    }
-
-    return newId;
-}
-
-// ---- Legacy: Add unsolved question (used by background watcher) ----
-async function addNewQuestion(queryText, extractedText = '') {
-    const fullText = extractedText || queryText;
-    if (!fullText) throw new Error('No text to add');
-
-    const vector = (await generateEmbeddingsBatch([fullText]))[0];
-    const newId = generateQuestionId();
-
-    await index.upsert([{
-        id: newId,
-        values: vector,
-        metadata: { has_solution: false }
+            has_solution: true
+        }
     }]);
 
-    if (db) {
-        await db.collection('questions').doc(newId).set({
-            question: fullText,
-            comment: "Thank you for your question. Our team will provide an answer soon.",
-            videoUrl: "",
-            imageUrl: "",
-            embedded: true,
-            has_solution: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        console.log(`✅ Added unsolved question to Firestore: ${newId}`);
-    }
-
-    return newId;
+    console.log(`✅ Added solved question to Pinecone: ${id}`);
+    return id;
 }
-
-// ---- Firestore Watcher (for legacy unsolved questions) ----
-async function embedPendingQuestions() {
-    if (!db) return;
-
-    try {
-        const snapshot = await db.collection("questions")
-            .where("embedded", "==", false)
-            .limit(5000)
-            .get();
-
-        if (snapshot.empty) return;
-
-        const docs = snapshot.docs;
-        const BATCH_SIZE = 10;
-        const CONCURRENCY = 50;
-        const batches = [];
-
-        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
-            batches.push(docs.slice(i, i + BATCH_SIZE));
-        }
-
-        let current = 0;
-
-        async function processNextBatch() {
-            if (current >= batches.length) return;
-
-            const batch = batches[current++];
-            const texts = batch.map(doc => doc.data().question || "");
-
-            try {
-                const vectors = await generateEmbeddingsBatch(texts);
-
-                const upserts = batch.map((doc, idx) => ({
-                    id: doc.id,
-                    values: vectors[idx],
-                    metadata: { text: texts[idx], has_solution: false }
-                }));
-
-                await index.upsert(upserts);
-                await Promise.all(batch.map(doc => doc.ref.update({ embedded: true })));
-
-                console.log(`✅ Embedded batch: ${batch.map(d => d.id).join(', ')}`);
-            } catch (err) {
-                console.error("Failed embedding batch:", err.message);
-            }
-
-            await processNextBatch();
-        }
-
-        const workers = [];
-        for (let i = 0; i < CONCURRENCY && i < batches.length; i++) {
-            workers.push(processNextBatch());
-        }
-        await Promise.all(workers);
-    } catch (err) {
-        console.error("Error fetching pending questions:", err.message);
-    }
-}
-
-setInterval(embedPendingQuestions, 60 * 1000);
 
 // ---- API Endpoint ----
 app.post('/api/search', async (req, res) => {
@@ -287,11 +216,11 @@ app.post('/api/search', async (req, res) => {
         // Step 2: Generate embedding
         const vector = (await generateEmbeddingsBatch([normalizedQuestion]))[0];
 
-        // Step 3: Query Pinecone for solved questions only
+        // Step 3: Query Pinecone for solved questions only, include metadata
         const queryResponse = await index.query({
             vector,
             topK: 3,
-            includeMetadata: false,
+            includeMetadata: true,
             filter: { has_solution: true }
         });
 
@@ -302,27 +231,14 @@ app.post('/api/search', async (req, res) => {
             bestMatch = sorted.find(m => m.score >= 0.85);
         }
 
-        if (bestMatch) {
-            // Fetch full metadata from Firestore
-            if (!db) {
-                return res.status(500).json({ error: "Database not available" });
-            }
-            const doc = await db.collection('questions').doc(bestMatch.id).get();
-            if (doc.exists) {
-                const data = doc.data();
-                if (data.solution) {
-                    return res.json({
-                        question: data.question,
-                        solution: data.solution,
-                        videoUrl: data.videoUrl || '',
-                        imageUrl: data.imageUrl || ''
-                    });
-                } else {
-                    console.warn(`Match ID ${bestMatch.id} has no solution, falling back to AI solve`);
-                }
-            } else {
-                console.warn(`Match ID ${bestMatch.id} not found in Firestore, falling back to AI solve`);
-            }
+        if (bestMatch && bestMatch.metadata && bestMatch.metadata.solution) {
+            // Return full metadata from Pinecone
+            return res.json({
+                question: bestMatch.metadata.question || normalizedQuestion,
+                solution: bestMatch.metadata.solution,
+                videoUrl: bestMatch.metadata.videoUrl || '',
+                imageUrl: bestMatch.metadata.imageUrl || ''
+            });
         }
 
         // Step 5: No good match – solve with AI
@@ -331,7 +247,7 @@ app.post('/api/search', async (req, res) => {
             return res.status(500).json({ error: "AI solving failed" });
         }
 
-        // Step 6: Store in knowledge base
+        // Step 6: Store in knowledge base (Pinecone)
         await addToKnowledgeBase(normalizedQuestion, solution);
 
         // Step 7: Return metadata
