@@ -53,11 +53,17 @@ Do not include any other text, explanations, or markdown formatting.
 `;
 
 const SOLUTION_PROMPT = `
-Provide a **concise, exam-oriented, structured solution** to the following question. 
-Use LaTeX formatting for all mathematical expressions, physics formulas, and chemistry equations. 
-Keep the explanation step-by-step, clear, and **do not exceed 2000 characters**. 
-Do not write unnecessary long explanations.
+Provide a concise, exam-oriented, structured solution to the following question.
 
+Formatting Rules:
+1. Write the solution in clear step-by-step format.
+2. Each step MUST be written on a new line.
+3. Do NOT combine multiple steps in one line.
+4. Leave a line break after every step.
+5.  Use LaTeX formatting for all mathematical expressions, physics formulas, and chemistry equations.
+6.  Keep the explanation clear and concise.
+7. Total response must not exceed 2000 characters.
+8. Do NOT write long paragraphs.
 Question:
 [Normalized question]
 `;
