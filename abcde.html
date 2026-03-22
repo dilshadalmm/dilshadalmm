@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>StudyLens AI · Full‑Width Video Solutions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        input, textarea, .file-label, .clear-btn, .submit-btn {
+            user-select: text;
+        }
+
+        body {
+            background: radial-gradient(circle at 10% 30%, #0a0f1e, #03050b);
+            font-family: 'Inter', 'Poppins', system-ui, -apple-system, 'Segoe UI', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1rem;
+            overflow-x: hidden;
+            touch-action: pan-y pinch-zoom;
+        }
+
+        .app-container {
+            max-width: 1400px;
+            width: 100%;
+            background: rgba(15, 25, 45, 0.55);
+            backdrop-filter: blur(16px);
+            border-radius: 2rem;
+            border: 1px solid rgba(72, 187, 255, 0.25);
+            box-shadow: 0 25px 45px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 255, 255, 0.1) inset;
+            padding: 2rem 1.8rem;
+            transition: all 0.3s ease;
+        }
+
+        .brand {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .brand h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #FFFFFF, #6ee7ff, #3b82f6);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: -0.5px;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .brand p {
+            color: #a0c4ff;
+            font-weight: 500;
+            margin-top: 0.5rem;
+            font-size: 1rem;
+            opacity: 0.9;
+        }
+
+        .input-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.8rem;
+            margin-bottom: 2rem;
+        }
+        .question-area {
+            flex: 2;
+            min-width: 240px;
+        }
+        .upload-area {
+            flex: 1.2;
+            min-width: 200px;
+        }
+
+        textarea {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid #2c3e66;
+            border-radius: 1.5rem;
+            padding: 1.2rem 1.3rem;
+            font-size: 1rem;
+            font-family: 'Inter', monospace;
+            color: #f0f3ff;
+            resize: vertical;
+            transition: 0.2s;
+            backdrop-filter: blur(4px);
+            outline: none;
+        }
+        textarea:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 12px rgba(59,130,246,0.4);
+            background: rgba(0, 0, 0, 0.7);
+        }
+        textarea::placeholder {
+            color: #8ba3cf;
+            font-weight: 400;
+        }
+
+        .upload-box {
+            background: rgba(0, 0, 0, 0.45);
+            border-radius: 1.5rem;
+            border: 1px dashed #3b82f6;
+            padding: 1rem;
+            text-align: center;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+        .upload-box:hover {
+            border-color: #60a5fa;
+            background: rgba(59,130,246,0.1);
+        }
+        .file-label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            color: #b9d0ff;
+            font-weight: 500;
+        }
+        .file-label svg {
+            width: 36px;
+            height: 36px;
+            stroke: #60a5fa;
+            fill: none;
+        }
+        #imageInput {
+            display: none;
+        }
+        .image-preview {
+            margin-top: 12px;
+            max-width: 100%;
+            border-radius: 18px;
+            overflow: hidden;
+            background: #00000055;
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+        .image-preview img {
+            max-height: 110px;
+            border-radius: 14px;
+            object-fit: cover;
+            width: auto;
+            border: 1px solid #2c4b8c;
+        }
+        .clear-img-btn {
+            background: #ff4d4d;
+            border: none;
+            color: white;
+            font-size: 0.7rem;
+            border-radius: 30px;
+            padding: 4px 10px;
+            margin-top: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .clear-img-btn:hover {
+            background: #e03a3a;
+        }
+
+        .action-area {
+            display: flex;
+            justify-content: center;
+            margin: 1rem 0 2rem 0;
+        }
+        .submit-btn {
+            background: linear-gradient(95deg, #2563eb, #1e40af);
+            border: none;
+            padding: 1rem 2.5rem;
+            font-size: 1.2rem;
+            font-weight: 700;
+            border-radius: 60px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 8px 20px rgba(37,99,235,0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            letter-spacing: 0.5px;
+        }
+        .submit-btn:active {
+            transform: scale(0.96);
+        }
+        .submit-btn:disabled {
+            opacity: 0.5;
+            transform: none;
+            cursor: not-allowed;
+            background: #4b5563;
+            box-shadow: none;
+        }
+        .spinner {
+            width: 22px;
+            height: 22px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* VIDEO SECTION - full width of container, 16:9 ratio, no rounded corners */
+        .video-section {
+            margin-top: 1rem;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        /* The wrapper that holds the video or placeholder - takes full width of its parent */
+        .video-wrapper {
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            background: #00000022;
+            overflow: hidden;
+            border-radius: 0px !important;
+        }
+        .video-container {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            height: 0;
+            border-radius: 0px !important;
+        }
+        .video-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            border-radius: 0px !important;
+        }
+        .video-placeholder {
+            background: #0b1120;
+            border-radius: 0px !important;
+            padding: 2.5rem;
+            text-align: center;
+            color: #94a3b8;
+            font-weight: 500;
+            width: 100%;
+            margin: 0;
+            border: 1px solid #2d3a5e;
+            box-sizing: border-box;
+        }
+
+        .info-message {
+            text-align: center;
+            color: #cbd5e6;
+            margin-top: 1rem;
+            font-size: 0.85rem;
+        }
+
+        .no-copy {
+            -webkit-touch-callout: none;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.75rem;
+            color: #4b6a9b;
+        }
+
+        @media (max-width: 680px) {
+            .app-container {
+                padding: 1.5rem;
+            }
+            .brand h1 {
+                font-size: 1.8rem;
+            }
+            .submit-btn {
+                padding: 0.8rem 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body oncontextmenu="return false" ondragstart="return false">
+<div class="app-container">
+    <div class="brand">
+        <h1>✨ StudyLens AI</h1>
+        <p>Upload image or type question · Get instant YouTube video explanation</p>
+    </div>
+
+    <div class="input-panel">
+        <div class="question-area">
+            <textarea id="questionInput" rows="4" placeholder="📝 Type your academic question here... (Math, Physics, Chemistry, etc.)"></textarea>
+        </div>
+        <div class="upload-area">
+            <div class="upload-box" id="uploadBox">
+                <label for="imageInput" class="file-label">
+                    <svg viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>📸 Upload image (diagram / problem)</span>
+                </label>
+                <input type="file" id="imageInput" accept="image/jpeg,image/png,image/webp,image/jpg">
+                <div id="imagePreviewArea" class="image-preview" style="display: none;"></div>
+                <button id="clearImageBtn" class="clear-img-btn" style="display: none;">✖ Remove image</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="action-area">
+        <button id="findSolutionBtn" class="submit-btn" disabled>
+            <span>🔍</span> Find Solution
+        </button>
+    </div>
+
+    <!-- Video output - full width 16:9 -->
+    <div class="video-section">
+        <div id="videoDisplay" class="video-wrapper">
+            <div class="video-placeholder" id="videoPlaceholder">
+                🎥 Your video will appear here<br>after processing the question
+            </div>
+        </div>
+        <div class="info-message" id="statusMsg"></div>
+    </div>
+    <footer>⚡ AI-powered · YouTube explanations · Full‑width video · No text copy</footer>
+</div>
+
+<script>
+    // ---------- DOM elements ----------
+    const questionTextarea = document.getElementById('questionInput');
+    const imageInput = document.getElementById('imageInput');
+    const imagePreviewArea = document.getElementById('imagePreviewArea');
+    const clearImageBtn = document.getElementById('clearImageBtn');
+    const findBtn = document.getElementById('findSolutionBtn');
+    const videoDisplayDiv = document.getElementById('videoDisplay');
+    const statusMsgSpan = document.getElementById('statusMsg');
+
+    // State variables
+    let currentImageBase64 = null;
+    let isProcessing = false;
+
+    function updateButtonState() {
+        if (isProcessing) {
+            findBtn.disabled = true;
+            return;
+        }
+        const hasText = questionTextarea.value.trim().length > 0;
+        const hasImage = currentImageBase64 !== null;
+        findBtn.disabled = !(hasText || hasImage);
+    }
+
+    function clearImage() {
+        currentImageBase64 = null;
+        imageInput.value = '';
+        imagePreviewArea.style.display = 'none';
+        imagePreviewArea.innerHTML = '';
+        clearImageBtn.style.display = 'none';
+        updateButtonState();
+    }
+
+    function handleImageUpload(file) {
+        if (!file) {
+            clearImage();
+            return;
+        }
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+        if (!allowedTypes.includes(file.type)) {
+            statusMsgSpan.innerText = '⚠️ Please upload JPG, PNG, or WEBP image.';
+            clearImage();
+            return;
+        }
+        if (file.size > 8 * 1024 * 1024) {
+            statusMsgSpan.innerText = '⚠️ Image too large (max 8MB).';
+            clearImage();
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            currentImageBase64 = e.target.result;
+            imagePreviewArea.style.display = 'flex';
+            imagePreviewArea.innerHTML = `<img src="${currentImageBase64}" alt="preview" style="max-width:100%; max-height:100px; border-radius:12px;">`;
+            clearImageBtn.style.display = 'inline-block';
+            updateButtonState();
+            statusMsgSpan.innerText = '✅ Image ready';
+        };
+        reader.onerror = () => {
+            statusMsgSpan.innerText = '❌ Failed to read image.';
+            clearImage();
+        };
+        reader.readAsDataURL(file);
+    }
+
+    imageInput.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files[0]) {
+            handleImageUpload(e.target.files[0]);
+        } else {
+            clearImage();
+        }
+    });
+
+    clearImageBtn.addEventListener('click', () => {
+        clearImage();
+        statusMsgSpan.innerText = '';
+    });
+
+    questionTextarea.addEventListener('input', () => {
+        updateButtonState();
+        if (questionTextarea.value.trim().length > 0) statusMsgSpan.innerText = '';
+    });
+
+    function getYouTubeEmbedUrl(url) {
+        if (!url || typeof url !== 'string') return null;
+        let videoId = null;
+        const patterns = [
+            /(?:youtube\.com\/watch\?v=)([^&?#]+)/i,
+            /(?:youtu\.be\/)([^?&#]+)/i,
+            /(?:youtube\.com\/embed\/)([^?&#]+)/i,
+            /(?:youtube\.com\/shorts\/)([^?&#]+)/i
+        ];
+        for (let pattern of patterns) {
+            const match = url.match(pattern);
+            if (match && match[1]) {
+                videoId = match[1];
+                break;
+            }
+        }
+        if (videoId) {
+            return `https://www.youtube.com/embed/${videoId}?autoplay=0&rel=0&modestbranding=1&showinfo=0`;
+        }
+        if (url.includes('youtube.com/embed/')) return url;
+        return null;
+    }
+
+    // Renders video using full width container with 16:9 ratio, no border radius
+    function renderVideo(videoUrl) {
+        if (!videoUrl) {
+            videoDisplayDiv.innerHTML = `<div class="video-placeholder">
+                🎥 No video found for this question.<br>Try rephrasing or upload a clearer image.
+            </div>`;
+            return;
+        }
+        const embedUrl = getYouTubeEmbedUrl(videoUrl);
+        if (!embedUrl) {
+            videoDisplayDiv.innerHTML = `<div class="video-placeholder">
+                ⚠️ Invalid or unsupported video URL. Only YouTube videos are supported.
+            </div>`;
+            return;
+        }
+        // Build the player with full width, 16:9 aspect, no rounding
+        videoDisplayDiv.innerHTML = `
+            <div class="video-wrapper" style="width:100%; margin:0;">
+                <div class="video-container" style="border-radius:0px;">
+                    <iframe src="${embedUrl}" 
+                            frameborder="0" 
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                            allowfullscreen>
+                    </iframe>
+                </div>
+            </div>
+        `;
+        // Double-check that any inline style doesn't introduce rounding
+        const iframeElem = videoDisplayDiv.querySelector('iframe');
+        if (iframeElem) iframeElem.style.borderRadius = '0px';
+    }
+
+    function setLoading(loading) {
+        isProcessing = loading;
+        if (loading) {
+            findBtn.disabled = true;
+            findBtn.innerHTML = `<span class="spinner"></span> Analyzing & searching...`;
+            statusMsgSpan.innerText = '⏳ AI is processing your request (may take up to 30s) ...';
+            videoDisplayDiv.innerHTML = `<div class="video-placeholder">
+                <div class="spinner" style="border-color:#3b82f6; border-top-color:white; margin:0 auto 12px auto;"></div>
+                ✨ Generating video recommendation...
+            </div>`;
+        } else {
+            findBtn.innerHTML = `<span>🔍</span> Find Solution`;
+            updateButtonState();
+        }
+    }
+
+    async function fetchVideoSolution() {
+        const questionText = questionTextarea.value.trim();
+        const imageBase64 = currentImageBase64;
+
+        if (!questionText && !imageBase64) {
+            statusMsgSpan.innerText = '❌ Please enter a question or upload an image.';
+            return;
+        }
+
+        setLoading(true);
+        const payload = {
+            text: questionText || "",
+            imageBase64: imageBase64 || ""
+        };
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 48000);
+
+        try {
+            const response = await fetch('https://dilshadalmm.onrender.com/api/search', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                throw new Error(`Server responded with ${response.status}`);
+            }
+
+            const data = await response.json();
+            const videoUrl = data?.videoUrl || null;
+
+            if (videoUrl && videoUrl.trim() !== "") {
+                renderVideo(videoUrl);
+                statusMsgSpan.innerText = '✅ Video ready — watch explanation below.';
+            } else {
+                videoDisplayDiv.innerHTML = `<div class="video-placeholder">
+                    🎬 No video found for this query.<br>📚 The AI didn't return a video link. Try another question or upload image.
+                </div>`;
+                statusMsgSpan.innerText = '⚠️ No matching YouTube video from knowledge base.';
+            }
+        } catch (err) {
+            clearTimeout(timeoutId);
+            console.error('Fetch error:', err);
+            let errorMsg = '⚠️ Network or server error. Please try again.';
+            if (err.name === 'AbortError') {
+                errorMsg = '⏰ Request timed out. The server is busy, please retry.';
+            }
+            videoDisplayDiv.innerHTML = `<div class="video-placeholder">
+                ❌ ${errorMsg}<br>Make sure backend is reachable and try again.
+            </div>`;
+            statusMsgSpan.innerText = errorMsg;
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    findBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (isProcessing) return;
+        if (!questionTextarea.value.trim() && !currentImageBase64) {
+            statusMsgSpan.innerText = '❗ Please type a question or upload an image before searching.';
+            return;
+        }
+        fetchVideoSolution();
+    });
+
+    // Anti-copy / right-click restrictions (except on text inputs)
+    document.addEventListener('copy', (e) => {
+        const target = e.target;
+        if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    });
+
+    window.oncontextmenu = (e) => {
+        if (e.target.closest('textarea') || e.target.closest('input')) return true;
+        e.preventDefault();
+        return false;
+    };
+
+    updateButtonState();
+</script>
+</body>
+</html>
