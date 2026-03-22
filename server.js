@@ -52,22 +52,6 @@ Respond ONLY with a JSON object in this exact format:
 Do not include any other text, explanations, or markdown formatting.
 `;
 
-const SOLUTION_PROMPT = `
-Provide a concise, exam-oriented, structured solution to the following question.
-
-Formatting Rules:
-1. Write the solution in clear step-by-step format.
-2. Each step MUST be written on a new line.
-3. Do NOT combine multiple steps in one line.
-4. Leave a line break after every step.
-5.  Use LaTeX formatting for all mathematical expressions, physics formulas, and chemistry equations.
-6.  Keep the explanation clear and concise.
-7. Total response must not exceed 2000 characters.
-8. Do NOT write long paragraphs.
-Question:
-[Normalized question]
-`;
-
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;                    // Number of requests per batch
 const MAX_CONCURRENT_BATCHES = 5;          // Maximum parallel batch workers
@@ -88,6 +72,20 @@ function generateQuestionId() {
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString('hex');
     return `user-${timestamp}-${random}`;
+}
+
+// ---- Token Logging Helper ----
+function logTokenUsage(response, callType) {
+    try {
+        if (response?.usageMetadata) {
+            const usage = response.usageMetadata;
+            console.log(`[Token Usage][${callType}] input: ${usage.promptTokenCount || 0}, output: ${usage.candidatesTokenCount || 0}, total: ${usage.totalTokenCount || 0}`);
+        } else {
+            console.log(`[Token Usage][${callType}] Token usage data not available for this request`);
+        }
+    } catch (err) {
+        console.log(`[Token Usage][${callType}] Failed to log token usage: ${err.message}`);
+    }
 }
 
 // ---- AI Functions ----
@@ -121,6 +119,9 @@ async function normalizeAndValidate(text, imageBase64) {
             }
         });
 
+        // Log token usage for normalization call
+        logTokenUsage(response, 'normalization');
+
         let fullText = "";
         if (response?.candidates?.length > 0) {
             fullText = response.candidates[0]?.content?.parts?.[0]?.text || "";
@@ -146,30 +147,6 @@ async function normalizeAndValidate(text, imageBase64) {
     }
 }
 
-async function generateSolution(question) {
-    console.log(`[Solution] Calling Gemini for question: ${question.substring(0,50)}...`);
-    try {
-        const prompt = SOLUTION_PROMPT.replace('[Normalized question]', question);
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-lite',
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            config: {
-                generationConfig: { temperature: 0.6, topP: 0.95 },
-                thinkingConfig: { thinkingBudget: 0 }
-            }
-        });
-
-        let solution = "";
-        if (response?.candidates?.length > 0) {
-            solution = response.candidates[0]?.content?.parts?.[0]?.text || "";
-        }
-        return solution.trim();
-    } catch (err) {
-        console.error("Solution generation failed:", err.message);
-        return "Unable to generate solution at this time.";
-    }
-}
-
 async function generateEmbeddingsBatch(texts) {
     if (!Array.isArray(texts) || texts.length === 0) throw new Error('Cannot embed empty text array');
 
@@ -179,41 +156,16 @@ async function generateEmbeddingsBatch(texts) {
         config: { outputDimensionality: 768 }
     });
 
+    // Log token usage for embedding call
+    logTokenUsage(response, 'embedding');
+
     if (response.embeddings && response.embeddings.length === texts.length) {
         return response.embeddings.map(e => e.values);
     }
     throw new Error("No embeddings returned or mismatch in count");
 }
 
-// ---- Storage Functions ----
-
-async function storeQuestionWithSolution(question, solution, vector) {
-    const newId = generateQuestionId();
-    const metadata = {
-        question,
-        solution,
-        videoUrl: "",
-        imageUrl: ""
-    };
-    await index.upsert([{ id: newId, values: vector, metadata }]);
-
-    if (db) {
-        await db.collection('questions').doc(newId).set({
-            question,
-            solution,
-            videoUrl: "",
-            imageUrl: "",
-            embedded: true,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        console.log(`✅ Added new question to Firestore: ${newId}`);
-    } else {
-        console.log(`⚠️ Firestore not available. ID: ${newId}`);
-    }
-    return newId;
-}
-
-// ---- Firestore Watcher with Lock ----
+// ---- Firestore Watcher with Lock (unchanged) ----
 
 async function embedPendingQuestions() {
     if (!db) return;
@@ -280,11 +232,8 @@ async function embedPendingQuestions() {
 // Run watcher every 1 minute
 setInterval(embedPendingQuestions, 60 * 1000);
 
-// ---- Queue Processing Helpers ----
+// ---- Queue Processing Helpers (unchanged) ----
 
-/**
- * Sends a timeout response for a request if not already sent.
- */
 function setupRequestTimeout(item) {
     item.timeout = setTimeout(() => {
         if (!item.sent) {
@@ -300,9 +249,6 @@ function setupRequestTimeout(item) {
     }, RESPONSE_TIMEOUT_MS);
 }
 
-/**
- * Clears the timeout for a request.
- */
 function clearRequestTimeout(item) {
     if (item.timeout) {
         clearTimeout(item.timeout);
@@ -310,10 +256,6 @@ function clearRequestTimeout(item) {
     }
 }
 
-/**
- * Attempts to start a new batch worker if conditions allow.
- * Takes a batch of up to BATCH_SIZE items from the queue and processes them.
- */
 async function tryStartBatch() {
     if (activeBatches >= MAX_CONCURRENT_BATCHES || requestQueue.length === 0) return;
 
@@ -343,10 +285,6 @@ async function tryStartBatch() {
     }
 }
 
-/**
- * Processes a single batch of requests.
- * Handles normalization, embedding, Pinecone search, AI solving, and storage.
- */
 async function processBatch(batch) {
     // Step 1: Normalize each item (sequentially)
     const validItems = [];
@@ -416,20 +354,18 @@ async function processBatch(batch) {
 
     const results = await Promise.all(queryPromises);
 
-    // Step 4: Process each result
+    // Step 4: Process each result (NO SOLUTION GENERATION, NO STORAGE)
     for (const res of results) {
-        const { item, vector, normalized, queryResponse, error } = res;
+        const { item, normalized, queryResponse, error } = res;
 
+        // If error or no matches at all → return empty solution
         if (error || !queryResponse?.matches?.length) {
-            // No matches -> generate solution and store
-            const solution = await generateSolution(normalized);
-            await storeQuestionWithSolution(normalized, solution, vector);
             if (!item.sent) {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
                     question: normalized,
-                    solution,
+                    solution: "",
                     videoUrl: "",
                     imageUrl: ""
                 });
@@ -442,38 +378,25 @@ async function processBatch(batch) {
         const bestMatch = matches.find(m => m.score >= 0.85) || null;
 
         if (bestMatch) {
-            let metadata = bestMatch.metadata || {};
-            // If stored solution missing (old data), generate and update
-            if (!metadata.solution) {
-                console.log(`Match ${bestMatch.id} has no solution, generating now.`);
-                const solution = await generateSolution(normalized);
-                metadata = { ...metadata, solution };
-                // Update Pinecone with the same vector (ID stays same)
-                await index.upsert([{ id: bestMatch.id, values: vector, metadata }]);
-                if (db) {
-                    await db.collection('questions').doc(bestMatch.id).update({ solution });
-                }
-            }
+            const metadata = bestMatch.metadata || {};
             if (!item.sent) {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
                     question: metadata.question || normalized,
-                    solution: metadata.solution,
+                    solution: metadata.solution || "",          // empty if missing
                     videoUrl: metadata.videoUrl || "",
                     imageUrl: metadata.imageUrl || ""
                 });
             }
         } else {
-            // No match with sufficient score -> generate solution and store
-            const solution = await generateSolution(normalized);
-            await storeQuestionWithSolution(normalized, solution, vector);
+            // No match with sufficient score → return empty solution, no storage
             if (!item.sent) {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
                     question: normalized,
-                    solution,
+                    solution: "",
                     videoUrl: "",
                     imageUrl: ""
                 });
@@ -482,11 +405,6 @@ async function processBatch(batch) {
     }
 }
 
-/**
- * Schedules processing of the queue:
- * - Starts as many full batches as allowed.
- * - Sets a timeout for a partial batch if needed.
- */
 function scheduleProcessing() {
     while (activeBatches < MAX_CONCURRENT_BATCHES && requestQueue.length >= BATCH_SIZE) {
         tryStartBatch();
