@@ -1,0 +1,3768 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimum-scale=1.0">
+    <title>ConceptBlitz - Home</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts (Anton for brand and Merriweather for body) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+
+    <style>
+        /* CRITICAL: Ensure HTML and BODY are full height and non-scrollable */
+        html {
+            height: 100%;
+            overflow: hidden !important;
+        }
+
+        /* Use the Merriweather font family as default */
+        body {
+            font-family: 'Merriweather', serif;
+            font-optical-sizing: auto;
+            font-weight: 400;
+            font-style: normal;
+            font-variation-settings: "wdth" 100;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            
+            /* White background */
+            background-color: #ffffff;
+            color: #000000;
+            
+            /* CRITICAL: Prevent the main body from scrolling at all */
+            overflow: hidden !important; 
+            
+            user-select: none;
+            -webkit-user-select: none; 
+            -moz-user-select: none;
+            -ms-user-select: none; 
+            
+            /* Prevents elastic scrolling on iOS */
+            overscroll-behavior: none;
+            
+            /* Make body a fixed container occupying full screen */
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* App wrapper - uses dynamic viewport height for mobile keyboard stability */
+        #app-wrapper {
+            height: 100vh; /* Fallback */
+            height: 100dvh; /* Dynamic viewport height (best for mobile keyboard) */
+            width: 100%;
+            position: absolute; /* Relative to fixed body */
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden; /* Ensures only the chat container can scroll */
+            background: white;
+        }
+        
+        /* Style for the ConceptBlitz logo font - USING ANTON */
+        .conceptblitz-logo {
+            font-family: 'Anton', sans-serif;
+            font-weight: 400;
+            font-style: normal;
+            letter-spacing: -0.5px;
+            text-transform: uppercase;
+        }
+        
+        /* Brand font colors - White and Orange */
+        .concept-text {
+            color: #000000;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        
+        .blitz-text {
+            color: #F97316; /* Orange */
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        
+        /* --- Hide Scrollbar on Chat Container --- */
+        #chat-container {
+            /* Scroll is now always auto (default of overflow-y-auto is active) */
+            -ms-overflow-style: none; /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        #chat-container::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Strict No-Oval/No-Round Policy - Override for slight rounding */
+        * {
+            border-radius: 0 !important;
+        }
+
+        /* Override for slight rounding on specific elements */
+        .banner-container,
+        .banner-image,
+        .subject-image-container,
+        .subject-image,
+        .enrollment-badge,
+        .video-player-full {
+            border-radius: 4px !important;
+        }
+
+        .video-player-full {
+            overflow: hidden;
+        }
+
+        .hidden {
+            display: none;
+        }
+        
+        /* ===== HOME PAGE STYLES ===== */
+        .home-container {
+            width: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        
+        /* Top bar with menu, search and profile */
+        .top-bar {
+            width: 100%;
+            background: white;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #e5e7eb;
+            height: 60px;
+            box-sizing: border-box;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+        
+        /* Back button */
+        .back-button {
+            width: 40px;
+            height: 40px;
+            background: #f3f4f6;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        .back-button img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        /* Search box - long and centered */
+        .search-container {
+            flex: 1;
+            max-width: 600px;
+            margin: 0 16px;
+            position: relative;
+        }
+        
+        .search-box {
+            width: 100%;
+            padding: 10px 16px;
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            font-family: 'Merriweather', serif;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .search-box:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+        
+        .search-box::placeholder {
+            color: #6b7280;
+        }
+        
+        /* Profile image container */
+        .profile-container {
+            width: 40px;
+            height: 40px;
+            flex-shrink: 0;
+            border-radius: 0 !important;
+            overflow: hidden;
+            background: #f3f4f6;
+            border: 2px solid #e5e7eb;
+        }
+        
+        .profile-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        /* ===== SIGN IN PROMPT STYLES ===== */
+        .signin-prompt-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+            background: white;
+        }
+        
+        .signin-icon {
+            font-size: 64px;
+            color: #6b7280;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .signin-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .signin-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        .signin-button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            margin-top: 16px;
+        }
+        
+        .signin-button:hover {
+            background: #2563eb;
+        }
+        
+        .signin-button:active {
+            background: #1d4ed8;
+        }
+        
+        /* ===== BANNER SLIDER STYLES ===== */
+        /* MODIFICATION 1: Updated banner width to match latest lectures container */
+        .banner-container {
+            width: 98%; /* MATCHES .latest-lectures-container width */
+            margin: 8px auto; /* MATCHES .latest-lectures-container margin */
+            height: 180px;
+            position: relative;
+            overflow: hidden;
+            background: #000;
+        }
+        
+        .banner-slider {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.5s ease-in-out;
+        }
+        
+        .banner-slide {
+            flex: 0 0 100%;
+            height: 100%;
+            position: relative;
+        }
+        
+        .banner-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        /* ===== SUBJECTS LIST STYLES ===== */
+        .subject-card {
+            width: 100%;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            /* REMOVED margin: 8px 0; */
+        }
+        
+        .subject-card:hover {
+            background: #f9fafb;
+        }
+        
+        .subject-image-container {
+            width: 80px;
+            height: 80px;
+            flex-shrink: 0;
+            background: #f3f4f6;
+            overflow: hidden;
+        }
+        
+        .subject-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        .subject-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .subject-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1f2937;
+            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 8px;
+        }
+        
+        .subject-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            color: #6b7280;
+        }
+        
+        /* Enrollment Status Badge */
+        .enrollment-badge {
+            padding: 4px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            color: white;
+        }
+        
+        .enrollment-badge.not-enrolled {
+            background: #ef4444; /* Red */
+        }
+        
+        .enrollment-badge.continue {
+            background: #10b981; /* Green */
+        }
+        
+        /* ===== LATEST LECTURES STYLES ===== */
+        .latest-lectures-container {
+            width: 97%; /* 97% width as requested */
+            margin: 8px auto; /* Center it with 97% width */
+        }
+        
+        /* MODIFICATION 2: Added divider to lecture items */
+        .lecture-item {
+            width: 100%;
+            background: white;
+            border-bottom: 1px solid #e5e7eb; /* Divider between lectures - matches subject-card */
+            /* REMOVED margin-bottom: 8px; */
+        }
+        
+        /* Remove border from last lecture item to match subject cards */
+        .lecture-item:last-child {
+            border-bottom: none;
+        }
+        
+        /* Video Player Section - UPDATED to match index1(1).html */
+        .video-player-full {
+            width: 100%;
+            margin: 0;
+            background: #000;
+            position: relative;
+        }
+        
+        /* Mentor Info Container - UPDATED to match index1(1).html */
+        /* MODIFICATION 2: Removed border-bottom from mentor-info-container */
+        .mentor-info-container {
+            width: 100%;
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: white;
+            /* REMOVED: border-bottom: 1px solid #e5e7eb; */
+        }
+        
+        .mentor-profile-image {
+            width: 60px;
+            height: 60px;
+            flex-shrink: 0;
+            border-radius: 0 !important;
+            overflow: hidden;
+            background: #f3f4f6;
+        }
+        
+        .mentor-profile-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        
+        .mentor-text-container {
+            flex: 1;
+            height: 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            min-width: 0;
+        }
+        
+        .video-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1f2937;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-height: calc(2 * 1.3em);
+            margin-bottom: 4px;
+        }
+        
+        .mentor-name {
+            font-size: 14px;
+            color: #6b7280;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .lecture-date {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-left: auto; /* Push to right end */
+            padding-left: 8px;
+        }
+        
+        /* Image Content Styles */
+        .image-content-container {
+            width: 100%;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .lecture-image {
+            width: 100%;
+            height: auto;
+            max-height: 400px;
+            object-fit: contain;
+            display: block;
+        }
+        
+        /* ===== ERROR MESSAGE STYLES ===== */
+        .error-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        
+        .error-icon {
+            font-size: 64px;
+            color: #ef4444;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+        
+        .error-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1f2937;
+            margin-bottom: 12px;
+        }
+        
+        .error-message {
+            font-size: 16px;
+            color: #6b7280;
+            margin-bottom: 32px;
+            max-width: 400px;
+            line-height: 1.5;
+        }
+        
+        /* MODIFICATION 3: Modern Loading Indicator Styles */
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            position: relative;
+        }
+        
+        .loading-spinner::before,
+        .loading-spinner::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            animation: modern-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+        }
+        
+        .loading-spinner::before {
+            border: 3px solid rgba(59, 130, 246, 0.2);
+            border-top-color: #3b82f6;
+        }
+        
+        .loading-spinner::after {
+            border: 3px solid transparent;
+            border-top-color: #3b82f6;
+            animation-delay: -0.6s;
+        }
+        
+        @keyframes modern-spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        
+        /* Video loading spinner (kept simple for video) */
+        .video-loading-spinner {
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95); /* Changed to white with slight transparency */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-content {
+            background: white;
+            padding: 2.5rem 2rem;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e5e7eb;
+            max-width: 300px;
+            width: 90%;
+        }
+
+        .loading-text {
+            margin-top: 1.5rem;
+            font-size: 1rem;
+            color: #4b5563;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+        }
+
+        /* Ensure all text elements inherit the body font */
+        h1, h2, h3, h4, h5, h6, p, span, div, button, input, textarea, label, a {
+            font-family: 'Merriweather', serif;
+        }
+
+        /* Exception for logo only */
+        .conceptblitz-logo {
+            font-family: 'Anton', sans-serif !important;
+        }
+
+        /* Buttons should also use Merriweather */
+        button {
+            font-family: 'Merriweather', serif !important;
+        }
+
+        /* Input fields */
+        input, textarea {
+            font-family: 'Merriweather', serif !important;
+        }
+
+        /* ===== AUTH MODAL STYLES ===== */
+        .auth-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        
+        .auth-modal {
+            background: white;
+            width: 40%;
+            min-width: 300px;
+            max-width: 400px;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.3s ease-out;
+            border-radius: 4px !important;
+        }
+        
+        @keyframes slideDown {
+            from {
+                transform: translateY(-20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .auth-header {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        
+        .auth-body {
+            padding: 20px;
+        }
+        
+        .auth-field {
+            margin-bottom: 16px;
+        }
+        
+        .auth-label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .auth-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+            border-radius: 0 !important;
+        }
+        
+        .auth-input:focus {
+            border-color: #3b82f6;
+            background: white;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        
+        .auth-error {
+            color: #ef4444;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+        
+        .auth-error.show {
+            display: block;
+        }
+        
+        .auth-button {
+            width: 100%;
+            padding: 12px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+        
+        .auth-button:hover {
+            background: #2563eb;
+        }
+        
+        .auth-button:active {
+            background: #1d4ed8;
+        }
+        
+        .auth-button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        
+        .auth-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        
+        .signup-link {
+            color: #3b82f6;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        
+        .signup-link:hover {
+            text-decoration: underline;
+        }
+        
+        /* ===== UPDATED: Modern YouTube Player Control Bar Styles (from index1(1).html) ===== */
+        .video-player-container {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            background: #000;
+        }
+        
+        /* Ensure video player controls are visible in fullscreen */
+        .video-wrapper:fullscreen .video-player-container,
+        .video-wrapper:-webkit-full-screen .video-player-container,
+        .video-wrapper:-moz-full-screen .video-player-container,
+        .video-wrapper:-ms-fullscreen .video-player-container {
+            height: 100vh;
+            padding-bottom: 0;
+        }
+        
+        .video-wrapper:fullscreen .modern-control-bar,
+        .video-wrapper:-webkit-full-screen .modern-control-bar,
+        .video-wrapper:-moz-full-screen .modern-control-bar,
+        .video-wrapper:-ms-fullscreen .modern-control-bar {
+            z-index: 2147483647; /* Maximum z-index for fullscreen */
+        }
+        
+        .youtube-iframe-wrapper {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        
+        .youtube-iframe-wrapper iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            pointer-events: none;
+        }
+        
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+        
+        /* New Modern Control Bar */
+        .modern-control-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.7) 60%, transparent 100%);
+            color: white;
+            padding: 12px 16px 8px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            z-index: 20;
+            font-family: 'Merriweather', serif;
+            pointer-events: auto;
+        }
+        
+        .video-overlay:hover .modern-control-bar,
+        .modern-control-bar.visible {
+            opacity: 1;
+        }
+        
+        /* Thin Progress Bar - RED COLOR */
+        .top-progress-container {
+            width: 100%;
+            height: 3px;
+            background: rgba(255,255,255,0.2);
+            cursor: pointer;
+            position: relative;
+            margin-bottom: 2px;
+        }
+        
+        .progress-track {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background: #ef4444; /* RED COLOR */
+            transition: width 0.1s linear;
+        }
+        
+        .progress-thumb {
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 12px;
+            height: 12px;
+            background: #ef4444; /* RED COLOR */
+            border: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            cursor: pointer;
+            pointer-events: none;
+        }
+        
+        .top-progress-container:hover .progress-thumb {
+            opacity: 1;
+        }
+        
+        /* Bottom Controls Row - ALL ELEMENTS IN ONE LINE */
+        .controls-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            min-height: 36px;
+            flex-wrap: nowrap;
+        }
+        
+        /* Left Controls */
+        .left-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 1 auto;
+            min-width: 0;
+        }
+        
+        /* Right Controls */
+        .right-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 0 1 auto;
+            min-width: 0;
+            flex-wrap: nowrap;
+        }
+        
+        /* Center Controls (for time display) */
+        .center-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        /* Control Buttons - Dark black square boxes with white icons */
+        .control-btn {
+            background: #000000; /* Dark black background */
+            border: none;
+            color: white;
+            cursor: pointer;
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 40px;
+            min-height: 40px;
+            font-size: 16px;
+            transition: background-color 0.15s ease;
+            flex-shrink: 0;
+        }
+        
+        .control-btn:hover {
+            background: #333333;
+        }
+        
+        .control-btn:active {
+            background: #666666;
+        }
+        
+        /* SVG Icons for buttons */
+        .control-btn svg {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+        
+        .play-pause-btn {
+            min-width: 44px;
+            min-height: 44px;
+        }
+        
+        .play-pause-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        /* Time Display */
+        .time-display {
+            font-family: 'Merriweather', serif;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+            min-width: 100px;
+            text-align: center;
+            color: rgba(255,255,255,0.95);
+            flex-shrink: 0;
+        }
+        
+        /* Volume button - dark black square box */
+        .volume-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .volume-btn i {
+            font-size: 18px;
+        }
+        
+        /* Speed Control */
+        .speed-control {
+            position: relative;
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        
+        .speed-btn {
+            font-size: 14px;
+            font-weight: 500;
+            padding: 4px 8px;
+            min-width: 40px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        
+        /* Fullscreen Button - dark black square box */
+        .fullscreen-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .fullscreen-btn i {
+            font-size: 18px;
+        }
+        
+        /* Video Loading */
+        .video-loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            z-index: 5;
+        }
+        
+        .player-error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 15px;
+            font-size: 12px;
+            text-align: center;
+            z-index: 5;
+        }
+        
+        /* Double tap indicators */
+        .double-tap-indicator {
+            position: absolute;
+            top: 0;
+            width: 50%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 15;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        
+        .double-tap-left {
+            left: 0;
+            background: linear-gradient(to right, rgba(239, 68, 68, 0.7), transparent);
+        }
+        
+        .double-tap-right {
+            right: 0;
+            background: linear-gradient(to left, rgba(239, 68, 68, 0.7), transparent);
+        }
+        
+        .double-tap-indicator.show {
+            opacity: 1;
+        }
+        
+        .double-tap-text {
+            color: white;
+            font-size: 18px;
+            font-weight: 600;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            font-family: 'Merriweather', serif;
+        }
+        
+        /* Mobile Touch-Friendly Adjustments */
+        @media (max-width: 768px) {
+            .auth-modal {
+                width: 80% !important;
+            }
+            
+            .banner-container {
+                height: 160px;
+            }
+        }
+        
+        @media (max-width: 640px) {
+            .modern-control-bar {
+                padding: 10px 12px 6px 12px;
+            }
+            
+            .control-btn {
+                min-width: 36px;
+                min-height: 36px;
+                padding: 6px;
+            }
+            
+            .play-pause-btn {
+                min-width: 40px;
+                min-height: 40px;
+            }
+            
+            .time-display {
+                font-size: 11px;
+                min-width: 90px;
+            }
+            
+            .left-controls {
+                gap: 6px;
+            }
+            
+            .right-controls {
+                gap: 6px;
+            }
+            
+            .speed-btn {
+                min-width: 36px;
+                padding: 4px 6px;
+                font-size: 13px;
+            }
+            
+            .top-bar {
+                padding: 10px 12px;
+                height: 56px;
+            }
+            
+            .search-box {
+                padding: 8px 12px;
+                font-size: 13px;
+            }
+            
+            .auth-modal {
+                width: 90% !important;
+                margin: 0 16px;
+            }
+            
+            .banner-container {
+                height: 140px;
+                width: 95%;
+            }
+            
+            .subject-card {
+                padding: 12px;
+                gap: 12px;
+            }
+            
+            .subject-image-container {
+                width: 70px;
+                height: 70px;
+            }
+            
+            .subject-title {
+                font-size: 15px;
+            }
+            
+            .mentor-info-container {
+                padding: 12px 14px;
+                gap: 12px;
+            }
+            
+            .mentor-profile-image {
+                width: 56px;
+                height: 56px;
+            }
+            
+            .mentor-text-container {
+                height: 56px;
+            }
+            
+            .video-title {
+                font-size: 0.9rem;
+            }
+            
+            /* Mobile adjustments for loading */
+            .loading-content {
+                padding: 2rem 1.5rem;
+                max-width: 260px;
+            }
+            
+            .loading-spinner {
+                width: 40px;
+                height: 40px;
+            }
+            
+            .loading-text {
+                font-size: 0.9rem;
+                margin-top: 1.2rem;
+            }
+        }
+    </style>
+</head>
+
+<body class="h-full bg-white">
+
+    <!-- Mobile App Container (Flex Column) -->
+    <div id="app-wrapper" class="flex flex-col overflow-hidden">
+        <!-- Top bar (common for all pages) -->
+        <div class="top-bar">
+            <!-- Left button (back) -->
+            <div id="left-button-container">
+                <button class="back-button">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            
+            <!-- Search box -->
+            <div class="search-container">
+                <input type="text" class="search-box" placeholder="Search courseId...">
+            </div>
+            
+            <!-- Profile image -->
+            <div class="profile-container">
+                <div id="profile-image-container">
+                    <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:600;">C</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main content area - different pages will be loaded here -->
+        <main id="chat-container" class="flex-1 overflow-y-auto">
+            <!-- Pages will be dynamically loaded here -->
+        </main>
+    </div>
+
+    <script>
+        // ===== CACHE MANAGER =====
+        class CacheManager {
+            constructor() {
+                this.permissionCache = new Map(); // Key: `${programId}-${subjectId}-${userUid}`
+                this.lectureCache = new Map();    // Key: `${programId}-${subjectId}`
+                this.profileImageCache = new Map(); // Key: `${programId}`
+                this.programDataCache = new Map(); // Key: `${programId}`
+            }
+            
+            getPermissionKey(programId, subjectId, userUid) {
+                return `${programId}-${subjectId}-${userUid}`;
+            }
+            
+            getLectureKey(programId, subjectId) {
+                return `${programId}-${subjectId}`;
+            }
+            
+            getProfileImageKey(programId) {
+                return `${programId}`;
+            }
+            
+            getProgramDataKey(programId) {
+                return `${programId}`;
+            }
+            
+            // Permission cache methods
+            getPermission(programId, subjectId, userUid) {
+                const key = this.getPermissionKey(programId, subjectId, userUid);
+                return this.permissionCache.get(key);
+            }
+            
+            setPermission(programId, subjectId, userUid, permissionData) {
+                const key = this.getPermissionKey(programId, subjectId, userUid);
+                this.permissionCache.set(key, permissionData);
+            }
+            
+            clearPermission(programId, subjectId, userUid) {
+                const key = this.getPermissionKey(programId, subjectId, userUid);
+                this.permissionCache.delete(key);
+            }
+            
+            // Lecture cache methods
+            getLectures(programId, subjectId) {
+                const key = this.getLectureKey(programId, subjectId);
+                return this.lectureCache.get(key);
+            }
+            
+            setLectures(programId, subjectId, lectures) {
+                const key = this.getLectureKey(programId, subjectId);
+                this.lectureCache.set(key, lectures);
+            }
+            
+            clearLectures(programId, subjectId) {
+                const key = this.getLectureKey(programId, subjectId);
+                this.lectureCache.delete(key);
+            }
+            
+            // Profile image cache methods
+            getProfileImage(programId) {
+                const key = this.getProfileImageKey(programId);
+                return this.profileImageCache.get(key);
+            }
+            
+            setProfileImage(programId, imageUrl) {
+                const key = this.getProfileImageKey(programId);
+                this.profileImageCache.set(key, imageUrl);
+            }
+            
+            // Program data cache methods
+            getProgramData(programId) {
+                const key = this.getProgramDataKey(programId);
+                return this.programDataCache.get(key);
+            }
+            
+            setProgramData(programId, programData) {
+                const key = this.getProgramDataKey(programId);
+                this.programDataCache.set(key, programData);
+            }
+            
+            clearProgramData(programId) {
+                const key = this.getProgramDataKey(programId);
+                this.programDataCache.delete(key);
+            }
+            
+            // Clear all caches for a specific user
+            clearUserCaches(userUid) {
+                // Remove all permission entries for this user
+                for (const [key, value] of this.permissionCache.entries()) {
+                    if (key.includes(userUid)) {
+                        this.permissionCache.delete(key);
+                    }
+                }
+            }
+            
+            // Clear all caches
+            clearAll() {
+                this.permissionCache.clear();
+                this.lectureCache.clear();
+                this.profileImageCache.clear();
+                this.programDataCache.clear();
+            }
+        }
+
+        // ===== SESSION MANAGEMENT SYSTEM =====
+        class SessionManager {
+            constructor(app) {
+                this.app = app;
+                this.db = null;
+                this.currentSessionId = null;
+                this.sessionListener = null;
+                this.isInitialized = false;
+                this.listenerActive = false;
+            }
+
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.db = firebase.firestore();
+                    this.isInitialized = true;
+                    console.log("SessionManager initialized");
+                    
+                    this.checkExistingSession();
+                } catch (error) {
+                    console.error("SessionManager initialization error:", error);
+                }
+            }
+
+            generateSessionId() {
+                const array = new Uint32Array(8);
+                window.crypto.getRandomValues(array);
+                return Array.from(array, dec => ('0' + dec.toString(16)).substr(-2)).join('');
+            }
+
+            async createSession(userUid) {
+                if (!this.db || !userUid) {
+                    console.error("Cannot create session: missing db or userUid");
+                    return null;
+                }
+
+                try {
+                    const sessionId = this.generateSessionId();
+                    this.currentSessionId = sessionId;
+                    
+                    localStorage.setItem(`session_${userUid}`, sessionId);
+                    
+                    await this.db.collection('sessions').doc(userUid).set({
+                        sessionId: sessionId,
+                        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    console.log("Session created for user:", userUid);
+                    return sessionId;
+                } catch (error) {
+                    console.error("Error creating session:", error);
+                    return null;
+                }
+            }
+
+            getLocalSessionId(userUid) {
+                return localStorage.getItem(`session_${userUid}`);
+            }
+
+            clearLocalSession(userUid) {
+                if (userUid) {
+                    localStorage.removeItem(`session_${userUid}`);
+                }
+                this.currentSessionId = null;
+            }
+
+            setupSessionListener(userUid) {
+                if (!this.db || !userUid) {
+                    console.error("Cannot setup session listener: missing db or userUid");
+                    return;
+                }
+
+                this.removeSessionListener();
+
+                const localSessionId = this.getLocalSessionId(userUid);
+                this.currentSessionId = localSessionId;
+
+                console.log("Setting up session listener for user:", userUid);
+                console.log("Local session ID:", localSessionId);
+
+                this.sessionListener = this.db.collection('sessions').doc(userUid)
+                    .onSnapshot((doc) => {
+                        this.handleSessionUpdate(doc, localSessionId, userUid);
+                    }, (error) => {
+                        console.error("Session listener error:", error);
+                        this.retrySessionListener(userUid);
+                    });
+                
+                this.listenerActive = true;
+            }
+
+            async handleSessionUpdate(doc, localSessionId, userUid) {
+                if (!doc.exists) {
+                    console.log("Session document doesn't exist, creating new session");
+                    await this.createSession(userUid);
+                    return;
+                }
+
+                const sessionData = doc.data();
+                const firestoreSessionId = sessionData.sessionId;
+
+                console.log("Firestore session ID:", firestoreSessionId);
+                console.log("Local session ID:", localSessionId);
+
+                if (localSessionId && firestoreSessionId !== localSessionId) {
+                    console.log("Session mismatch detected! Logging out...");
+                    
+                    this.removeSessionListener();
+                    this.clearLocalSession(userUid);
+                    
+                    try {
+                        await firebase.auth().signOut();
+                        console.log("Auto-logout completed due to session mismatch");
+                        
+                        if (this.app && this.app.showSignInPrompt) {
+                            this.app.showSignInPrompt();
+                        }
+                    } catch (signOutError) {
+                        console.error("Error during auto-logout:", signOutError);
+                    }
+                }
+            }
+
+            retrySessionListener(userUid) {
+                if (this.listenerActive) return;
+                
+                setTimeout(() => {
+                    const auth = firebase.auth();
+                    const user = auth.currentUser;
+                    if (user && user.uid === userUid) {
+                        this.setupSessionListener(userUid);
+                    }
+                }, 5000);
+            }
+
+            removeSessionListener() {
+                if (this.sessionListener) {
+                    this.sessionListener();
+                    this.sessionListener = null;
+                    this.listenerActive = false;
+                    console.log("Session listener removed");
+                }
+            }
+
+            async checkExistingSession() {
+                const auth = firebase.auth();
+                const user = auth.currentUser;
+                
+                if (user) {
+                    const localSessionId = this.getLocalSessionId(user.uid);
+                    if (localSessionId) {
+                        this.currentSessionId = localSessionId;
+                        this.setupSessionListener(user.uid);
+                    }
+                }
+            }
+
+            async onUserLogin(userUid) {
+                const sessionId = await this.createSession(userUid);
+                if (sessionId) {
+                    this.setupSessionListener(userUid);
+                }
+                return sessionId;
+            }
+
+            onUserLogout(userUid) {
+                this.removeSessionListener();
+                this.clearLocalSession(userUid);
+            }
+        }
+
+        // ===== FIXED YOUTUBE PLAYER MANAGER =====
+        class SimpleYouTubePlayer {
+            constructor(containerId, videoId) {
+                this.containerId = containerId;
+                this.videoId = videoId;
+                this.player = null;
+                this.updateInterval = null;
+                this.controlsVisible = true;
+                this.playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+                this.currentPlaybackRate = 1;
+                this.lastTapTime = 0;
+                this.tapCount = 0;
+                this.isYouTubeAPIReady = false;
+                this.init();
+            }
+            
+            init() {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                
+                const iframe = document.createElement('iframe');
+                iframe.id = `yt-iframe-${this.containerId}`;
+                iframe.width = '100%';
+                iframe.height = '100%';
+                iframe.src = `https://www.youtube.com/embed/${this.videoId}?enablejsapi=1&origin=${window.location.origin}&controls=0&disablekb=1&modestbranding=1&fs=0&rel=0&iv_load_policy=3&playsinline=1&autoplay=0&widget_referrer=${window.location.href}`;
+                iframe.frameBorder = '0';
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+                iframe.allowFullscreen = true;
+                iframe.style.pointerEvents = 'none';
+                
+                const iframeWrapper = container.querySelector('.youtube-iframe-wrapper');
+                if (iframeWrapper) {
+                    iframeWrapper.innerHTML = '';
+                    iframeWrapper.appendChild(iframe);
+                }
+                
+                this.loadYouTubeAPI().then(() => {
+                    this.initializePlayer();
+                }).catch(error => {
+                    console.error('Failed to load YouTube API:', error);
+                    this.showError(container, 'Failed to load video');
+                });
+            }
+            
+            loadYouTubeAPI() {
+                return new Promise((resolve, reject) => {
+                    if (window.YT && window.YT.Player) {
+                        this.isYouTubeAPIReady = true;
+                        resolve();
+                        return;
+                    }
+                    
+                    if (window.youtubeAPILoading) {
+                        const checkInterval = setInterval(() => {
+                            if (window.YT && window.YT.Player) {
+                                clearInterval(checkInterval);
+                                this.isYouTubeAPIReady = true;
+                                resolve();
+                            }
+                        }, 100);
+                        setTimeout(() => {
+                            clearInterval(checkInterval);
+                            if (!window.YT) reject('Timeout loading YouTube API');
+                        }, 10000);
+                        return;
+                    }
+                    
+                    window.youtubeAPILoading = true;
+                    
+                    const tag = document.createElement('script');
+                    tag.src = 'https://www.youtube.com/iframe_api';
+                    
+                    tag.onerror = () => {
+                        window.youtubeAPILoading = false;
+                        reject('Failed to load YouTube API script');
+                    };
+                    
+                    const firstScriptTag = document.getElementsByTagName('script')[0];
+                    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+                    
+                    const apiReadyTimeout = setTimeout(() => {
+                        if (!window.YT) {
+                            window.youtubeAPILoading = false;
+                            reject('YouTube API ready timeout');
+                        }
+                    }, 15000);
+                    
+                    window.onYouTubeIframeAPIReady = () => {
+                        clearTimeout(apiReadyTimeout);
+                        window.youtubeAPILoading = false;
+                        this.isYouTubeAPIReady = true;
+                        resolve();
+                    };
+                });
+            }
+            
+            initializePlayer() {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                
+                const loadingEl = container.querySelector('.video-loading');
+                if (loadingEl) loadingEl.style.display = 'none';
+                
+                try {
+                    this.player = new YT.Player(`yt-iframe-${this.containerId}`, {
+                        events: {
+                            'onReady': (event) => this.onPlayerReady(event),
+                            'onStateChange': (event) => this.onPlayerStateChange(event),
+                            'onError': (event) => this.onPlayerError(event),
+                            'onApiChange': (event) => this.onApiChange(event)
+                        },
+                        playerVars: {
+                            'autoplay': 0,
+                            'controls': 0,
+                            'disablekb': 1,
+                            'enablejsapi': 1,
+                            'fs': 0,
+                            'iv_load_policy': 3,
+                            'modestbranding': 1,
+                            'playsinline': 1,
+                            'rel': 0,
+                            'origin': window.location.origin
+                        }
+                    });
+                    
+                    this.setupControls(container);
+                } catch (error) {
+                    console.error('Failed to create YouTube player:', error);
+                    setTimeout(() => {
+                        this.initializePlayer();
+                    }, 1000);
+                }
+            }
+            
+            onPlayerReady(event) {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                
+                try {
+                    event.target.setVolume(100);
+                    event.target.setPlaybackRate(this.currentPlaybackRate);
+                    
+                    const speedBtn = container.querySelector('.speed-btn');
+                    if (speedBtn) {
+                        speedBtn.textContent = `${this.currentPlaybackRate}x`;
+                    }
+                    
+                    this.startUpdateInterval();
+                    
+                    console.log('YouTube player ready for:', this.videoId);
+                } catch (error) {
+                    console.error('Error in onPlayerReady:', error);
+                }
+            }
+            
+            onPlayerStateChange(event) {
+                const container = document.getElementById(this.containerId);
+                if (!container) return;
+                
+                const playPauseBtn = container.querySelector('.play-pause-btn');
+                if (!playPauseBtn) return;
+                
+                const playIcon = playPauseBtn.querySelector('.play-icon');
+                const pauseIcon = playPauseBtn.querySelector('.pause-icon');
+                
+                if (event.data === YT.PlayerState.PLAYING) {
+                    if (playIcon) playIcon.style.display = 'none';
+                    if (pauseIcon) pauseIcon.style.display = 'block';
+                } else {
+                    if (playIcon) playIcon.style.display = 'block';
+                    if (pauseIcon) pauseIcon.style.display = 'none';
+                }
+                
+                if (event.data === YT.PlayerState.PLAYING) {
+                    this.hideControlsAfterDelay(container);
+                }
+            }
+            
+            onPlayerError(event) {
+                console.error('YouTube player error:', event.data);
+                const container = document.getElementById(this.containerId);
+                if (container) {
+                    this.showError(container, 'Video failed to load. Please check your internet connection.');
+                }
+            }
+            
+            onApiChange(event) {
+                // Handle API changes
+            }
+            
+            setupControls(container) {
+                const playPauseBtn = container.querySelector('.play-pause-btn');
+                if (playPauseBtn) {
+                    playPauseBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (!this.player) return;
+                        
+                        try {
+                            if (this.player.getPlayerState() === YT.PlayerState.PLAYING) {
+                                this.player.pauseVideo();
+                            } else {
+                                this.player.playVideo();
+                            }
+                        } catch (error) {
+                            console.error('Play/Pause error:', error);
+                        }
+                    });
+                }
+                
+                const progressBar = container.querySelector('.top-progress-container');
+                if (progressBar) {
+                    progressBar.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (!this.player) return;
+                        
+                        try {
+                            const rect = progressBar.getBoundingClientRect();
+                            const clickX = e.clientX - rect.left;
+                            const percentage = (clickX / rect.width) * 100;
+                            const duration = this.player.getDuration();
+                            const seekTime = (percentage / 100) * duration;
+                            this.player.seekTo(seekTime, true);
+                        } catch (error) {
+                            console.error('Seek error:', error);
+                        }
+                    });
+                }
+                
+                const volumeBtn = container.querySelector('.volume-btn');
+                if (volumeBtn) {
+                    volumeBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (!this.player) return;
+                        
+                        try {
+                            const currentVolume = this.player.getVolume();
+                            if (currentVolume > 0) {
+                                this.player.setVolume(0);
+                                volumeBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+                            } else {
+                                this.player.setVolume(100);
+                                volumeBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+                            }
+                        } catch (error) {
+                            console.error('Volume error:', error);
+                        }
+                    });
+                }
+                
+                const fullscreenBtn = container.querySelector('.fullscreen-btn');
+                if (fullscreenBtn) {
+                    fullscreenBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this.toggleFullscreen(container);
+                    });
+                }
+                
+                const speedBtn = container.querySelector('.speed-btn');
+                if (speedBtn) {
+                    speedBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        if (!this.player) return;
+                        
+                        try {
+                            const currentIndex = this.playbackRates.indexOf(this.currentPlaybackRate);
+                            const nextIndex = (currentIndex + 1) % this.playbackRates.length;
+                            this.currentPlaybackRate = this.playbackRates[nextIndex];
+                            
+                            this.player.setPlaybackRate(this.currentPlaybackRate);
+                            
+                            speedBtn.textContent = `${this.currentPlaybackRate}x`;
+                        } catch (error) {
+                            console.error('Speed control error:', error);
+                        }
+                    });
+                }
+                
+                const overlay = container.querySelector('.video-overlay');
+                if (overlay) {
+                    let lastTapTime = 0;
+                    let tapCount = 0;
+                    let tapTimeout;
+                    
+                    overlay.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const currentTime = Date.now();
+                        const rect = overlay.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const isLeftSide = clickX < rect.width / 2;
+                        
+                        if (currentTime - lastTapTime < 300) {
+                            tapCount++;
+                            clearTimeout(tapTimeout);
+                            
+                            if (tapCount === 2) {
+                                this.handleDoubleTap(isLeftSide);
+                                tapCount = 0;
+                            }
+                        } else {
+                            tapCount = 1;
+                        }
+                        
+                        lastTapTime = currentTime;
+                        
+                        tapTimeout = setTimeout(() => {
+                            tapCount = 0;
+                        }, 300);
+                    });
+                }
+                
+                if (overlay) {
+                    overlay.addEventListener('click', (e) => {
+                        if (e.target.closest('.control-btn') || 
+                            e.target.closest('.top-progress-container') || 
+                            e.target.closest('.speed-btn')) {
+                            return;
+                        }
+                        
+                        if (!this.player) return;
+                        
+                        try {
+                            if (this.player.getPlayerState() === YT.PlayerState.PLAYING) {
+                                this.player.pauseVideo();
+                            } else {
+                                this.player.playVideo();
+                            }
+                        } catch (error) {
+                            console.error('Overlay click error:', error);
+                        }
+                    });
+                    
+                    let hideTimeout;
+                    const showControls = () => {
+                        const controlBar = container.querySelector('.modern-control-bar');
+                        if (controlBar) {
+                            controlBar.classList.add('visible');
+                            clearTimeout(hideTimeout);
+                        }
+                    };
+                    
+                    overlay.addEventListener('mouseenter', showControls);
+                    overlay.addEventListener('mousemove', showControls);
+                    overlay.addEventListener('mouseleave', () => {
+                        this.hideControlsAfterDelay(container);
+                    });
+                    
+                    overlay.addEventListener('touchstart', showControls);
+                    overlay.addEventListener('touchmove', showControls);
+                }
+            }
+            
+            hideControlsAfterDelay(container) {
+                const controlBar = container.querySelector('.modern-control-bar');
+                if (controlBar && this.player && this.player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    setTimeout(() => {
+                        controlBar.classList.remove('visible');
+                    }, 2000);
+                }
+            }
+            
+            handleDoubleTap(isLeftSide) {
+                if (!this.player) return;
+                
+                const container = document.getElementById(this.containerId);
+                const currentTime = this.player.getCurrentTime();
+                
+                const indicator = container.querySelector(isLeftSide ? '.double-tap-left' : '.double-tap-right');
+                if (indicator) {
+                    indicator.classList.add('show');
+                    setTimeout(() => {
+                        indicator.classList.remove('show');
+                    }, 500);
+                }
+                
+                try {
+                    if (isLeftSide) {
+                        const newTime = Math.max(0, currentTime - 10);
+                        this.player.seekTo(newTime, true);
+                    } else {
+                        const duration = this.player.getDuration();
+                        const newTime = Math.min(duration, currentTime + 20);
+                        this.player.seekTo(newTime, true);
+                    }
+                } catch (error) {
+                    console.error('Double tap seek error:', error);
+                }
+            }
+            
+            startUpdateInterval() {
+                if (this.updateInterval) clearInterval(this.updateInterval);
+                
+                this.updateInterval = setInterval(() => {
+                    this.updateUI();
+                }, 500);
+            }
+            
+            updateUI() {
+                const container = document.getElementById(this.containerId);
+                if (!container || !this.player) return;
+                
+                try {
+                    const currentTime = this.player.getCurrentTime();
+                    const duration = this.player.getDuration();
+                    const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+                    
+                    const progressTrack = container.querySelector('.progress-track');
+                    const progressThumb = container.querySelector('.progress-thumb');
+                    if (progressTrack && progressThumb) {
+                        progressTrack.style.width = `${progress}%`;
+                        progressThumb.style.left = `${progress}%`;
+                    }
+                    
+                    const timeDisplay = container.querySelector('.time-display');
+                    if (timeDisplay) {
+                        const formatTime = (seconds) => {
+                            if (isNaN(seconds)) return '0:00';
+                            const mins = Math.floor(seconds / 60);
+                            const secs = Math.floor(seconds % 60);
+                            return `${mins}:${secs.toString().padStart(2, '0')}`;
+                        };
+                        timeDisplay.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+                    }
+                    
+                    const volumeBtn = container.querySelector('.volume-btn');
+                    if (volumeBtn) {
+                        const volume = this.player.getVolume();
+                        if (volume > 0) {
+                            volumeBtn.innerHTML = '<i class="fas fa-volume-up"></i>';
+                        } else {
+                            volumeBtn.innerHTML = '<i class="fas fa-volume-mute"></i>';
+                        }
+                    }
+                } catch (error) {
+                    // Player might not be ready yet
+                }
+            }
+            
+            toggleFullscreen(container) {
+                const videoWrapper = container.closest('.video-wrapper');
+                if (!videoWrapper) return;
+                
+                if (!document.fullscreenElement) {
+                    if (videoWrapper.requestFullscreen) {
+                        videoWrapper.requestFullscreen();
+                    } else if (videoWrapper.webkitRequestFullscreen) {
+                        videoWrapper.webkitRequestFullscreen();
+                    } else if (videoWrapper.msRequestFullscreen) {
+                        videoWrapper.msRequestFullscreen();
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
+                }
+                
+                const fullscreenBtn = container.querySelector('.fullscreen-btn i');
+                if (fullscreenBtn) {
+                    if (!document.fullscreenElement) {
+                        fullscreenBtn.className = 'fas fa-expand';
+                    } else {
+                        fullscreenBtn.className = 'fas fa-compress';
+                    }
+                }
+            }
+            
+            showError(container, message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'player-error';
+                errorDiv.textContent = message;
+                
+                const existingError = container.querySelector('.player-error');
+                if (existingError) existingError.remove();
+                
+                container.appendChild(errorDiv);
+            }
+            
+            pause() {
+                if (this.player && this.player.pauseVideo) {
+                    try {
+                        this.player.pauseVideo();
+                    } catch (error) {
+                        console.error('Pause error:', error);
+                    }
+                }
+            }
+            
+            destroy() {
+                if (this.updateInterval) {
+                    clearInterval(this.updateInterval);
+                }
+                if (this.player && this.player.destroy) {
+                    try {
+                        this.player.destroy();
+                    } catch (error) {
+                        console.error('Destroy error:', error);
+                    }
+                }
+            }
+        }
+        
+        // Global player instances
+        const videoPlayers = new Map();
+        
+        function initVideoPlayers() {
+            document.querySelectorAll('.video-player-container').forEach(container => {
+                const containerId = container.id;
+                const videoId = container.dataset.videoId;
+                
+                if (!videoPlayers.has(containerId) && videoId) {
+                    const player = new SimpleYouTubePlayer(containerId, videoId);
+                    videoPlayers.set(containerId, player);
+                }
+            });
+        }
+        
+        function cleanupVideoPlayers() {
+            for (const [id, player] of videoPlayers) {
+                player.destroy();
+            }
+            videoPlayers.clear();
+        }
+
+        // ===== PERMISSION MANAGER =====
+        class PermissionManager {
+            constructor(app) {
+                this.app = app;
+                this.db = null;
+                this.cacheManager = app.cacheManager;
+            }
+            
+            setDB(db) {
+                this.db = db;
+            }
+            
+            async checkUserPermissionForSubject(userUid, programId, subjectId) {
+                // Check cache first
+                const cachedPermission = this.cacheManager.getPermission(programId, subjectId, userUid);
+                if (cachedPermission !== undefined) {
+                    console.log("Using cached permission for", programId, subjectId, userUid, cachedPermission);
+                    return cachedPermission;
+                }
+                
+                if (!this.db || !userUid || !programId || !subjectId) {
+                    console.error("Cannot check permissions: missing parameters", {userUid, programId, subjectId});
+                    return { hasAccess: false, approved: false, error: "Missing parameters" };
+                }
+                
+                try {
+                    // Check if user has permission document
+                    const permissionDoc = await this.db
+                        .collection('programs')
+                        .doc(programId)
+                        .collection('subjects')
+                        .doc(subjectId)
+                        .collection('permissions')
+                        .doc(userUid)
+                        .get();
+                    
+                    // If document doesn't exist
+                    if (!permissionDoc.exists) {
+                        const result = { 
+                            hasAccess: false, 
+                            approved: false, 
+                            exists: false,
+                            path: `programs/${programId}/subjects/${subjectId}/permissions/${userUid}`
+                        };
+                        this.cacheManager.setPermission(programId, subjectId, userUid, result);
+                        return result;
+                    }
+                    
+                    const permissionData = permissionDoc.data();
+                    
+                    // Check if approved
+                    if (permissionData.approved === false) {
+                        const result = { 
+                            hasAccess: false, 
+                            approved: false, 
+                            exists: true,
+                            data: permissionData
+                        };
+                        this.cacheManager.setPermission(programId, subjectId, userUid, result);
+                        return result;
+                    }
+                    
+                    // If approved is true, check expiration
+                    if (permissionData.approved === true) {
+                        // Check expiration if expiredAt exists
+                        if (permissionData.expiredAt) {
+                            const expiredAt = permissionData.expiredAt.toDate();
+                            const now = new Date();
+                            
+                            if (now > expiredAt) {
+                                const result = { 
+                                    hasAccess: false, 
+                                    approved: true, 
+                                    expired: true, 
+                                    exists: true,
+                                    data: permissionData
+                                };
+                                this.cacheManager.setPermission(programId, subjectId, userUid, result);
+                                return result;
+                            }
+                        }
+                        
+                        // All checks passed
+                        const result = { 
+                            hasAccess: true, 
+                            approved: true, 
+                            exists: true,
+                            data: permissionData
+                        };
+                        this.cacheManager.setPermission(programId, subjectId, userUid, result);
+                        return result;
+                    }
+                    
+                    // Default return
+                    const result = { 
+                        hasAccess: false, 
+                        approved: false, 
+                        exists: true,
+                        data: permissionData
+                    };
+                    this.cacheManager.setPermission(programId, subjectId, userUid, result);
+                    return result;
+                    
+                } catch (error) {
+                    console.error("Error checking user permissions:", error);
+                    return { 
+                        hasAccess: false, 
+                        approved: false, 
+                        error: error.message,
+                        code: error.code
+                    };
+                }
+            }
+            
+            // Force refresh permission without cache
+            async refreshUserPermissionForSubject(userUid, programId, subjectId) {
+                console.log("Refreshing permission for:", {userUid, programId, subjectId});
+                this.cacheManager.clearPermission(programId, subjectId, userUid);
+                return await this.checkUserPermissionForSubject(userUid, programId, subjectId);
+            }
+            
+            // NEW: Check program-level access (check if user has access to any subject in the program)
+            async checkUserAccessToProgram(userUid, programId) {
+                if (!this.db || !userUid || !programId) {
+                    console.error("Cannot check program access: missing parameters", {userUid, programId});
+                    return { hasAccess: false, error: "Missing parameters" };
+                }
+                
+                try {
+                    // Check if user has any permission document in this program
+                    // This is a simplified check - in a real app you might want a program-level permission
+                    const subjectsSnapshot = await this.db
+                        .collection('programs')
+                        .doc(programId)
+                        .collection('subjects')
+                        .limit(1)
+                        .get();
+                    
+                    if (subjectsSnapshot.empty) {
+                        return { hasAccess: false, error: "No subjects found in program" };
+                    }
+                    
+                    // For now, we assume access if the program exists
+                    // In a real implementation, you might check program-level permissions
+                    return { hasAccess: true, programExists: true };
+                    
+                } catch (error) {
+                    console.error("Error checking program access:", error);
+                    return { 
+                        hasAccess: false, 
+                        error: error.message,
+                        code: error.code
+                    };
+                }
+            }
+        }
+
+        // ===== UPDATED AUTH MANAGER WITH SESSION MANAGEMENT AND DEEP LINKING =====
+        class AuthManager {
+            constructor(app) {
+                this.app = app;
+                this.auth = null;
+                this.currentUser = null;
+                this.courseId = null;
+                this.isInitialized = false;
+                this.authModal = null;
+                this.db = null;
+                this.sessionManager = new SessionManager(app);
+                this.authReady = false;
+                this.authReadyPromise = null;
+                this.urlProgramId = null; // Store programId from URL
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    this.auth = firebase.auth();
+                    this.db = firebase.firestore();
+                    
+                    // Create a promise that resolves when auth is ready
+                    this.authReadyPromise = new Promise((resolve) => {
+                        this.setupAuthListeners(resolve);
+                    });
+                    
+                    this.sessionManager.initialize();
+                    this.isInitialized = true;
+                    console.log("Auth initialized successfully");
+                    
+                    // Check for URL programId FIRST (highest priority)
+                    this.urlProgramId = this.getProgramIdFromURL();
+                    if (this.urlProgramId) {
+                        console.log("URL programId found:", this.urlProgramId);
+                        this.storeCourseId(this.urlProgramId);
+                    }
+                    // Otherwise check for stored courseId
+                    else {
+                        const storedCourseId = localStorage.getItem('conceptblitz_courseId');
+                        if (storedCourseId) {
+                            this.courseId = storedCourseId;
+                        }
+                    }
+                } catch (error) {
+                    console.error("Auth initialization error:", error);
+                }
+            }
+            
+            getProgramIdFromURL() {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('programId');
+            }
+            
+            setupAuthListeners(onAuthReady) {
+                let authStateChanged = false;
+                
+                this.auth.onAuthStateChanged(async (user) => {
+                    console.log("Auth state changed:", user ? `User ${user.uid} logged in` : "No user");
+                    
+                    if (user) {
+                        // User is logged in, create session
+                        await this.sessionManager.onUserLogin(user.uid);
+                        this.currentUser = user;
+                        
+                        // Close all modals
+                        this.closeAllModals();
+                        
+                        // Mark auth as ready
+                        this.authReady = true;
+                        
+                        if (this.app && this.app.handleAuthStateChange) {
+                            this.app.handleAuthStateChange(user, true);
+                        }
+                    } else {
+                        // User is not logged in
+                        if (this.currentUser?.uid) {
+                            this.sessionManager.onUserLogout(this.currentUser.uid);
+                        }
+                        this.currentUser = null;
+                        
+                        // Mark auth as ready even if no user
+                        this.authReady = true;
+                        
+                        if (this.app && this.app.handleAuthStateChange) {
+                            this.app.handleAuthStateChange(null, false);
+                        }
+                    }
+                    
+                    // Resolve the auth ready promise if this is the first auth state change
+                    if (!authStateChanged && onAuthReady) {
+                        authStateChanged = true;
+                        onAuthReady();
+                    }
+                });
+            }
+            
+            // Wait for auth to be fully ready
+            async waitForAuthReady() {
+                if (this.authReady) {
+                    return true;
+                }
+                
+                if (this.authReadyPromise) {
+                    await this.authReadyPromise;
+                    return true;
+                }
+                
+                // If no promise exists, wait a bit and check again
+                return new Promise((resolve) => {
+                    const checkInterval = setInterval(() => {
+                        if (this.authReady) {
+                            clearInterval(checkInterval);
+                            resolve(true);
+                        }
+                    }, 100);
+                    
+                    // Timeout after 5 seconds
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve(false);
+                    }, 5000);
+                });
+            }
+            
+            storeCourseId(courseId) {
+                this.courseId = courseId;
+                localStorage.setItem('conceptblitz_courseId', courseId);
+                // Update URL without refresh
+                if (courseId && !this.urlProgramId) {
+                    const url = new URL(window.location);
+                    url.searchParams.set('programId', courseId);
+                    window.history.replaceState({}, '', url);
+                }
+            }
+            
+            clearCourseId() {
+                this.courseId = null;
+                this.urlProgramId = null;
+                localStorage.removeItem('conceptblitz_courseId');
+                // Clear URL parameter
+                const url = new URL(window.location);
+                url.searchParams.delete('programId');
+                window.history.replaceState({}, '', url);
+            }
+            
+            getCourseId() {
+                return this.courseId;
+            }
+            
+            closeAllModals() {
+                this.hideAuthModal();
+            }
+            
+            showAuthModal() {
+                this.authModal = document.createElement('div');
+                this.authModal.className = 'auth-modal-overlay';
+                this.authModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Sign In to Continue</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="auth-email" class="auth-input" placeholder="your@email.com">
+                                <div id="email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="auth-password" class="auth-input" placeholder="••••••••">
+                                <div id="password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter courseId</label>
+                                <input type="text" id="auth-courseid" class="auth-input" placeholder="Enter course ID" value="${this.courseId || ''}">
+                                <div id="courseid-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="sign-in-button" class="auth-button">Sign In</button>
+                        </div>
+                        <div class="auth-footer">
+                            Don't have an account? <span class="signup-link" id="signup-link">Sign Up</span>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(this.authModal);
+                
+                this.setupAuthModalEvents();
+            }
+            
+            setupAuthModalEvents() {
+                const signInButton = document.getElementById('sign-in-button');
+                const emailInput = document.getElementById('auth-email');
+                const passwordInput = document.getElementById('auth-password');
+                const courseIdInput = document.getElementById('auth-courseid');
+                const signupLink = document.getElementById('signup-link');
+                
+                signInButton.addEventListener('click', () => {
+                    this.signInWithEmail();
+                });
+                
+                emailInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        passwordInput.focus();
+                    }
+                });
+                
+                passwordInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        courseIdInput.focus();
+                    }
+                });
+                
+                courseIdInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.signInWithEmail();
+                    }
+                });
+                
+                signupLink.addEventListener('click', () => {
+                    this.showSignUpModal();
+                });
+                
+                this.authModal.addEventListener('click', (e) => {
+                    if (e.target === this.authModal) {
+                        this.hideAuthModal();
+                    }
+                });
+            }
+            
+            showSignUpModal() {
+                this.hideAuthModal();
+                
+                this.signUpModal = document.createElement('div');
+                this.signUpModal.className = 'auth-modal-overlay';
+                this.signUpModal.innerHTML = `
+                    <div class="auth-modal">
+                        <div class="auth-header">
+                            <div class="auth-title">Create Account</div>
+                        </div>
+                        <div class="auth-body">
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Email</label>
+                                <input type="email" id="signup-email" class="auth-input" placeholder="your@email.com">
+                                <div id="signup-email-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter Password</label>
+                                <input type="password" id="signup-password" class="auth-input" placeholder="••••••••">
+                                <div id="signup-password-error" class="auth-error"></div>
+                            </div>
+                            
+                            <div class="auth-field">
+                                <label class="auth-label">Enter courseId</label>
+                                <input type="text" id="signup-courseid" class="auth-input" placeholder="Enter course ID" value="${this.courseId || ''}">
+                                <div id="signup-courseid-error" class="auth-error"></div>
+                            </div>
+                            
+                            <button id="signup-button" class="auth-button">Create Account</button>
+                        </div>
+                        <div class="auth-footer">
+                            Already have an account? <span class="signup-link" id="back-to-login">Sign In</span>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(this.signUpModal);
+                
+                const signupButton = document.getElementById('signup-button');
+                const backToLogin = document.getElementById('back-to-login');
+                
+                signupButton.addEventListener('click', () => {
+                    this.signUpWithEmail();
+                });
+                
+                backToLogin.addEventListener('click', () => {
+                    this.hideSignUpModal();
+                    this.showAuthModal();
+                });
+                
+                this.signUpModal.addEventListener('click', (e) => {
+                    if (e.target === this.signUpModal) {
+                        this.hideSignUpModal();
+                        this.showAuthModal();
+                    }
+                });
+            }
+            
+            async signInWithEmail() {
+                const email = document.getElementById('auth-email').value.trim();
+                const password = document.getElementById('auth-password').value.trim();
+                const courseId = document.getElementById('auth-courseid').value.trim();
+                const signInButton = document.getElementById('sign-in-button');
+                const emailError = document.getElementById('email-error');
+                const passwordError = document.getElementById('password-error');
+                const courseIdError = document.getElementById('courseid-error');
+                
+                // Clear previous errors
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                courseIdError.textContent = '';
+                courseIdError.classList.remove('show');
+                
+                // Basic validation
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter your password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                if (!courseId) {
+                    courseIdError.textContent = 'Please enter course ID';
+                    courseIdError.classList.add('show');
+                    return;
+                }
+                
+                signInButton.textContent = 'Signing In...';
+                signInButton.classList.add('loading');
+                
+                try {
+                    await this.auth.signInWithEmailAndPassword(email, password);
+                    // Store courseId in memory
+                    this.storeCourseId(courseId);
+                } catch (error) {
+                    console.error("Sign in error:", error);
+                    
+                    signInButton.textContent = 'Sign In';
+                    signInButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-disabled':
+                            emailError.textContent = 'This account has been disabled';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/user-not-found':
+                            emailError.textContent = 'No account found with this email';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/wrong-password':
+                            passwordError.textContent = 'Incorrect password';
+                            passwordError.classList.add('show');
+                            break;
+                        case 'auth/too-many-requests':
+                            passwordError.textContent = 'Too many failed attempts. Try again later';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            passwordError.textContent = 'Failed to sign in. Please try again';
+                            passwordError.classList.add('show');
+                    }
+                }
+            }
+            
+            async signUpWithEmail() {
+                const email = document.getElementById('signup-email').value.trim();
+                const password = document.getElementById('signup-password').value.trim();
+                const courseId = document.getElementById('signup-courseid').value.trim();
+                const signupButton = document.getElementById('signup-button');
+                const emailError = document.getElementById('signup-email-error');
+                const passwordError = document.getElementById('signup-password-error');
+                const courseIdError = document.getElementById('signup-courseid-error');
+                
+                // Clear previous errors
+                emailError.textContent = '';
+                emailError.classList.remove('show');
+                passwordError.textContent = '';
+                passwordError.classList.remove('show');
+                courseIdError.textContent = '';
+                courseIdError.classList.remove('show');
+                
+                // Basic validation
+                if (!email) {
+                    emailError.textContent = 'Please enter your email';
+                    emailError.classList.add('show');
+                    return;
+                }
+                
+                if (!password) {
+                    passwordError.textContent = 'Please enter a password';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                if (password.length < 6) {
+                    passwordError.textContent = 'Password must be at least 6 characters';
+                    passwordError.classList.add('show');
+                    return;
+                }
+                
+                if (!courseId) {
+                    courseIdError.textContent = 'Please enter course ID';
+                    courseIdError.classList.add('show');
+                    return;
+                }
+                
+                signupButton.textContent = 'Creating Account...';
+                signupButton.classList.add('loading');
+                
+                try {
+                    // Create user account
+                    const userCredential = await this.auth.createUserWithEmailAndPassword(email, password);
+                    const user = userCredential.user;
+                    
+                    // Store courseId in memory
+                    this.storeCourseId(courseId);
+                    
+                    // Clear form fields
+                    document.getElementById('signup-email').value = '';
+                    document.getElementById('signup-password').value = '';
+                    document.getElementById('signup-courseid').value = '';
+                    
+                    // Change button text
+                    signupButton.textContent = 'Account Created!';
+                    signupButton.style.backgroundColor = '#10b981';
+                    
+                    setTimeout(() => {
+                        this.hideSignUpModal();
+                    }, 1500);
+                    
+                } catch (error) {
+                    console.error("Sign up error:", error);
+                    
+                    signupButton.textContent = 'Create Account';
+                    signupButton.classList.remove('loading');
+                    
+                    switch (error.code) {
+                        case 'auth/email-already-in-use':
+                            emailError.textContent = 'Email already in use';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/invalid-email':
+                            emailError.textContent = 'Invalid email address';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/operation-not-allowed':
+                            emailError.textContent = 'Email/password accounts are not enabled';
+                            emailError.classList.add('show');
+                            break;
+                        case 'auth/weak-password':
+                            passwordError.textContent = 'Password is too weak';
+                            passwordError.classList.add('show');
+                            break;
+                        default:
+                            emailError.textContent = 'Failed to create account';
+                            emailError.classList.add('show');
+                    }
+                }
+            }
+            
+            hideAuthModal() {
+                if (this.authModal && this.authModal.parentNode) {
+                    this.authModal.parentNode.removeChild(this.authModal);
+                    this.authModal = null;
+                }
+            }
+            
+            hideSignUpModal() {
+                if (this.signUpModal && this.signUpModal.parentNode) {
+                    this.signUpModal.parentNode.removeChild(this.signUpModal);
+                    this.signUpModal = null;
+                }
+            }
+            
+            isUserLoggedIn() {
+                return this.currentUser !== null && this.authReady;
+            }
+            
+            async signOut() {
+                try {
+                    if (this.currentUser?.uid) {
+                        this.sessionManager.onUserLogout(this.currentUser.uid);
+                        this.app.cacheManager.clearUserCaches(this.currentUser.uid);
+                    }
+                    
+                    await this.auth.signOut();
+                    this.clearCourseId();
+                    this.authReady = false;
+                    console.log("User signed out successfully");
+                } catch (error) {
+                    console.error("Sign out error:", error);
+                    throw error;
+                }
+            }
+        }
+        
+        // ===== STATE MANAGER =====
+        class StateManager {
+            constructor() {
+                this.programId = null;
+                this.courseId = null;
+                this.bannerImages = [];
+                this.subjects = [];
+                this.latestLectures = [];
+                this.currentPageName = 'home';
+                this.profileImageUrl = null;
+                this.subjectPermissions = {}; // Store permissions for each subject
+            }
+            
+            setProgramData(programId, courseId, bannerImages) {
+                this.programId = programId;
+                this.courseId = courseId;
+                this.bannerImages = bannerImages || [];
+            }
+            
+            setSubjects(subjects) {
+                this.subjects = subjects || [];
+            }
+            
+            setLatestLectures(lectures) {
+                this.latestLectures = lectures || [];
+            }
+            
+            setSubjectPermission(subjectId, permissionData) {
+                this.subjectPermissions[subjectId] = permissionData;
+            }
+            
+            getSubjectPermission(subjectId) {
+                return this.subjectPermissions[subjectId] || { hasAccess: false };
+            }
+            
+            setProfileImageUrl(url) {
+                this.profileImageUrl = url;
+            }
+            
+            getProfileImageUrl() {
+                return this.profileImageUrl;
+            }
+            
+            setCurrentPageName(pageName) {
+                this.currentPageName = pageName;
+            }
+            
+            getCurrentPageName() {
+                return this.currentPageName;
+            }
+            
+            clearAllData() {
+                this.programId = null;
+                this.courseId = null;
+                this.bannerImages = [];
+                this.subjects = [];
+                this.latestLectures = [];
+                this.profileImageUrl = null;
+                this.subjectPermissions = {};
+            }
+        }
+        
+        // ===== UPDATED BANNER SLIDER =====
+        class BannerSlider {
+            constructor(containerId, images) {
+                this.containerId = containerId;
+                this.images = images;
+                this.currentIndex = 0;
+                this.sliderInterval = null;
+                this.resetTimeout = null;
+                this.init();
+            }
+            
+            init() {
+                const container = document.getElementById(this.containerId);
+                if (!container || this.images.length === 0) return;
+                
+                let sliderHtml = '<div class="banner-slider">';
+                
+                // Add all images
+                this.images.forEach((imageUrl, index) => {
+                    sliderHtml += `
+                        <div class="banner-slide">
+                            <img src="${imageUrl}" alt="Banner ${index + 1}" class="banner-image" 
+                                 onerror="this.src='https://placehold.co/400x180/3B82F6/FFFFFF?text=Banner+${index + 1}'">
+                        </div>
+                    `;
+                });
+
+                // Add duplicate first slide at the end for seamless looping
+                if (this.images.length > 1) {
+                    sliderHtml += `
+                        <div class="banner-slide">
+                            <img src="${this.images[0]}" alt="Banner 1" class="banner-image" 
+                                 onerror="this.src='https://placehold.co/400x180/3B82F6/FFFFFF?text=Banner+1'">
+                        </div>
+                    `;
+                }
+                
+                sliderHtml += '</div>';
+                container.innerHTML = sliderHtml;
+                
+                this.startAutoSlide();
+            }
+            
+            startAutoSlide() {
+                if (this.images.length <= 1) return;
+                
+                this.sliderInterval = setInterval(() => {
+                    this.slideToNext();
+                }, 2000);
+            }
+            
+            slideToNext() {
+                const slider = document.querySelector(`#${this.containerId} .banner-slider`);
+                if (!slider) return;
+                
+                // Clear any pending reset timeout
+                if (this.resetTimeout) {
+                    clearTimeout(this.resetTimeout);
+                }
+                
+                this.currentIndex++;
+                slider.style.transform = `translateX(-${this.currentIndex * 100}%)`;
+                
+                // If we're at the duplicate slide (last one), reset to first after transition
+                if (this.currentIndex === this.images.length) {
+                    this.resetTimeout = setTimeout(() => {
+                        slider.style.transition = 'none';
+                        this.currentIndex = 0;
+                        slider.style.transform = `translateX(-${this.currentIndex * 100}%)`;
+                        // Force reflow
+                        void slider.offsetWidth;
+                        slider.style.transition = 'transform 0.5s ease-in-out';
+                    }, 500);
+                }
+            }
+            
+            destroy() {
+                if (this.sliderInterval) {
+                    clearInterval(this.sliderInterval);
+                    this.sliderInterval = null;
+                }
+                if (this.resetTimeout) {
+                    clearTimeout(this.resetTimeout);
+                    this.resetTimeout = null;
+                }
+            }
+        }
+        
+        // ===== MAIN APP WITH UNIFIED DEEP LINKING =====
+        class ConceptBlitzApp {
+            constructor() {
+                this.stateManager = new StateManager();
+                this.cacheManager = new CacheManager();
+                this.authManager = new AuthManager(this);
+                this.permissionManager = new PermissionManager(this);
+                this.bannerSlider = null;
+                this.isInitialized = false;
+                this.authCheckInProgress = false;
+                this.hasShownLoader = false;
+                
+                this.appWrapper = document.getElementById('app-wrapper');
+                this.chatContainer = document.getElementById('chat-container');
+                this.leftButtonContainer = document.getElementById('left-button-container');
+                this.profileImageContainer = document.getElementById('profile-image-container');
+                
+                this.db = null;
+                this.firebaseConfig = {
+                    apiKey: "AIzaSyBJ_G5o4otg7riemfJDMOcPoHoIVH7emsc",
+                    authDomain: "geobazarr.firebaseapp.com",
+                    databaseURL: "https://geobazarr-default-rtdb.firebaseio.com",
+                    projectId: "geobazarr",
+                    storageBucket: "geobazarr.firebasestorage.app",
+                    messagingSenderId: "679949247383",
+                    appId: "1:679949247383:web:036d4f32038422ebb89ad2"
+                };
+                
+                this.handleAuthStateChange = this.handleAuthStateChange.bind(this);
+                this.handleSignInClick = this.handleSignInClick.bind(this);
+                this.handleSubjectClick = this.handleSubjectClick.bind(this);
+                this.handleBackButtonClick = this.handleBackButtonClick.bind(this);
+                
+                this.initialize();
+            }
+            
+            initialize() {
+                if (this.isInitialized) return;
+                
+                try {
+                    // Show loader IMMEDIATELY on page load
+                    this.showLoader();
+                    
+                    firebase.initializeApp(this.firebaseConfig);
+                    this.db = firebase.firestore();
+                    
+                    // Enable debugging
+                    this.db.settings({
+                        cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+                    });
+                    
+                    console.log("Firebase initialized successfully");
+                    
+                    this.authManager.initialize();
+                    this.permissionManager.setDB(this.db);
+                    
+                    this.setupEventDelegation();
+                    this.setupSearchBox();
+                    this.isInitialized = true;
+                    
+                    // Wait for auth to be ready, then handle initial state
+                    this.waitForAuthAndLoad();
+                    
+                } catch (error) {
+                    console.error("Firebase initialization error:", error);
+                    this.hideLoader();
+                    this.showError("Firebase initialization failed. Please refresh the page.");
+                }
+            }
+            
+            showLoader() {
+                if (this.hasShownLoader) return;
+                
+                this.hasShownLoader = true;
+                // MODIFICATION 3: Updated loader HTML with modern design
+                const loaderHtml = `
+                    <div class="loading-overlay" id="initial-loader">
+                        <div class="loading-content">
+                            <div class="loading-spinner"></div>
+                            <div class="loading-text">Loading ConceptBlitz...</div>
+                        </div>
+                    </div>
+                `;
+                
+                // Check if loader already exists
+                if (!document.getElementById('initial-loader')) {
+                    document.body.insertAdjacentHTML('beforeend', loaderHtml);
+                }
+            }
+            
+            hideLoader() {
+                const loader = document.getElementById('initial-loader');
+                if (loader && loader.parentNode) {
+                    loader.parentNode.removeChild(loader);
+                }
+            }
+            
+            async waitForAuthAndLoad() {
+                console.log("Waiting for auth to be ready...");
+                
+                // Wait for auth to be fully ready
+                const authReady = await this.authManager.waitForAuthReady();
+                
+                if (authReady) {
+                    console.log("Auth is ready, checking user state...");
+                    
+                    // Check if user is logged in
+                    if (this.authManager.isUserLoggedIn()) {
+                        console.log("User is logged in, entering program...");
+                        // Use unified program entry function
+                        await this.enterProgram();
+                    } else {
+                        console.log("User is not logged in, showing sign in prompt...");
+                        this.hideLoader();
+                        this.showSignInPrompt();
+                    }
+                } else {
+                    console.error("Auth initialization timed out");
+                    this.hideLoader();
+                    this.showError("Authentication initialization timed out. Please refresh the page.");
+                }
+            }
+            
+            // ===== UNIFIED PROGRAM ENTRY FUNCTION =====
+            async enterProgram() {
+                const programId = this.authManager.getCourseId();
+                
+                if (!programId) {
+                    console.error("No programId found for entry");
+                    this.hideLoader();
+                    this.showInvalidCourseIdError();
+                    return;
+                }
+                
+                console.log("Entering program:", programId);
+                
+                try {
+                    // Check program access permission
+                    const user = this.authManager.currentUser;
+                    const programAccess = await this.permissionManager.checkUserAccessToProgram(user.uid, programId);
+                    
+                    if (!programAccess.hasAccess) {
+                        console.log("Program access denied for user:", user.uid);
+                        this.hideLoader();
+                        this.showAccessDenied(programAccess.error || "You don't have access to this program");
+                        return;
+                    }
+                    
+                    // Clear caches and load fresh data
+                    this.cacheManager.clearAll();
+                    await this.loadProgramData(programId);
+                    
+                } catch (error) {
+                    console.error("Error entering program:", error);
+                    this.hideLoader();
+                    this.showError("Failed to enter program. Please try again.");
+                }
+            }
+            
+            setupEventDelegation() {
+                document.addEventListener('click', (e) => {
+                    const target = e.target;
+                    
+                    if (target.closest('.back-button')) {
+                        this.handleBackButtonClick();
+                    }
+                    
+                    if (target.closest('#sign-in-prompt-button')) {
+                        this.handleSignInClick();
+                    }
+                    
+                    // Handle subject card clicks
+                    if (target.closest('.subject-card')) {
+                        const subjectCard = target.closest('.subject-card');
+                        const programId = subjectCard.dataset.programId;
+                        const subjectId = subjectCard.dataset.subjectId;
+                        if (programId && subjectId) {
+                            this.handleSubjectClick(programId, subjectId);
+                        }
+                    }
+                    
+                    // Handle logout from profile
+                    if (target.closest('#profile-logout-button')) {
+                        this.handleLogout();
+                    }
+                });
+            }
+            
+            setupSearchBox() {
+                const searchBox = document.querySelector('.search-box');
+                if (!searchBox) return;
+                
+                let searchTimeout;
+                
+                // Search on Enter key
+                searchBox.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        this.handleSearch(searchBox.value);
+                    }
+                });
+                
+                // Search on typing with debounce
+                searchBox.addEventListener('input', (e) => {
+                    clearTimeout(searchTimeout);
+                    searchTimeout = setTimeout(() => {
+                        this.handleSearch(searchBox.value);
+                    }, 500);
+                });
+            }
+            
+            async handleSearch(searchTerm) {
+                if (!searchTerm.trim()) return;
+                
+                console.log("Searching for courseId:", searchTerm);
+                
+                // Store the courseId
+                this.authManager.storeCourseId(searchTerm.trim());
+                
+                // If user is logged in, reload program data
+                if (this.authManager.isUserLoggedIn()) {
+                    this.showLoader();
+                    this.cacheManager.clearAll();
+                    await this.enterProgram();
+                } else {
+                    // If not logged in, show sign in prompt with pre-filled courseId
+                    this.showSignInPrompt();
+                }
+            }
+            
+            showError(message) {
+                console.error(message);
+                this.stateManager.setCurrentPageName('error');
+                this.updateTopBar();
+                
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="error-title">Error</div>
+                        <div class="error-message">
+                            ${message}
+                        </div>
+                        <button id="retry-button" class="signin-button" style="background: #3b82f6;">
+                            Retry
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('retry-button')?.addEventListener('click', () => {
+                    window.location.reload();
+                });
+            }
+            
+            showAccessDenied(message) {
+                this.stateManager.setCurrentPageName('error');
+                this.updateTopBar();
+                
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <div class="error-title">Access Denied</div>
+                        <div class="error-message">
+                            ${message || "You don't have permission to access this program."}
+                        </div>
+                        <button id="back-button" class="signin-button" style="background: #3b82f6;">
+                            Back to Home
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                document.getElementById('back-button')?.addEventListener('click', () => {
+                    this.handleLogout();
+                });
+            }
+            
+            updateTopBar() {
+                const pageName = this.stateManager.getCurrentPageName();
+                const isLoggedIn = this.authManager.isUserLoggedIn();
+                
+                if (pageName === 'home') {
+                    this.leftButtonContainer.innerHTML = `
+                        <button class="back-button">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                    `;
+                }
+                
+                let profileUrl = this.stateManager.getProfileImageUrl();
+                if (!profileUrl && isLoggedIn && this.authManager.currentUser) {
+                    profileUrl = this.authManager.currentUser.photoURL;
+                }
+                
+                if (profileUrl) {
+                    this.profileImageContainer.innerHTML = `
+                        <img src="${profileUrl}" alt="Profile" class="profile-image" onerror="this.src='https://placehold.co/40x40/3B82F6/FFFFFF?text=C'">
+                    `;
+                } else {
+                    this.profileImageContainer.innerHTML = `
+                        <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#6b7280;font-weight:600;">C</div>
+                    `;
+                }
+            }
+            
+            async handleAuthStateChange(user, isLoggedIn) {
+                console.log("Auth state change handling:", { user: user?.uid, isLoggedIn });
+                
+                // Prevent multiple simultaneous auth checks
+                if (this.authCheckInProgress) {
+                    console.log("Auth check already in progress, skipping...");
+                    return;
+                }
+                
+                this.authCheckInProgress = true;
+                
+                try {
+                    if (isLoggedIn && user) {
+                        console.log("User logged in, entering program...");
+                        
+                        // Show loader while transitioning
+                        this.showLoader();
+                        
+                        // Clear ALL caches
+                        this.cacheManager.clearAll();
+                        
+                        // Wait a moment to ensure auth is fully ready
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        
+                        // Enter program using unified function
+                        await this.enterProgram();
+                    } else {
+                        console.log("User logged out, showing sign in prompt...");
+                        this.stateManager.clearAllData();
+                        if (this.bannerSlider) {
+                            this.bannerSlider.destroy();
+                            this.bannerSlider = null;
+                        }
+                        this.hideLoader();
+                        this.showSignInPrompt();
+                    }
+                } catch (error) {
+                    console.error("Error in handleAuthStateChange:", error);
+                    this.hideLoader();
+                    this.showError("Authentication error occurred. Please try again.");
+                } finally {
+                    this.authCheckInProgress = false;
+                }
+            }
+            
+            handleSignInClick() {
+                this.authManager.showAuthModal();
+            }
+            
+            async handleLogout() {
+                try {
+                    await this.authManager.signOut();
+                    this.stateManager.clearAllData();
+                    if (this.bannerSlider) {
+                        this.bannerSlider.destroy();
+                        this.bannerSlider = null;
+                    }
+                    // After logout, the auth state change will trigger and show sign in prompt
+                } catch (error) {
+                    console.error("Logout error:", error);
+                }
+            }
+            
+            async handleSubjectClick(programId, subjectId) {
+                // Redirect to external URL with query params
+                const redirectUrl = `https://dilshadalmm.github.io/Embed/index1.html?programId=${programId}&subjectId=${subjectId}`;
+                window.location.href = redirectUrl;
+            }
+            
+            showSignInPrompt() {
+                this.stateManager.setCurrentPageName('signin-prompt');
+                this.updateTopBar();
+                
+                const html = `
+                    <div class="signin-prompt-container">
+                        <div class="signin-icon">
+                            <i class="fas fa-lock"></i>
+                        </div>
+                        <div class="signin-title">Sign In to Continue</div>
+                        <div class="signin-message">
+                            You need to sign in to access the content. Please sign in to continue.
+                        </div>
+                        <button id="sign-in-prompt-button" class="signin-button">
+                            Sign In to Continue
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+            }
+            
+            showInvalidCourseIdError() {
+                this.stateManager.setCurrentPageName('error');
+                this.updateTopBar();
+                
+                const html = `
+                    <div class="error-container">
+                        <div class="error-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="error-title">Invalid courseId</div>
+                        <div class="error-message">
+                            The course ID you entered is not valid. Please check and try again.
+                        </div>
+                        <button id="retry-button" class="signin-button" style="background: #ef4444;">
+                            Retry with Different courseId
+                        </button>
+                    </div>
+                `;
+                
+                this.chatContainer.innerHTML = html;
+                this.chatContainer.scrollTop = 0;
+                
+                // Add retry button event
+                document.getElementById('retry-button')?.addEventListener('click', () => {
+                    this.handleLogout();
+                });
+            }
+            
+            async loadProgramData(programId) {
+                const courseId = programId || this.authManager.getCourseId();
+                if (!courseId) {
+                    console.error("No courseId found");
+                    this.hideLoader();
+                    this.showInvalidCourseIdError();
+                    return;
+                }
+                
+                console.log("Loading program data for courseId:", courseId);
+                
+                // Check if we have cached program data
+                const cachedProgramData = this.cacheManager.getProgramData(courseId);
+                if (cachedProgramData) {
+                    console.log("Using cached program data");
+                    this.processProgramData(courseId, cachedProgramData);
+                    return;
+                }
+                
+                try {
+                    // Get program document by ID (since courseId = programId)
+                    const programDoc = await this.db.collection('programs').doc(courseId).get();
+                    
+                    if (!programDoc.exists) {
+                        this.hideLoader();
+                        console.error("Program document does not exist for courseId:", courseId);
+                        this.showInvalidCourseIdError();
+                        return;
+                    }
+                    
+                    const programIdFromDoc = programDoc.id;  // This should be the same as courseId
+                    const programData = programDoc.data();
+                    
+                    console.log("Program found:", { programId: programIdFromDoc, programData });
+                    
+                    // Cache the program data
+                    this.cacheManager.setProgramData(courseId, programData);
+                    
+                    // Process the program data
+                    await this.processProgramData(programIdFromDoc, programData);
+                    
+                } catch (error) {
+                    console.error("Error loading program data:", error);
+                    this.hideLoader();
+                    
+                    if (this.authManager.isUserLoggedIn()) {
+                        this.renderHomePage();
+                    } else {
+                        this.showError("Failed to load program data. Please try again.");
+                    }
+                }
+            }
+            
+            async processProgramData(programId, programData) {
+                console.log("Processing program data for programId:", programId);
+                
+                // Get banner images from program
+                const bannerImages = programData.imageUrl || [];
+                
+                // Get profile image from program document
+                const profileImage = programData.profileImage || null;
+                if (profileImage) {
+                    this.stateManager.setProfileImageUrl(profileImage);
+                    this.updateTopBar();
+                }
+                
+                // Store program data - courseId = programId
+                this.stateManager.setProgramData(programId, programId, bannerImages);
+                
+                // Load subjects, lectures, and permissions sequentially to ensure proper order
+                await this.loadSubjects(programId);
+                await this.loadLatestLectures(programId);
+                await this.loadSubjectPermissions(programId);
+                
+                this.renderHomePage();
+                this.hideLoader();
+            }
+            
+            async loadSubjects(programId) {
+                console.log("Loading subjects for programId:", programId);
+                
+                try {
+                    const subjectsSnapshot = await this.db.collection('programs')
+                        .doc(programId)
+                        .collection('subjects')
+                        .get();
+                    
+                    const subjects = [];
+                    subjectsSnapshot.forEach(doc => {
+                        const data = doc.data();
+                        subjects.push({
+                            id: doc.id,
+                            title: data.title || 'Untitled Subject',
+                            mentorName: data.mentorName || 'Unknown Mentor',
+                            thumbnailUrl: data.thumbnailUrl || '',
+                            lectureCount: 0 // Will be updated when we count lectures
+                        });
+                    });
+                    
+                    console.log(`Loaded ${subjects.length} subjects`);
+                    this.stateManager.setSubjects(subjects);
+                    
+                } catch (error) {
+                    console.error("Error loading subjects:", error);
+                    this.stateManager.setSubjects([]);
+                }
+            }
+            
+            async loadSubjectPermissions(programId) {
+                const user = this.authManager.currentUser;
+                if (!user) {
+                    console.error("No user found when loading subject permissions");
+                    return;
+                }
+                
+                const subjects = this.stateManager.subjects;
+                console.log(`Loading permissions for ${subjects.length} subjects for user:`, user.uid);
+                
+                // Clear all cached permissions for this user first
+                this.cacheManager.clearUserCaches(user.uid);
+                
+                const permissionPromises = subjects.map(async (subject) => {
+                    try {
+                        console.log(`Checking permission for subject: ${subject.id}`);
+                        
+                        // Force refresh without cache
+                        const permission = await this.permissionManager.refreshUserPermissionForSubject(
+                            user.uid,
+                            programId,
+                            subject.id
+                        );
+                        
+                        console.log(`Permission result for subject ${subject.id}:`, permission);
+                        
+                        // Store in state manager
+                        this.stateManager.setSubjectPermission(subject.id, permission);
+                        
+                        return { subjectId: subject.id, permission };
+                    } catch (error) {
+                        console.error(`Error loading permission for subject ${subject.id}:`, error);
+                        this.stateManager.setSubjectPermission(subject.id, { 
+                            hasAccess: false, 
+                            error: error.message 
+                        });
+                        return { 
+                            subjectId: subject.id, 
+                            permission: { hasAccess: false, error: error.message } 
+                        };
+                    }
+                });
+                
+                await Promise.all(permissionPromises);
+                console.log("All subject permissions loaded");
+            }
+            
+            async loadLatestLectures(programId) {
+                console.log("Loading latest lectures for programId:", programId);
+                
+                try {
+                    // Load lectures from freeLectures collection
+                    const lecturesSnapshot = await this.db.collection('programs')
+                        .doc(programId)
+                        .collection('freeLectures')
+                        .orderBy('uploadedAt', 'desc')
+                        .get();
+                    
+                    const latestLectures = [];
+                    
+                    lecturesSnapshot.forEach(doc => {
+                        const lectureData = doc.data();
+                        
+                        // Check if lectureTitle is an image URL
+                        const lectureTitle = lectureData.lectureTitle || '';
+                        const isImageUrl = this.isImageUrl(lectureTitle);
+                        
+                        latestLectures.push({
+                            id: doc.id,
+                            title: isImageUrl ? 'Image Content' : lectureTitle,
+                            mentorName: lectureData.mentorName || 'Unknown Mentor',
+                            date: lectureData.uploadedAt ? this.formatDate(lectureData.uploadedAt.toDate()) : 'N/A',
+                            videoUrl: lectureData.lectureUrl || '',
+                            mentorProfile: lectureData.mentorProfile || '',
+                            lectureOrder: lectureData.lectureOrder || 0,
+                            isImage: isImageUrl,
+                            imageUrl: isImageUrl ? lectureTitle : null
+                        });
+                    });
+                    
+                    // Sort by lectureOrder if available
+                    latestLectures.sort((a, b) => (a.lectureOrder || 0) - (b.lectureOrder || 0));
+                    
+                    console.log(`Loaded ${latestLectures.length} lectures`);
+                    this.stateManager.setLatestLectures(latestLectures);
+                    
+                } catch (error) {
+                    console.error("Error loading latest lectures:", error);
+                    this.stateManager.setLatestLectures([]);
+                }
+            }
+            
+            isImageUrl(url) {
+                if (!url || typeof url !== 'string') return false;
+                const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'];
+                const lowerUrl = url.toLowerCase();
+                return imageExtensions.some(ext => lowerUrl.includes(ext));
+            }
+            
+            formatDate(date) {
+                if (!date) return 'N/A';
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            
+            extractVideoId(url) {
+                if (!url) return '';
+                
+                // Handle various YouTube URL formats
+                if (url.includes('youtube.com/watch?v=')) {
+                    const videoId = url.split('v=')[1];
+                    const ampersandPosition = videoId.indexOf('&');
+                    if (ampersandPosition !== -1) {
+                        return videoId.substring(0, ampersandPosition);
+                    }
+                    return videoId;
+                } else if (url.includes('youtu.be/')) {
+                    const videoId = url.split('youtu.be/')[1];
+                    const questionMarkPosition = videoId.indexOf('?');
+                    if (questionMarkPosition !== -1) {
+                        return videoId.substring(0, questionMarkPosition);
+                    }
+                    return videoId;
+                } else if (url.includes('youtube.com/embed/')) {
+                    const videoId = url.split('embed/')[1];
+                    const slashPosition = videoId.indexOf('/');
+                    if (slashPosition !== -1) {
+                        return videoId.substring(0, slashPosition);
+                    }
+                    return videoId;
+                }
+                
+                return url.trim();
+            }
+            
+            renderHomePage() {
+                this.stateManager.setCurrentPageName('home');
+                this.updateTopBar();
+                
+                const bannerImages = this.stateManager.bannerImages;
+                const subjects = this.stateManager.subjects;
+                const latestLectures = this.stateManager.latestLectures;
+                const programId = this.stateManager.programId;
+                const user = this.authManager.currentUser;
+                
+                console.log("Rendering home page with:", {
+                    bannerImagesCount: bannerImages.length,
+                    subjectsCount: subjects.length,
+                    lecturesCount: latestLectures.length,
+                    programId,
+                    userUid: user?.uid
+                });
+                
+                let homeHtml = `
+                    <div class="home-container">
+                `;
+                
+                // Banner Slider Section
+                if (bannerImages.length > 0) {
+                    homeHtml += `
+                        <div id="banner-slider-container" class="banner-container"></div>
+                    `;
+                }
+                
+                // Subjects Section - REMOVED TITLE
+                homeHtml += `
+                    <div id="subjects-list">
+                `;
+                
+                if (subjects.length === 0) {
+                    homeHtml += `
+                        <div style="padding: 20px 16px; text-align: center; color: #6b7280;">
+                            No subjects available.
+                        </div>
+                    `;
+                } else {
+                    subjects.forEach(subject => {
+                        const thumbnailUrl = subject.thumbnailUrl || 
+                                           (bannerImages.length > 0 ? bannerImages[0] : 
+                                           'https://placehold.co/80x80/3B82F6/FFFFFF?text=Subject');
+                        
+                        // Get permission status for this subject
+                        const permission = user ? this.stateManager.getSubjectPermission(subject.id) : { hasAccess: false };
+                        const badgeClass = permission.hasAccess ? 'enrollment-badge continue' : 'enrollment-badge not-enrolled';
+                        const badgeText = permission.hasAccess ? 'Continue' : 'Not enrolled';
+                        
+                        console.log(`Subject ${subject.id} permission:`, permission);
+                        
+                        homeHtml += `
+                            <div class="subject-card" data-program-id="${programId}" data-subject-id="${subject.id}">
+                                <div class="subject-image-container">
+                                    <img src="${thumbnailUrl}" alt="${subject.title}" class="subject-image"
+                                         onerror="this.src='https://placehold.co/80x80/3B82F6/FFFFFF?text=Subject'">
+                                </div>
+                                <div class="subject-info">
+                                    <div class="subject-title">${subject.title}</div>
+                                    <div class="subject-meta">
+                                        <span class="mentor-name">${subject.mentorName}</span>
+                                        <span class="${badgeClass}">${badgeText}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                homeHtml += `
+                    </div>
+                `;
+                
+                // Latest Lectures Section (without title as requested)
+                homeHtml += `
+                    <div class="latest-lectures-container">
+                        <div id="latest-lectures">
+                `;
+                
+                if (latestLectures.length === 0) {
+                    homeHtml += `
+                        <div style="padding: 20px 16px; text-align: center; color: #6b7280;">
+                            No lectures available.
+                        </div>
+                    `;
+                } else {
+                    latestLectures.forEach((lecture, index) => {
+                        if (lecture.isImage) {
+                            // Render image content
+                            homeHtml += `
+                                <div class="lecture-item">
+                                    <div class="video-player-full">
+                                        <div class="image-content-container">
+                                            <img src="${lecture.imageUrl}" alt="Lecture Image" class="lecture-image"
+                                                 onerror="this.src='https://placehold.co/400x225/3B82F6/FFFFFF?text=Image+Not+Found'">
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mentor-info-container">
+                                        <div class="mentor-profile-image">
+                                            <img src="${lecture.mentorProfile || 'https://placehold.co/60x60/3B82F6/FFFFFF?text=M'}" 
+                                                 alt="${lecture.mentorName}" 
+                                                 onerror="this.src='https://placehold.co/60x60/3B82F6/FFFFFF?text=M'">
+                                        </div>
+                                        
+                                        <div class="mentor-text-container">
+                                            <div class="video-title">${lecture.title}</div>
+                                            <div class="mentor-name">
+                                                ${lecture.mentorName}
+                                                <span class="lecture-date">${lecture.date}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            // Render video player
+                            const videoId = this.extractVideoId(lecture.videoUrl);
+                            const uniqueId = `home-video-${lecture.id}-${Date.now()}`;
+                            
+                            homeHtml += `
+                                <div class="lecture-item">
+                                    ${this.renderSingleVideoPlayer(videoId, uniqueId)}
+                                    
+                                    <div class="mentor-info-container">
+                                        <div class="mentor-profile-image">
+                                            <img src="${lecture.mentorProfile || 'https://placehold.co/60x60/3B82F6/FFFFFF?text=M'}" 
+                                                 alt="${lecture.mentorName}" 
+                                                 onerror="this.src='https://placehold.co/60x60/3B82F6/FFFFFF?text=M'">
+                                        </div>
+                                        
+                                        <div class="mentor-text-container">
+                                            <div class="video-title">${lecture.title}</div>
+                                            <div class="mentor-name">
+                                                ${lecture.mentorName}
+                                                <span class="lecture-date">${lecture.date}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    });
+                }
+                
+                homeHtml += `
+                        </div>
+                    </div>
+                </div>
+                `;
+                
+                this.chatContainer.innerHTML = homeHtml;
+                this.chatContainer.scrollTop = 0;
+                
+                // Initialize banner slider if images exist
+                if (bannerImages.length > 0) {
+                    if (this.bannerSlider) {
+                        this.bannerSlider.destroy();
+                    }
+                    this.bannerSlider = new BannerSlider('banner-slider-container', bannerImages);
+                }
+                
+                // Initialize video players
+                setTimeout(initVideoPlayers, 500);
+            }
+            
+            renderSingleVideoPlayer(videoId, uniqueId) {
+                return `
+                    <div class="video-player-full">
+                        <div class="video-wrapper" style="width: 100%; margin: 0;">
+                            <div class="video-player-container" id="${uniqueId}" data-video-id="${videoId}">
+                                <div class="double-tap-indicator double-tap-left">
+                                    <div class="double-tap-text">10 sec</div>
+                                </div>
+                                <div class="double-tap-indicator double-tap-right">
+                                    <div class="double-tap-text">20 sec</div>
+                                </div>
+                                
+                                <div class="youtube-iframe-wrapper">
+                                </div>
+                                <div class="video-overlay">
+                                    <div class="modern-control-bar">
+                                        <div class="top-progress-container" title="Progress">
+                                            <div class="progress-track"></div>
+                                            <div class="progress-thumb"></div>
+                                        </div>
+                                        
+                                        <div class="controls-row">
+                                            <div class="left-controls">
+                                                <button class="control-btn play-pause-btn" title="Play/Pause">
+                                                    <svg class="play-icon" width="24" height="24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                                                        <path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zM188.3 147.1c7.6-4.2 16.8-4.1 24.3 .5l144 88c7.1 4.4 11.5 12.1 11.5 20.5s-4.4 16.1-11.5 20.5l-144 88c-7.4 4.5-16.7 4.7-24.3 .5s-12.3-12.2-12.3-20.9V168c0-8.7 4.7-16.7 12.3-20.9z"/>
+                                                    </svg>
+                                                    <svg class="pause-icon" style="display:none;" width="24" height="24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                                                        <path d="M464 256A208 208 0 1 0 48 256a208 208 0 1 0 416 0zM0 256a256 256 0 1 1 512 0A256 256 0 1 1 0 256zm224-72V328c0 13.3-10.7 24-24 24s-24-10.7-24-24V184c0-13.3 10.7-24 24-24s24 10.7 24 24zm112 0V328c0 13.3-10.7 24-24 24s-24-10.7-24-24V184c0-13.3 10.7-24 24-24s24 10.7 24 24z"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                            
+                                            <div class="center-controls">
+                                                <span class="time-display">0:00 / 0:00</span>
+                                            </div>
+                                            
+                                            <div class="right-controls">
+                                                <div class="speed-control">
+                                                    <button class="control-btn speed-btn" title="Playback Speed">1x</button>
+                                                </div>
+                                                
+                                                <button class="control-btn volume-btn" title="Volume">
+                                                    <i class="fas fa-volume-up"></i>
+                                                </button>
+                                                
+                                                <button class="control-btn fullscreen-btn" title="Fullscreen">
+                                                    <i class="fas fa-expand"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="video-loading">
+                                        <div class="video-loading-spinner"></div>
+                                        <span>Loading video...</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            handleBackButtonClick() {
+                const currentPage = this.stateManager.getCurrentPageName();
+                
+                if (currentPage === 'error' || currentPage === 'signin-prompt') {
+                    window.location.reload();
+                } else if (currentPage === 'home') {
+                    // Clean up video players when leaving home page
+                    cleanupVideoPlayers();
+                }
+                // For home page, back button might open a menu in the future
+            }
+        }
+        
+        let app;
+        
+        window.addEventListener('load', () => {
+            app = new ConceptBlitzApp();
+        });
+        
+        window.ConceptBlitzApp = ConceptBlitzApp;
+    </script>
+</body>
+</html>
