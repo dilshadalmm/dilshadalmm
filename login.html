@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>STUDENTPLUS - Secure Login</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Disable text selection and copying */
+        * {
+            -webkit-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        /* Allow typing in input fields */
+        input {
+            -webkit-user-select: text;
+            -ms-user-select: text;
+            user-select: text;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+
+        .form-container {
+            touch-action: pan-y;
+        }
+
+        .font-creepster {
+            font-family: 'Creepster', cursive;
+            letter-spacing: 0.05em;
+        }
+
+        .loader {
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 2px solid #ffffff;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+    <div class="form-container max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden transition-all duration-300">
+        <div class="p-8">
+            <div class="text-center mb-8">
+                <h2 id="formTitle" class="text-4xl text-gray-800 font-creepster">STUDENTPLUS</h2>
+                <p id="formSubtitle" class="text-sm text-gray-500 mt-2">Please enter your details to sign in.</p>
+            </div>
+
+            <form id="authForm" class="space-y-5">
+                <!-- Error Message UI -->
+                <div id="errorMessage" class="hidden bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-200">
+                </div>
+
+                <div>
+                    <label for="userId" class="block text-sm font-medium text-gray-700 mb-1">User ID</label>
+                    <input 
+                        type="text" 
+                        id="userId" 
+                        required 
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                        placeholder="Enter your user ID"
+                        autocomplete="username"
+                    >
+                </div>
+
+                <div>
+                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input 
+                        type="password" 
+                        id="password" 
+                        required 
+                        class="w-full px-4 py-2.5 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+                        placeholder="••••••••"
+                        autocomplete="current-password"
+                    >
+                </div>
+
+                <button 
+                    type="submit" 
+                    id="submitBtn"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors duration-200 flex justify-center items-center mt-2"
+                >
+                    <span id="btnText">Sign In</span>
+                </button>
+            </form>
+
+            <div class="mt-6 text-center">
+                <p class="text-sm text-gray-600">
+                    <span id="toggleText">Don't have an account?</span> 
+                    <button id="toggleModeBtn" class="text-blue-600 font-semibold hover:underline ml-1 outline-none">
+                        Register here
+                    </button>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Security: Disable Right Click, Copy Shortcuts, and Zoom
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.ctrlKey && (e.key === 'c' || e.key === 'u' || e.key === 's' || e.key === 'p' || e.key === 'a')) e.preventDefault();
+            if (e.ctrlKey && (e.key === '=' || e.key === '-' || e.key === '0' || e.key === '+')) e.preventDefault();
+        });
+        document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+        document.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('authForm');
+            const userIdInput = document.getElementById('userId');
+            const passwordInput = document.getElementById('password');
+            const submitBtn = document.getElementById('submitBtn');
+            const btnText = document.getElementById('btnText');
+            const formTitle = document.getElementById('formTitle');
+            const formSubtitle = document.getElementById('formSubtitle');
+            const toggleText = document.getElementById('toggleText');
+            const toggleModeBtn = document.getElementById('toggleModeBtn');
+            const errorMessage = document.getElementById('errorMessage');
+
+            let isLoginMode = true;
+            const REDIRECT_URL = 'https://dilshadalmm.github.io/dilshadalmm/dilshadai.html';
+
+            // Reset Error on input change
+            [userIdInput, passwordInput].forEach(el => {
+                el.addEventListener('input', () => errorMessage.classList.add('hidden'));
+            });
+
+            // Toggle Mode Logic
+            toggleModeBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                isLoginMode = !isLoginMode;
+                errorMessage.classList.add('hidden');
+                
+                if (isLoginMode) {
+                    formTitle.textContent = 'STUDENTPLUS';
+                    formTitle.classList.add('font-creepster', 'text-4xl');
+                    formTitle.classList.remove('font-bold', 'text-2xl');
+                    formSubtitle.textContent = 'Please enter your details to sign in.';
+                    btnText.textContent = 'Sign In';
+                    toggleText.textContent = "Don't have an account?";
+                    toggleModeBtn.textContent = 'Register here';
+                } else {
+                    formTitle.textContent = 'Create Account';
+                    formTitle.classList.remove('font-creepster', 'text-4xl');
+                    formTitle.classList.add('font-bold', 'text-2xl');
+                    formSubtitle.textContent = 'Sign up to get started.';
+                    btnText.textContent = 'Register';
+                    toggleText.textContent = "Already have an account?";
+                    toggleModeBtn.textContent = 'Sign in here';
+                }
+            });
+
+            // Submit Handler
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const userId = userIdInput.value.trim();
+                const password = passwordInput.value;
+
+                if (!userId || !password) return;
+
+                // Loading state
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-80', 'cursor-not-allowed');
+                btnText.innerHTML = '<span class="loader"></span> Processing...';
+                errorMessage.classList.add('hidden');
+
+                const endpoint = isLoginMode 
+                    ? 'https://dilshadalmm.onrender.com/login' 
+                    : 'https://dilshadalmm.onrender.com/register';
+
+                try {
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ userId, password })
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        // Throw specific error message if available from server
+                        throw new Error(data.error || data.message || 'Authentication failed. Please check your credentials.');
+                    }
+
+                    // SECURITY: Clear sensitive data from memory and NEVER save password to localStorage
+                    localStorage.removeItem('password'); 
+                    
+                    // SAVE: Only non-sensitive session data
+                    localStorage.setItem('userId', data.userId || userId);
+                    localStorage.setItem('apiKey', data.apiKey);
+
+                    // REDIRECT: Immediately
+                    window.location.href = REDIRECT_URL;
+
+                } catch (error) {
+                    // Display meaningful error
+                    errorMessage.textContent = error.message;
+                    errorMessage.classList.remove('hidden');
+                    
+                    // RESET Button UI
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-80', 'cursor-not-allowed');
+                    btnText.textContent = isLoginMode ? 'Sign In' : 'Register';
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
