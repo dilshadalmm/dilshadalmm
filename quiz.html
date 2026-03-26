@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>StudentPlus - MCQ Quiz | LaTeX Support</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- MathJax 3 with LaTeX support -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true,
+                packages: {'[+]': ['ams', 'noerrors']}
+            },
+            options: {
+                ignoreHtmlClass: 'no-mathjax',
+                processHtmlClass: 'math-content'
+            },
+            startup: {
+                pageReady: () => {
+                    return MathJax.startup.defaultPageReady();
+                }
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js" id="MathJax-script" async></script>
+    
+    <style>
+        /* Global styles (unchanged) */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        html, body, div, span, p, h1, h2, h3, h4, h5, h6, label, button, select, input, .option-container, .question-text, .q-tag, .solution-box, .correct-answer-box {
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        input, select, textarea, button {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        html {
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+        body {
+            background-color: #f8fafc;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 10px 0 60px 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            touch-action: pan-y;
+            position: relative;
+        }
+        body::-webkit-scrollbar {
+            display: none;
+            width: 0;
+            background: transparent;
+        }
+        body {
+            scrollbar-width: none;
+        }
+        .main-container {
+            width: 97%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            padding: 20px 8px;
+            max-width: 100%;
+            overflow-x: visible;
+        }
+        .logo-text {
+            font-family: 'Creepster', system-ui;
+            font-size: 2.5rem;
+            text-decoration: underline;
+            text-align: center;
+            margin-bottom: 24px;
+            color: #000000;
+        }
+        .setup-form {
+            max-width: 500px;
+            margin: 20px auto 40px auto;
+            padding: 24px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            background: #ffffff;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #475569;
+            margin-bottom: 6px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-color: #fff;
+        }
+        .form-input:focus {
+            border-color: #000000;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+        }
+        .start-btn {
+            width: 100%;
+            background-color: #000000;
+            color: white;
+            padding: 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 1rem;
+            margin-top: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            letter-spacing: 0.025em;
+            border: none;
+        }
+        .start-btn:hover {
+            background-color: #262626;
+        }
+        .quiz-header {
+            background-color: #000000;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin: 0 4px 24px 4px;
+            color: white;
+        }
+        .header-line {
+            padding: 8px 0;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+        .header-line:not(:last-child) {
+            border-bottom: 1px solid #334155;
+        }
+        .inline-divider {
+            width: 1px;
+            height: 14px;
+            background-color: #475569;
+            margin: 0 12px;
+        }
+        .question-item {
+            background-color: #f1f5f9; 
+            padding: 16px 12px;
+            border-radius: 4px;
+            margin: 20px 4px;
+        }
+        .q-tag {
+            display: inline-block;
+            background-color: #000000;
+            color: #ffffff;
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.05em;
+        }
+        .question-text {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .option-container {
+            display: flex;
+            align-items: center;
+            padding: 10px 14px;
+            margin: 6px 0;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            color: #334155;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background-color: #ffffff;
+        }
+        .option-container:hover {
+            background-color: #f8fafc;
+            border-color: #94a3b8;
+        }
+        .option-container input {
+            margin-right: 12px;
+            accent-color: #000000;
+            pointer-events: auto;
+        }
+        /* Correct/Wrong backgrounds */
+        .option-container.correct-bg {
+            background-color: #d1fae5;
+            border-color: #10b981;
+        }
+        .option-container.wrong-bg {
+            background-color: #fee2e2;
+            border-color: #ef4444;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        .action-btn {
+            background-color: #334155;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.2s;
+        }
+        .action-btn:hover {
+            opacity: 0.9;
+        }
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .submit-btn {
+            background-color: #059669;
+        }
+        .text-solution-btn, .video-solution-btn {
+            background-color: #4b5563;
+        }
+        .solution-container {
+            margin-top: 12px;
+            display: none;
+        }
+        .solution-container.visible {
+            display: block;
+        }
+        .solution-box {
+            padding: 12px;
+            background-color: #ecfdf5;
+            border-left: 4px solid #10b981;
+            font-size: 0.85rem;
+            color: #065f46;
+            border-radius: 4px;
+        }
+        .video-container {
+            margin-top: 12px;
+            width: 100%;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .video-container iframe,
+        .video-container video {
+            width: 100%;
+            max-width: 100%;
+            border-radius: 4px;
+            display: block;
+        }
+        .correct-answer-box {
+            margin-top: 12px;
+            padding: 12px;
+            background-color: #fef9c3;
+            border-left: 4px solid #eab308;
+            font-size: 0.85rem;
+            color: #854d0e;
+            border-radius: 4px;
+            display: none;
+        }
+        .correct-answer-box.visible {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .correct-answer-label {
+            font-weight: 700;
+        }
+        #quizSection {
+            display: none;
+            padding-top: 20px;
+        }
+        .loader {
+            text-align: center;
+            padding: 40px;
+            font-size: 1rem;
+            color: #4b5563;
+        }
+        .error-message {
+            background-color: #fee2e2;
+            border-left: 4px solid #ef4444;
+            padding: 12px;
+            margin: 20px 4px;
+            border-radius: 4px;
+            color: #991b1b;
+        }
+        img, svg, iframe, video {
+            max-width: 100%;
+        }
+        /* ensure math content has proper line height */
+        mjx-container {
+            display: inline-block;
+            margin: 0 2px;
+        }
+        .math-content {
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body oncontextmenu="return false" ondragstart="return false" onselectstart="return false" class="math-content">
+
+    <div class="main-container">
+        <!-- Form Section -->
+        <div id="setupSection" class="setup-form">
+            <h1 class="logo-text">StudentPlus</h1>
+            
+            <div class="form-group">
+                <label class="form-label">Select Course</label>
+                <select id="courseSelect" class="form-input">
+                    <option value="">Loading courses...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Select Subject</label>
+                <select id="subjectSelect" class="form-input" disabled>
+                    <option value="">Select a course first</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Select Chapter</label>
+                <select id="chapterSelect" class="form-input" disabled>
+                    <option value="">Select a subject first</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">No. of questions</label>
+                <input type="number" id="qCount" class="form-input" value="14" min="1" max="100">
+            </div>
+            <button class="start-btn" onclick="startQuiz()">Proceed</button>
+        </div>
+
+        <!-- Quiz Section -->
+        <div id="quizSection">
+            <div class="quiz-header" id="quizHeader">
+                <div class="header-line">
+                    <span id="displayCourse"></span>
+                    <div class="inline-divider"></div>
+                    <span id="displaySubject"></span>
+                </div>
+                <div id="displayChapter" class="header-line"></div>
+                <div id="displayTotal" class="header-line"></div>
+            </div>
+            
+            <div id="questionsContainer">
+                <!-- Questions will be dynamically inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ---------- DISABLE ZOOM & COPY PROTECTION ----------
+        function disableZoomShortcuts(e) {
+            if (e.ctrlKey || e.metaKey) {
+                if (e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 48 || e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0') {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+        }
+        window.addEventListener('wheel', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                return false;
+            }
+        }, { passive: false });
+        document.addEventListener('keydown', disableZoomShortcuts);
+        let lastTouchEnd = 0;
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) event.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchend', function(event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) event.preventDefault();
+            lastTouchEnd = now;
+        }, false);
+        
+        function blockCopyEvent(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+        document.addEventListener('copy', blockCopyEvent);
+        document.addEventListener('cut', blockCopyEvent);
+        document.addEventListener('paste', blockCopyEvent);
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        document.addEventListener('dragstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        document.body.style.webkitTouchCallout = 'none';
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'u')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+        
+        // ---------- BACKEND API URL ----------
+        const API_BASE = 'https://dilshadalmm.onrender.com';
+        
+        // DOM elements
+        const courseSelect = document.getElementById('courseSelect');
+        const subjectSelect = document.getElementById('subjectSelect');
+        const chapterSelect = document.getElementById('chapterSelect');
+        const qCountInput = document.getElementById('qCount');
+        
+        // Helper to fetch data with error handling
+        async function fetchData(endpoint) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Unknown error');
+                return data;
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                throw error;
+            }
+        }
+        
+        // Load classes on page load
+        async function loadClasses() {
+            courseSelect.innerHTML = '<option value="">Loading...</option>';
+            try {
+                const data = await fetchData('/api/classes');
+                const classes = data.classes || [];
+                courseSelect.innerHTML = '<option value="">Select a course</option>';
+                if (classes.length === 0) {
+                    courseSelect.innerHTML = '<option value="">No courses available</option>';
+                    return;
+                }
+                classes.forEach(cls => {
+                    const option = document.createElement('option');
+                    option.value = cls;
+                    option.textContent = cls;
+                    courseSelect.appendChild(option);
+                });
+                if (courseSelect.value) {
+                    loadSubjects(courseSelect.value);
+                }
+            } catch (error) {
+                courseSelect.innerHTML = '<option value="">Error loading courses</option>';
+                console.error(error);
+            }
+        }
+        
+        // Load subjects for a given class
+        async function loadSubjects(className) {
+            subjectSelect.disabled = true;
+            subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
+            chapterSelect.disabled = true;
+            chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            try {
+                const data = await fetchData(`/api/subjects?class=${encodeURIComponent(className)}`);
+                const subjects = data.subjects || [];
+                subjectSelect.innerHTML = '<option value="">Select a subject</option>';
+                if (subjects.length === 0) {
+                    subjectSelect.innerHTML = '<option value="">No subjects available</option>';
+                    return;
+                }
+                subjects.forEach(sub => {
+                    const option = document.createElement('option');
+                    option.value = sub;
+                    option.textContent = sub;
+                    subjectSelect.appendChild(option);
+                });
+                subjectSelect.disabled = false;
+                if (subjectSelect.value) {
+                    loadChapters(className, subjectSelect.value);
+                }
+            } catch (error) {
+                subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+                console.error(error);
+            }
+        }
+        
+        // Load chapters for a given class and subject
+        async function loadChapters(className, subjectName) {
+            chapterSelect.disabled = true;
+            chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
+            try {
+                const data = await fetchData(`/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
+                const chapters = data.chapters || [];
+                chapterSelect.innerHTML = '<option value="">Select a chapter</option>';
+                if (chapters.length === 0) {
+                    chapterSelect.innerHTML = '<option value="">No chapters available</option>';
+                    return;
+                }
+                chapters.forEach(ch => {
+                    const option = document.createElement('option');
+                    option.value = ch;
+                    option.textContent = ch;
+                    chapterSelect.appendChild(option);
+                });
+                chapterSelect.disabled = false;
+            } catch (error) {
+                chapterSelect.innerHTML = '<option value="">Error loading chapters</option>';
+                console.error(error);
+            }
+        }
+        
+        // Event listeners
+        courseSelect.addEventListener('change', (e) => {
+            const selectedClass = e.target.value;
+            if (selectedClass) {
+                loadSubjects(selectedClass);
+            } else {
+                subjectSelect.disabled = true;
+                subjectSelect.innerHTML = '<option value="">Select a course first</option>';
+                chapterSelect.disabled = true;
+                chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            }
+        });
+        
+        subjectSelect.addEventListener('change', (e) => {
+            const selectedClass = courseSelect.value;
+            const selectedSubject = e.target.value;
+            if (selectedClass && selectedSubject) {
+                loadChapters(selectedClass, selectedSubject);
+            } else {
+                chapterSelect.disabled = true;
+                chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            }
+        });
+        
+        // Helper to convert YouTube URL to embed URL
+        function getYouTubeEmbedUrl(url) {
+            if (!url) return null;
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?#]+)/,
+                /youtube\.com\/embed\/([^?]+)/
+            ];
+            for (let pattern of patterns) {
+                const match = url.match(pattern);
+                if (match && match[1]) {
+                    return `https://www.youtube.com/embed/${match[1]}`;
+                }
+            }
+            return null;
+        }
+        
+        // Create video element based on URL
+        function createVideoElement(url) {
+            if (!url) return null;
+            const container = document.createElement('div');
+            container.className = 'video-container';
+            
+            const youtubeEmbed = getYouTubeEmbedUrl(url);
+            if (youtubeEmbed) {
+                const iframe = document.createElement('iframe');
+                iframe.src = youtubeEmbed;
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                iframe.allowFullscreen = true;
+                iframe.frameBorder = '0';
+                iframe.style.width = '100%';
+                iframe.style.aspectRatio = '16/9';
+                container.appendChild(iframe);
+            } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
+                const video = document.createElement('video');
+                video.controls = true;
+                video.preload = 'metadata';
+                video.style.width = '100%';
+                const source = document.createElement('source');
+                source.src = url;
+                source.type = 'video/mp4';
+                video.appendChild(source);
+                container.appendChild(video);
+            } else {
+                const link = document.createElement('a');
+                link.href = url;
+                link.textContent = 'Watch video solution';
+                link.target = '_blank';
+                link.style.color = '#065f46';
+                link.style.textDecoration = 'underline';
+                container.appendChild(link);
+            }
+            return container;
+        }
+        
+        // Helper to trigger MathJax on a specific DOM element (or whole document)
+        async function typesetElement(element) {
+            if (!window.MathJax) return;
+            try {
+                await MathJax.typesetPromise([element]);
+            } catch (err) {
+                console.warn("MathJax typeset error:", err);
+            }
+        }
+        
+        // Render questions with interactive buttons and LaTeX support
+        function renderQuestions(questions) {
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '';
+            
+            if (!questions || questions.length === 0) {
+                container.innerHTML = '<div class="error-message">No questions found for the selected criteria. Please try different options.</div>';
+                return;
+            }
+            
+            questions.forEach((q, idx) => {
+                const questionDiv = document.createElement('div');
+                questionDiv.className = 'question-item';
+                
+                // Question tag and text
+                const qTag = document.createElement('div');
+                qTag.className = 'q-tag';
+                qTag.textContent = `Question ${idx + 1}`;
+                
+                const qText = document.createElement('div');
+                qText.className = 'question-text';
+                qText.textContent = q.questionText || '';
+                
+                // Options
+                const optionsDiv = document.createElement('div');
+                optionsDiv.className = 'options-list';
+                if (q.questionImageUrl) {
+                    const img = document.createElement('img');
+                    img.src = q.questionImageUrl;
+                    img.alt = 'Question illustration';
+                    img.style.maxWidth = '100%';
+                    img.style.marginBottom = '12px';
+                    img.style.borderRadius = '4px';
+                    optionsDiv.appendChild(img);
+                }
+                
+                const options = q.options || [];
+                const optionContainers = [];
+                options.forEach((opt, optIdx) => {
+                    const label = document.createElement('label');
+                    label.className = 'option-container';
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = `q_${idx}`;
+                    radio.value = optIdx;
+                    const span = document.createElement('span');
+                    span.textContent = opt;  // raw text with LaTeX delimiters
+                    label.appendChild(radio);
+                    label.appendChild(span);
+                    optionsDiv.appendChild(label);
+                    optionContainers.push(label);
+                });
+                
+                // Action buttons row
+                const actionRow = document.createElement('div');
+                actionRow.className = 'action-buttons';
+                
+                // Submit button
+                const submitBtn = document.createElement('button');
+                submitBtn.textContent = 'Submit';
+                submitBtn.className = 'action-btn submit-btn';
+                
+                // Text Solution button (initially disabled)
+                const textSolutionBtn = document.createElement('button');
+                textSolutionBtn.textContent = 'Text Solution';
+                textSolutionBtn.className = 'action-btn text-solution-btn';
+                textSolutionBtn.disabled = true;
+                
+                // Video Solution button
+                const videoSolutionBtn = document.createElement('button');
+                videoSolutionBtn.textContent = 'Video Solution';
+                videoSolutionBtn.className = 'action-btn video-solution-btn';
+                videoSolutionBtn.disabled = true;
+                
+                actionRow.appendChild(submitBtn);
+                actionRow.appendChild(textSolutionBtn);
+                actionRow.appendChild(videoSolutionBtn);
+                
+                // Correct answer box (safe DOM)
+                const correctAnswerBox = document.createElement('div');
+                correctAnswerBox.className = 'correct-answer-box';
+                const correctLabel = document.createElement('span');
+                correctLabel.className = 'correct-answer-label';
+                correctLabel.textContent = 'Correct Answer:';
+                const correctAnswerSpan = document.createElement('span');
+                correctAnswerSpan.textContent = options[q.correctIndex] || 'N/A';
+                correctAnswerBox.appendChild(correctLabel);
+                correctAnswerBox.appendChild(correctAnswerSpan);
+                
+                // Text solution container (safe creation)
+                const textSolutionContainer = document.createElement('div');
+                textSolutionContainer.id = `text-solution-${idx}`;
+                textSolutionContainer.className = 'solution-container';
+                if (q.solutionText) {
+                    const textBox = document.createElement('div');
+                    textBox.className = 'solution-box';
+                    const solutionPara = document.createElement('p');
+                    solutionPara.textContent = q.solutionText; // raw LaTeX-safe
+                    textBox.appendChild(solutionPara);
+                    if (q.solutionImageUrl) {
+                        const img = document.createElement('img');
+                        img.src = q.solutionImageUrl;
+                        img.alt = 'Solution illustration';
+                        img.style.maxWidth = '100%';
+                        img.style.marginTop = '10px';
+                        img.style.borderRadius = '4px';
+                        textBox.appendChild(img);
+                    }
+                    textSolutionContainer.appendChild(textBox);
+                }
+                
+                // Video solution container
+                const videoSolutionContainer = document.createElement('div');
+                videoSolutionContainer.id = `video-solution-${idx}`;
+                videoSolutionContainer.className = 'solution-container';
+                if (q.solutionVideoUrl) {
+                    const videoElem = createVideoElement(q.solutionVideoUrl);
+                    if (videoElem) videoSolutionContainer.appendChild(videoElem);
+                }
+                
+                // Submit logic with LaTeX typeset for correct answer box
+                let submitted = false;
+                
+                submitBtn.onclick = async () => {
+                    if (submitted) return;
+                    const selectedRadio = document.querySelector(`input[name="q_${idx}"]:checked`);
+                    if (!selectedRadio) {
+                        alert('Please select an answer');
+                        return;
+                    }
+                    const selectedIndex = parseInt(selectedRadio.value);
+                    const isCorrect = (selectedIndex === q.correctIndex);
+                    
+                    // Apply background colors
+                    optionContainers.forEach((container, i) => {
+                        if (i === q.correctIndex) {
+                            container.classList.add('correct-bg');
+                        } else if (i === selectedIndex && !isCorrect) {
+                            container.classList.add('wrong-bg');
+                        }
+                    });
+                    
+                    // Show correct answer box and render any LaTeX inside it
+                    correctAnswerBox.classList.add('visible');
+                    await typesetElement(correctAnswerBox);
+                    
+                    // Enable solution buttons if content exists
+                    if (q.solutionText) textSolutionBtn.disabled = false;
+                    if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
+                    
+                    submitted = true;
+                    submitBtn.disabled = true;
+                };
+                
+                textSolutionBtn.onclick = async () => {
+                    if (!submitted) return;
+                    const wasVisible = textSolutionContainer.classList.contains('visible');
+                    if (!wasVisible) {
+                        textSolutionContainer.classList.add('visible');
+                        if (videoSolutionContainer.classList.contains('visible')) {
+                            videoSolutionContainer.classList.remove('visible');
+                        }
+                        // typeset LaTeX in the newly visible solution box
+                        await typesetElement(textSolutionContainer);
+                    } else {
+                        textSolutionContainer.classList.remove('visible');
+                    }
+                };
+                
+                videoSolutionBtn.onclick = async () => {
+                    if (!submitted) return;
+                    const wasVisible = videoSolutionContainer.classList.contains('visible');
+                    if (!wasVisible) {
+                        videoSolutionContainer.classList.add('visible');
+                        if (textSolutionContainer.classList.contains('visible')) {
+                            textSolutionContainer.classList.remove('visible');
+                        }
+                        // In case video container contains any text with LaTeX (e.g., description)
+                        await typesetElement(videoSolutionContainer);
+                    } else {
+                        videoSolutionContainer.classList.remove('visible');
+                    }
+                };
+                
+                // Assemble question
+                questionDiv.appendChild(qTag);
+                questionDiv.appendChild(qText);
+                questionDiv.appendChild(optionsDiv);
+                questionDiv.appendChild(actionRow);
+                questionDiv.appendChild(correctAnswerBox);
+                questionDiv.appendChild(textSolutionContainer);
+                questionDiv.appendChild(videoSolutionContainer);
+                
+                container.appendChild(questionDiv);
+            });
+            
+            // After all questions are added, render LaTeX in the entire container
+            typesetElement(container).catch(e => console.warn("Initial typeset error", e));
+        }
+        
+        // Main quiz start function
+        async function startQuiz() {
+            const course = courseSelect.value;
+            const subject = subjectSelect.value;
+            const chapter = chapterSelect.value;
+            const limit = qCountInput.value;
+            
+            if (!course || !subject || !chapter) {
+                alert('Please select a course, subject, and chapter.');
+                return;
+            }
+            const limitNum = parseInt(limit, 10);
+            if (isNaN(limitNum) || limitNum < 1) {
+                alert('Please enter a valid number of questions (minimum 1)');
+                return;
+            }
+            
+            // Show quiz section and header
+            const quizSection = document.getElementById('quizSection');
+            quizSection.style.display = 'block';
+            document.getElementById('displayCourse').textContent = course;
+            document.getElementById('displaySubject').textContent = subject;
+            document.getElementById('displayChapter').textContent = chapter;
+            document.getElementById('displayTotal').textContent = `Total ${limitNum} questions`;
+            
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '<div class="loader">Loading questions...</div>';
+            setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
+            
+            try {
+                const params = new URLSearchParams({
+                    className: course,
+                    subject: subject,
+                    chapter: chapter,
+                    limit: limitNum
+                });
+                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
+                if (!response.ok) {
+                    if (response.status === 404) throw new Error('No questions found for the selected criteria.');
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load questions');
+                const questions = data.questions || [];
+                renderQuestions(questions);
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">${error.message}</div>`;
+            }
+        }
+        
+        // Initialize
+        loadClasses();
+        document.getElementById('quizSection').style.display = 'none';
+    </script>
+</body>
+</html>
