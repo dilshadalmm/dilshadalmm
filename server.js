@@ -413,6 +413,122 @@ app.post('/api/ingest', async (req, res) => {
     }
 });
 
+/**
+ * GET /api/quiz
+ * Query parameters:
+ *   - className (required) : e.g., "Class 10"
+ *   - subject   (required) : e.g., "Zoology"
+ *   - chapter   (required) : e.g., "Matter in Our Surroundings"
+ *   - limit     (optional) : number of questions to return (default = 10)
+ *
+ * Returns a JSON object:
+ *   {
+ *     success: true,
+ *     questions: [
+ *       {
+ *         questionText,
+ *         options,
+ *         solutionText,
+ *         correctIndex,
+ *         solutionVideoUrl,
+ *         questionImageUrl,
+ *         solutionImageUrl
+ *       },
+ *       ...
+ *     ]
+ *   }
+ *
+ * If no questions match, returns 404 with { success: false, error: "No questions found for the given criteria" }
+ */
+app.get('/api/quiz', async (req, res) => {
+    try {
+        // 1. Extract and validate query parameters
+        const { className, subject, chapter, limit: limitParam } = req.query;
+
+        if (!className || !subject || !chapter) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required query parameters: className, subject, chapter'
+            });
+        }
+
+        // Parse limit – default to 10, ensure it's a positive integer
+        let limit = 10;
+        if (limitParam) {
+            const parsed = parseInt(limitParam, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                limit = parsed;
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    error: 'limit must be a positive integer'
+                });
+            }
+        }
+
+        // 2. Ensure Firestore is available
+        if (!db) {
+            console.error('Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Database service unavailable'
+            });
+        }
+
+        // 3. Build and execute the Firestore query
+        const questionsRef = db.collection('questions');
+        const snapshot = await questionsRef
+            .where('class', '==', className)
+            .where('subject', '==', subject)
+            .where('chapter', '==', chapter)
+            .get();
+
+        // 4. Check if any documents were found
+        if (snapshot.empty) {
+            return res.status(404).json({
+                success: false,
+                error: 'No questions found for the given criteria'
+            });
+        }
+
+        // 5. Extract document data into an array
+        let questions = snapshot.docs.map(doc => doc.data());
+
+        // 6. Shuffle using Fisher‑Yates (in‑place)
+        for (let i = questions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [questions[i], questions[j]] = [questions[j], questions[i]];
+        }
+
+        // 7. Apply limit (slice after shuffle)
+        const limitedQuestions = questions.slice(0, limit);
+
+        // 8. Map to the required response schema
+        const formattedQuestions = limitedQuestions.map(q => ({
+            questionText: q.questionText,
+            options: q.options,
+            solutionText: q.solutionText,
+            correctIndex: q.correctIndex,
+            solutionVideoUrl: q.solutionVideoUrl || null,
+            questionImageUrl: q.questionImageUrl || null,
+            solutionImageUrl: q.solutionImageUrl || null
+        }));
+
+        // 9. Send success response
+        return res.json({
+            success: true,
+            questions: formattedQuestions
+        });
+
+    } catch (error) {
+        console.error('Error in /api/quiz:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'An internal server error occurred'
+        });
+    }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
