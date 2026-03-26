@@ -5,11 +5,33 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>StudentPlus - MCQ Quiz</title>
+    <title>StudentPlus - MCQ Quiz | LaTeX Support</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- MathJax 3 (LaTeX rendering) -->
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\\[', '\\]']],
+                processEscapes: true,
+                processEnvironments: true
+            },
+            options: {
+                skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'],
+                ignoreHtmlClass: 'no-mathjax'
+            },
+            startup: {
+                typeset: false,   // we will call typeset manually after dynamic content
+                pageReady: () => { /* ready, but we'll call typeset after quiz load */ }
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+
     <style>
-        /* Global styles (unchanged) */
+        /* Global styles (preserved + minor improvements) */
         *,
         *::before,
         *::after {
@@ -167,6 +189,10 @@
             margin-bottom: 12px;
             line-height: 1.5;
         }
+        /* LaTeX inside question-text & options will preserve formatting */
+        .question-text .MathJax, .option-container span .MathJax {
+            font-size: 0.95rem;
+        }
         .option-container {
             display: flex;
             align-items: center;
@@ -286,6 +312,11 @@
         img, svg, iframe, video {
             max-width: 100%;
         }
+        /* ensure math content wraps nicely */
+        .MathJax {
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
     </style>
 </head>
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
@@ -339,7 +370,7 @@
     </div>
 
     <script>
-        // ---------- DISABLE ZOOM & COPY PROTECTION ----------
+        // ---------- DISABLE ZOOM & COPY PROTECTION (unchanged) ----------
         function disableZoomShortcuts(e) {
             if (e.ctrlKey || e.metaKey) {
                 if (e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 48 || e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0') {
@@ -417,6 +448,26 @@
             }
         }
         
+        // ---------- LATEX RENDERING HELPER (MATHJAX) ----------
+        async function renderMathInDOM(element = document.body) {
+            if (window.MathJax && typeof window.MathJax.typesetPromise === 'function') {
+                try {
+                    await window.MathJax.typesetPromise([element]);
+                } catch (err) {
+                    console.warn('MathJax typeset error:', err);
+                }
+            }
+        }
+        
+        // Safe wrapper to typeset entire container after content changes
+        async function flushMath() {
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                try {
+                    await window.MathJax.typesetPromise();
+                } catch(e) { console.warn(e); }
+            }
+        }
+        
         // Load classes on page load
         async function loadClasses() {
             courseSelect.innerHTML = '<option value="">Loading...</option>';
@@ -443,7 +494,6 @@
             }
         }
         
-        // Load subjects for a given class
         async function loadSubjects(className) {
             subjectSelect.disabled = true;
             subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
@@ -473,7 +523,6 @@
             }
         }
         
-        // Load chapters for a given class and subject
         async function loadChapters(className, subjectName) {
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
@@ -522,7 +571,6 @@
             }
         });
         
-        // Helper to convert YouTube URL to embed URL
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
             const patterns = [
@@ -538,7 +586,6 @@
             return null;
         }
         
-        // Create video element based on URL
         function createVideoElement(url) {
             if (!url) return null;
             const container = document.createElement('div');
@@ -576,7 +623,7 @@
             return container;
         }
         
-        // Render questions with interactive buttons
+        // renderQuestions with LaTeX support (innerHTML for dynamic content)
         function renderQuestions(questions) {
             const container = document.getElementById('questionsContainer');
             container.innerHTML = '';
@@ -590,16 +637,17 @@
                 const questionDiv = document.createElement('div');
                 questionDiv.className = 'question-item';
                 
-                // Question tag and text
+                // Question tag
                 const qTag = document.createElement('div');
                 qTag.className = 'q-tag';
                 qTag.textContent = `Question ${idx + 1}`;
                 
+                // Question text (supports LaTeX via innerHTML)
                 const qText = document.createElement('div');
                 qText.className = 'question-text';
-                qText.textContent = q.questionText || '';
+                qText.innerHTML = q.questionText || '';  // LaTeX safe
                 
-                // Options
+                // Options container
                 const optionsDiv = document.createElement('div');
                 optionsDiv.className = 'options-list';
                 if (q.questionImageUrl) {
@@ -622,29 +670,26 @@
                     radio.name = `q_${idx}`;
                     radio.value = optIdx;
                     const span = document.createElement('span');
-                    span.textContent = opt;  // No prefix
+                    span.innerHTML = opt;   // allow LaTeX inside option text
                     label.appendChild(radio);
                     label.appendChild(span);
                     optionsDiv.appendChild(label);
                     optionContainers.push(label);
                 });
                 
-                // Action buttons row
+                // Action buttons
                 const actionRow = document.createElement('div');
                 actionRow.className = 'action-buttons';
                 
-                // Submit button
                 const submitBtn = document.createElement('button');
                 submitBtn.textContent = 'Submit';
                 submitBtn.className = 'action-btn submit-btn';
                 
-                // Text Solution button (initially disabled, will be enabled after submit if solution exists)
                 const textSolutionBtn = document.createElement('button');
                 textSolutionBtn.textContent = 'Text Solution';
                 textSolutionBtn.className = 'action-btn text-solution-btn';
                 textSolutionBtn.disabled = true;
                 
-                // Video Solution button
                 const videoSolutionBtn = document.createElement('button');
                 videoSolutionBtn.textContent = 'Video Solution';
                 videoSolutionBtn.className = 'action-btn video-solution-btn';
@@ -654,10 +699,11 @@
                 actionRow.appendChild(textSolutionBtn);
                 actionRow.appendChild(videoSolutionBtn);
                 
-                // Correct answer box (shown after submit)
+                // Correct answer box (innerHTML with LaTeX)
                 const correctAnswerBox = document.createElement('div');
                 correctAnswerBox.className = 'correct-answer-box';
-                correctAnswerBox.innerHTML = `<strong>Correct Answer:</strong> ${options[q.correctIndex] || 'N/A'}`;
+                const correctAnsText = options[q.correctIndex] || 'N/A';
+                correctAnswerBox.innerHTML = `<strong>Correct Answer:</strong> ${correctAnsText}`;
                 
                 // Text solution container
                 const textSolutionContainer = document.createElement('div');
@@ -666,6 +712,7 @@
                 if (q.solutionText) {
                     const textBox = document.createElement('div');
                     textBox.className = 'solution-box';
+                    // allow LaTeX inside solution text
                     textBox.innerHTML = `<p><strong>Explanation:</strong> ${q.solutionText}</p>`;
                     if (q.solutionImageUrl) {
                         textBox.innerHTML += `<img src="${q.solutionImageUrl}" alt="Solution illustration" style="max-width:100%; margin-top:10px; border-radius:4px;">`;
@@ -682,12 +729,10 @@
                     if (videoElem) videoSolutionContainer.appendChild(videoElem);
                 }
                 
-                // Toggle functions
                 let submitted = false;
                 
-                submitBtn.onclick = () => {
+                submitBtn.onclick = async () => {
                     if (submitted) return;
-                    // Find selected radio
                     const selectedRadio = document.querySelector(`input[name="q_${idx}"]:checked`);
                     if (!selectedRadio) {
                         alert('Please select an answer');
@@ -696,7 +741,6 @@
                     const selectedIndex = parseInt(selectedRadio.value);
                     const isCorrect = (selectedIndex === q.correctIndex);
                     
-                    // Apply background colors to all options
                     optionContainers.forEach((container, i) => {
                         if (i === q.correctIndex) {
                             container.classList.add('correct-bg');
@@ -705,10 +749,10 @@
                         }
                     });
                     
-                    // Show correct answer box
                     correctAnswerBox.classList.add('visible');
+                    // Re-render LaTeX inside correct answer box (in case it contains math)
+                    await renderMathInDOM(correctAnswerBox);
                     
-                    // Enable solution buttons if solution exists
                     if (q.solutionText) textSolutionBtn.disabled = false;
                     if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
                     
@@ -716,23 +760,32 @@
                     submitBtn.disabled = true;
                 };
                 
-                textSolutionBtn.onclick = () => {
+                textSolutionBtn.onclick = async () => {
                     if (!submitted) return;
+                    const isVisible = textSolutionContainer.classList.contains('visible');
                     textSolutionContainer.classList.toggle('visible');
                     if (videoSolutionContainer.classList.contains('visible')) {
                         videoSolutionContainer.classList.remove('visible');
                     }
+                    if (!isVisible && textSolutionContainer.classList.contains('visible')) {
+                        // freshly opened: typeset any LaTeX inside solution
+                        await renderMathInDOM(textSolutionContainer);
+                    }
                 };
                 
-                videoSolutionBtn.onclick = () => {
+                videoSolutionBtn.onclick = async () => {
                     if (!submitted) return;
+                    const isVisible = videoSolutionContainer.classList.contains('visible');
                     videoSolutionContainer.classList.toggle('visible');
                     if (textSolutionContainer.classList.contains('visible')) {
                         textSolutionContainer.classList.remove('visible');
                     }
+                    if (!isVisible && videoSolutionContainer.classList.contains('visible')) {
+                        await renderMathInDOM(videoSolutionContainer);
+                    }
                 };
                 
-                // Assemble question
+                // Assemble
                 questionDiv.appendChild(qTag);
                 questionDiv.appendChild(qText);
                 questionDiv.appendChild(optionsDiv);
@@ -743,6 +796,9 @@
                 
                 container.appendChild(questionDiv);
             });
+            
+            // After all questions rendered, trigger MathJax for all LaTeX content
+            flushMath().catch(e => console.warn(e));
         }
         
         // Main quiz start function
@@ -762,7 +818,6 @@
                 return;
             }
             
-            // Show quiz section and header
             const quizSection = document.getElementById('quizSection');
             quizSection.style.display = 'block';
             document.getElementById('displayCourse').textContent = course;
