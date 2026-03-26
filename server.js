@@ -72,15 +72,15 @@ let partialBatchTimeoutId = null;         // Timeout ID for partial batch
 // ---- Utility Functions ----
 
 function generateQuestionId(classKey, subjectKey, sequenceNumber) {
-    // Format: CLASS9_SCIENCE_q1, CLASS10_MATHS_q2, etc.
+    // Format: CLASS_10_ZOOLOGY_q1, IOE_MATHMATICS_q1, LOKSEWA_GK_q1, etc.
     return `${classKey}_${subjectKey}_q${sequenceNumber}`;
 }
 
 /**
  * Get the next sequence number for a given class and subject.
  * Uses a Firestore counter document to ensure atomic increments.
- * @param {string} classKey e.g., "CLASS9"
- * @param {string} subjectKey e.g., "SCIENCE"
+ * @param {string} classKey e.g., "CLASS_10"
+ * @param {string} subjectKey e.g., "ZOOLOGY"
  * @returns {Promise<number>} The next available sequence number (starting from 1)
  */
 async function getNextQuestionNumber(classKey, subjectKey) {
@@ -103,7 +103,7 @@ async function getNextQuestionNumber(classKey, subjectKey) {
     return result;
 }
 
-// ---- Token Logging Helper (unchanged) ----
+// ---- Token Logging Helper ----
 function logTokenUsage(response, callType) {
     try {
         if (response?.usageMetadata) {
@@ -122,8 +122,8 @@ function logTokenUsage(response, callType) {
 /**
  * Sends an image to Gemini and extracts an array of questions.
  * @param {string} imageBase64 Base64 image data (may include data URL prefix)
- * @param {string} classText e.g., "Class 9"
- * @param {string} subjectText e.g., "Science"
+ * @param {string} classText e.g., "Class 10"
+ * @param {string} subjectText e.g., "Zoology"
  * @param {string} chapterText e.g., "Matter in Our Surroundings"
  * @returns {Promise<Array>} Array of question objects
  */
@@ -276,9 +276,10 @@ async function processBatch(batch) {
             continue;
         }
 
-        // Step 2: Generate keys for Firestore
-        const classKey = `CLASS${className.replace(/\D/g, '')}`; // e.g., "CLASS9"
-        const subjectKey = subject.toUpperCase().replace(/\s/g, '_'); // e.g., "SCIENCE"
+        // Step 2: Generate sanitized keys for Firestore
+        // Convert class and subject to uppercase, replace spaces with underscores
+        const classKey = className.trim().toUpperCase().replace(/\s+/g, '_');
+        const subjectKey = subject.trim().toUpperCase().replace(/\s+/g, '_');
 
         // Step 3: Save each question to Firestore with incremented IDs
         const savedQuestions = [];
