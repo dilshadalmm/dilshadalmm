@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Studentplus - Smart Question Ingestion</title>
+    <!-- Creepster Font for Brand Name -->
+    <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
+    <style>
+        /* ----- GLOBAL RESET & SCROLLBAR HIDE (keep vertical scroll) ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* Disable text selection & copy globally (except form fields) */
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+        }
+
+        /* Allow text selection ONLY inside input, textarea, and file-name span (usability) */
+        input, textarea, #file-name, .result-meta, .file-label {
+            user-select: text;
+            -webkit-user-select: text;
+        }
+
+        /* Hide scrollbar lines but keep scroll functionality (vertical only) */
+        html {
+            overflow-y: scroll;    /* ensures scrollbar always takes space but hides visually */
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE/Edge */
+        }
+        html::-webkit-scrollbar {
+            display: none;  /* Chrome/Safari/Opera - no visible scrollbar */
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fb;
+            margin: 0;
+            padding: 2rem 1rem;
+            color: #1e293b;
+            overflow-x: hidden;   /* NO horizontal scrollbar ever */
+            overflow-y: visible;  /* vertical scrolling works naturally */
+            min-height: 100vh;
+        }
+
+        /* main container - no overflow-x */
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 28px;
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.1);
+            padding: 1.8rem 2rem 2.2rem;
+            transition: all 0.2s;
+            overflow-x: hidden;
+        }
+
+        /* ----- BRANDING: Logo + Creepster Text ----- */
+        .brand-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+            margin-bottom: 0.5rem;
+        }
+        .brand-logo {
+            height: 52px;
+            width: auto;
+            max-width: 60px;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.05));
+        }
+        .brand-name {
+            font-family: 'Creepster', cursive;
+            font-size: 2.2rem;
+            font-weight: 400;
+            background: linear-gradient(135deg, #1e3c72, #2b4c8c);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: 1px;
+            line-height: 1.2;
+            text-shadow: 2px 2px 6px rgba(0,0,0,0.05);
+        }
+        .sub {
+            color: #475569;
+            margin-bottom: 1.8rem;
+            border-left: 3px solid #3b82f6;
+            padding-left: 0.75rem;
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        /* form styles */
+        .form-group {
+            margin-bottom: 1.3rem;
+        }
+        label {
+            font-weight: 500;
+            display: block;
+            margin-bottom: 0.4rem;
+            color: #0f172a;
+        }
+        input, textarea, .file-label {
+            width: 100%;
+            padding: 0.7rem 1rem;
+            border: 1px solid #cbd5e1;
+            border-radius: 18px;
+            font-size: 1rem;
+            transition: 0.2s;
+            background: #fff;
+            font-family: inherit;
+        }
+        textarea {
+            min-height: 200px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        input:focus, textarea:focus, .file-label:focus-within {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+        }
+        button {
+            background: #0f2b3d;
+            color: white;
+            border: none;
+            padding: 0.85rem 1.8rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 40px;
+            cursor: pointer;
+            width: 100%;
+            transition: background 0.2s, transform 0.1s;
+            margin-top: 0.5rem;
+        }
+        button:hover {
+            background: #1e4a76;
+        }
+        button:active {
+            transform: scale(0.98);
+        }
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        .result-card {
+            margin-top: 2rem;
+            background: #f8fafc;
+            border-radius: 24px;
+            padding: 1.2rem 1.5rem;
+            border-left: 5px solid #3b82f6;
+            transition: 0.2s;
+        }
+        .result-card h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.2rem;
+        }
+        .result-success {
+            border-left-color: #10b981;
+        }
+        .result-error {
+            border-left-color: #ef4444;
+        }
+        .result-meta {
+            font-family: monospace;
+            font-size: 0.85rem;
+            background: #eef2ff;
+            padding: 0.6rem;
+            border-radius: 14px;
+            margin-top: 0.8rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.75rem;
+            color: #5b6e8c;
+        }
+        hr {
+            margin: 1rem 0;
+            border: 0;
+            height: 1px;
+            background: #e2e8f0;
+        }
+        .json-hint {
+            font-size: 0.75rem;
+            color: #5b6e8c;
+            margin-top: 4px;
+        }
+        /* ensure no horizontal overflow on any element */
+        img, svg, iframe, video {
+            max-width: 100%;
+            height: auto;
+        }
+        @media (max-width: 550px) {
+            .container { padding: 1.2rem; }
+            .brand-name { font-size: 1.8rem; }
+            .brand-logo { height: 44px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- Branding: Logo + Creepster Text -->
+    <div class="brand-header">
+        <img class="brand-logo" src="https://i.postimg.cc/y88hFhh3/20260311_205800_0000.png" alt="Studentplus logo" draggable="false">
+        <span class="brand-name">Studentplus</span>
+    </div>
+    <div class="sub">Direct question ingestion from JSON</div>
+
+    <form id="ingestForm">
+        <div class="form-group">
+            <label>📘 Class</label>
+            <input type="text" id="class" placeholder="e.g., Class 9, 10, Grade 8" required>
+        </div>
+        <div class="form-group">
+            <label>📚 Subject</label>
+            <input type="text" id="subject" placeholder="e.g., Science, Mathematics" required>
+        </div>
+        <div class="form-group">
+            <label>📖 Chapter</label>
+            <input type="text" id="chapter" placeholder="e.g., Matter in Our Surroundings" required>
+        </div>
+        <div class="form-group">
+            <label>📝 Questions (JSON array)</label>
+            <textarea id="questionsJson" placeholder='[
+  {
+    "questionText": "The dimensions of self-inductance are",
+    "options": ["MLT-2A-1", "MLT-1A-2", "ML2 T-2A-2", "MLT-2A-2"],
+    "correctIndex": 2,
+    "solutionText": "Energy E = 1/2 L I^2. Therefore, L = 2E/I^2 =[ML^2T^-2A^-2].",
+    "questionImageUrl": null,
+    "solutionVideoUrl": null,
+    "solutionImageUrl": null
+  }
+]' required></textarea>
+            <div class="json-hint">Each question must have: questionText, options (array of 4), correctIndex (0‑based), solutionText. Optional fields: questionImageUrl, solutionVideoUrl, solutionImageUrl.</div>
+        </div>
+
+        <button type="submit" id="submitBtn">🚀 Ingest Questions</button>
+    </form>
+
+    <div id="resultArea" style="display: none;"></div>
+    <footer>
+        ⚡ The server saves questions with auto‑incremented IDs.<br>
+        📌 Ensure your JSON is valid and matches the required schema.
+    </footer>
+</div>
+
+<script>
+    const API_ENDPOINT = "https://dilshadalmm.onrender.com/api/ingest";
+
+    // DOM elements
+    const form = document.getElementById('ingestForm');
+    const classInput = document.getElementById('class');
+    const subjectInput = document.getElementById('subject');
+    const chapterInput = document.getElementById('chapter');
+    const questionsJson = document.getElementById('questionsJson');
+    const submitBtn = document.getElementById('submitBtn');
+    const resultArea = document.getElementById('resultArea');
+
+    // Show result with status
+    function displayResult(success, message, details = null) {
+        resultArea.style.display = 'block';
+        const resultClass = success ? 'result-success' : 'result-error';
+        let html = `<div class="result-card ${resultClass}">
+                        <h3>${success ? '✅ Ingestion completed' : '❌ Processing failed'}</h3>
+                        <p>${escapeHtml(message)}</p>`;
+        if (details) {
+            html += `<div class="result-meta">${escapeHtml(JSON.stringify(details, null, 2))}</div>`;
+        }
+        html += `</div>`;
+        resultArea.innerHTML = html;
+        // Scroll to result smoothly for better UX
+        resultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // basic escape to avoid XSS
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
+            return c;
+        });
+    }
+
+    // Validate question object structure
+    function validateQuestion(q, index) {
+        if (!q.questionText || typeof q.questionText !== 'string') {
+            return `Question ${index}: missing or invalid questionText`;
+        }
+        if (!Array.isArray(q.options) || q.options.length !== 4) {
+            return `Question ${index}: options must be an array of exactly 4 strings`;
+        }
+        if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex > 3) {
+            return `Question ${index}: correctIndex must be a number between 0 and 3`;
+        }
+        if (!q.solutionText || typeof q.solutionText !== 'string') {
+            return `Question ${index}: missing or invalid solutionText`;
+        }
+        return null;
+    }
+
+    // Submit handler
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        // validate fields
+        const classValue = classInput.value.trim();
+        const subjectValue = subjectInput.value.trim();
+        const chapterValue = chapterInput.value.trim();
+        const jsonStr = questionsJson.value.trim();
+
+        if (!classValue || !subjectValue || !chapterValue) {
+            displayResult(false, 'Please fill in Class, Subject, and Chapter.', null);
+            return;
+        }
+        if (!jsonStr) {
+            displayResult(false, 'Please provide questions JSON.', null);
+            return;
+        }
+
+        // Parse JSON
+        let questionsArray;
+        try {
+            questionsArray = JSON.parse(jsonStr);
+        } catch (err) {
+            displayResult(false, `Invalid JSON: ${err.message}`, null);
+            return;
+        }
+
+        if (!Array.isArray(questionsArray)) {
+            displayResult(false, 'JSON must be an array of question objects.', null);
+            return;
+        }
+
+        if (questionsArray.length === 0) {
+            displayResult(false, 'The questions array is empty.', null);
+            return;
+        }
+
+        // Validate each question
+        for (let i = 0; i < questionsArray.length; i++) {
+            const error = validateQuestion(questionsArray[i], i);
+            if (error) {
+                displayResult(false, `Validation error: ${error}`, { questionIndex: i, invalidObject: questionsArray[i] });
+                return;
+            }
+        }
+
+        // UI loading state
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span> Sending to server...';
+        resultArea.style.display = 'none';
+
+        // Build payload
+        const payload = {
+            questions: questionsArray,
+            class: classValue,
+            subject: subjectValue,
+            chapter: chapterValue
+        };
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
+
+            const response = await fetch(API_ENDPOINT, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            const data = await response.json();
+
+            if (response.ok) {
+                if (data.status === 'success') {
+                    displayResult(true, data.message || `Successfully processed ${data.questionsProcessed} questions.`, {
+                        questionsProcessed: data.questionsProcessed
+                    });
+                } else {
+                    displayResult(false, data.message || 'Server reported an error.', data);
+                }
+            } else {
+                displayResult(false, `Server error (${response.status}): ${data.message || 'Please try again later.'}`, data);
+            }
+        } catch (error) {
+            console.error('Request failed:', error);
+            let errorMsg = 'Network or CORS error. Make sure the server is reachable.';
+            if (error.name === 'AbortError') {
+                errorMsg = 'Request timed out. The server took too long to respond.';
+            } else if (error.message.includes('Failed to fetch')) {
+                errorMsg = 'Cannot connect to the server. The backend might be down (503) or unreachable. Please verify the server status.';
+            }
+            displayResult(false, errorMsg, { error: error.message });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '🚀 Ingest Questions';
+        }
+    });
+
+    // Additional safeguard: Disable pinch zoom via CSS + touch events (double-tap zoom prevention)
+    document.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 1) {
+            e.preventDefault();  // prevent pinch zoom on most modern browsers
+        }
+    }, { passive: false });
+    
+    // Also prevent double-tap zoom on iOS (optional)
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+            e.preventDefault();
+        }
+        lastTouchEnd = now;
+    }, false);
+    
+    // Disable keyboard shortcuts for zoom (Ctrl + / Cmd +) - not fully reliable but adds extra layer
+    window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+            e.preventDefault();
+        }
+    });
+</script>
+</body>
+</html>
