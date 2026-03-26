@@ -529,6 +529,119 @@ app.get('/api/quiz', async (req, res) => {
     }
 });
 
+// ---- Dynamic Metadata Endpoints ----
+
+// Cache for metadata to reduce Firestore reads (optional, but efficient)
+let metadataCache = {
+    classes: null,
+    subjectsByClass: {},
+    chaptersByClassAndSubject: {},
+    lastFetch: 0
+};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Helper to refresh metadata cache if stale.
+ */
+async function refreshMetadataCache() {
+    if (!db) return;
+    const now = Date.now();
+    if (metadataCache.lastFetch && (now - metadataCache.lastFetch < CACHE_TTL_MS)) {
+        return;
+    }
+    console.log('Refreshing metadata cache...');
+    // Fetch all question documents (only needed fields)
+    const snapshot = await db.collection('questions').select('class', 'subject', 'chapter').get();
+    const classesSet = new Set();
+    const subjectsMap = new Map(); // class -> Set of subjects
+    const chaptersMap = new Map(); // `${class}|${subject}` -> Set of chapters
+
+    snapshot.forEach(doc => {
+        const data = doc.data();
+        const className = data.class;
+        const subject = data.subject;
+        const chapter = data.chapter;
+
+        if (className) classesSet.add(className);
+        if (className && subject) {
+            if (!subjectsMap.has(className)) subjectsMap.set(className, new Set());
+            subjectsMap.get(className).add(subject);
+        }
+        if (className && subject && chapter) {
+            const key = `${className}|${subject}`;
+            if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
+            chaptersMap.get(key).add(chapter);
+        }
+    });
+
+    metadataCache = {
+        classes: Array.from(classesSet).sort(),
+        subjectsByClass: Object.fromEntries(
+            Array.from(subjectsMap.entries()).map(([c, s]) => [c, Array.from(s).sort()])
+        ),
+        chaptersByClassAndSubject: Object.fromEntries(
+            Array.from(chaptersMap.entries()).map(([key, ch]) => [key, Array.from(ch).sort()])
+        ),
+        lastFetch: Date.now()
+    };
+}
+
+/**
+ * GET /api/classes
+ * Returns list of all distinct class values.
+ */
+app.get('/api/classes', async (req, res) => {
+    try {
+        if (!db) throw new Error('Firestore not initialized');
+        await refreshMetadataCache();
+        res.json({ success: true, classes: metadataCache.classes });
+    } catch (error) {
+        console.error('Error fetching classes:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch classes' });
+    }
+});
+
+/**
+ * GET /api/subjects?class=<className>
+ * Returns list of subjects for a given class.
+ */
+app.get('/api/subjects', async (req, res) => {
+    try {
+        const { class: className } = req.query;
+        if (!className) {
+            return res.status(400).json({ success: false, error: 'class parameter is required' });
+        }
+        if (!db) throw new Error('Firestore not initialized');
+        await refreshMetadataCache();
+        const subjects = metadataCache.subjectsByClass[className] || [];
+        res.json({ success: true, subjects });
+    } catch (error) {
+        console.error('Error fetching subjects:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch subjects' });
+    }
+});
+
+/**
+ * GET /api/chapters?class=<className>&subject=<subject>
+ * Returns list of chapters for a given class and subject.
+ */
+app.get('/api/chapters', async (req, res) => {
+    try {
+        const { class: className, subject } = req.query;
+        if (!className || !subject) {
+            return res.status(400).json({ success: false, error: 'class and subject parameters are required' });
+        }
+        if (!db) throw new Error('Firestore not initialized');
+        await refreshMetadataCache();
+        const key = `${className}|${subject}`;
+        const chapters = metadataCache.chaptersByClassAndSubject[key] || [];
+        res.json({ success: true, chapters });
+    } catch (error) {
+        console.error('Error fetching chapters:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch chapters' });
+    }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
