@@ -31,7 +31,7 @@ const db = firebaseInitialized ? admin.firestore() : null;
 const BATCH_SIZE = 20;                    // Number of requests per batch
 const MAX_CONCURRENT_BATCHES = 5;         // Maximum parallel batch workers
 const MAX_WAIT_MS = 100;                  // Time to wait before processing a partial batch
-const RESPONSE_TIMEOUT_MS = 30000;        // Timeout for each request (30s for AI calls)
+const RESPONSE_TIMEOUT_MS = 60000;        // Increased to 60 seconds for large batches
 
 // ---- Queue and Concurrency State ----
 const requestQueue = [];                  // { res, questions, class, subject, chapter, timeout, sent }
@@ -46,30 +46,50 @@ function generateQuestionId(classKey, subjectKey, sequenceNumber) {
 }
 
 /**
- * Get the next sequence number for a given class and subject.
- * Uses a Firestore counter document to ensure atomic increments.
+ * Get the next 'count' sequence numbers for a given class/subject.
+ * Uses a single transaction to atomically increment the counter.
  * @param {string} classKey e.g., "CLASS_10"
  * @param {string} subjectKey e.g., "ZOOLOGY"
- * @returns {Promise<number>} The next available sequence number (starting from 1)
+ * @param {number} count Number of sequence numbers to reserve
+ * @returns {Promise<number[]>} Array of numbers [start, start+1, ..., start+count-1]
  */
-async function getNextQuestionNumber(classKey, subjectKey) {
+async function getNextQuestionNumbers(classKey, subjectKey, count) {
     if (!db) throw new Error('Firestore not initialized');
+    if (count <= 0) return [];
 
     const counterId = `${classKey}_${subjectKey}`;
     const counterRef = db.collection('counters').doc(counterId);
 
-    // Use a transaction to increment atomically
-    const result = await db.runTransaction(async (transaction) => {
+    return await db.runTransaction(async (transaction) => {
         const doc = await transaction.get(counterRef);
-        let currentNumber = 1;
+        let current = 1;
         if (doc.exists) {
-            currentNumber = doc.data().currentNumber + 1;
+            current = doc.data().currentNumber + 1;
         }
-        transaction.set(counterRef, { currentNumber }, { merge: true });
-        return currentNumber;
+        const nextNumbers = [];
+        for (let i = 0; i < count; i++) {
+            nextNumbers.push(current + i);
+        }
+        transaction.set(counterRef, { currentNumber: current + count - 1 }, { merge: true });
+        return nextNumbers;
     });
+}
 
-    return result;
+/**
+ * Helper to split an array of Firestore writes into batches of 500.
+ * @param {Array<{docRef: FirebaseFirestore.DocumentReference, data: object}>} writes
+ */
+async function commitBatchWrites(writes) {
+    if (!writes.length) return;
+    const chunkSize = 500;
+    for (let i = 0; i < writes.length; i += chunkSize) {
+        const chunk = writes.slice(i, i + chunkSize);
+        const batch = db.batch();
+        for (const { docRef, data } of chunk) {
+            batch.set(docRef, data);
+        }
+        await batch.commit();
+    }
 }
 
 // ---- Queue Processing Helpers ----
@@ -126,10 +146,11 @@ async function tryStartBatch() {
 /**
  * Process a batch of ingestion requests.
  * For each item, directly save the provided questions to Firestore.
+ * Uses a single counter transaction per request to reserve all needed IDs,
+ * then commits the questions in chunks of 500.
  * @param {Array} batch Array of request objects
  */
 async function processBatch(batch) {
-    // Process each item sequentially to avoid overloading Firestore
     for (const item of batch) {
         const { questions, class: className, subject, chapter } = item;
 
@@ -147,24 +168,42 @@ async function processBatch(batch) {
             continue;
         }
 
+        // Filter valid questions
+        const validQuestions = questions.filter(q =>
+            q.questionText &&
+            Array.isArray(q.options) && q.options.length === 4 &&
+            typeof q.correctIndex === 'number' &&
+            q.solutionText
+        );
+
+        if (validQuestions.length === 0) {
+            if (!item.sent) {
+                item.sent = true;
+                clearRequestTimeout(item);
+                item.res.json({
+                    status: 'success',
+                    message: 'No valid questions provided.',
+                    questionsProcessed: 0
+                });
+            }
+            continue;
+        }
+
         // Generate sanitized keys for Firestore
         const classKey = className.trim().toUpperCase().replace(/\s+/g, '_');
         const subjectKey = subject.trim().toUpperCase().replace(/\s+/g, '_');
 
-        // Save each question to Firestore with incremented IDs
-        const savedQuestions = [];
-        const batchWrite = db.batch();
+        try {
+            // Reserve sequence numbers in one transaction
+            const seqNumbers = await getNextQuestionNumbers(classKey, subjectKey, validQuestions.length);
 
-        for (const q of questions) {
-            try {
-                // Validate required fields
-                if (!q.questionText || !Array.isArray(q.options) || q.options.length !== 4 ||
-                    typeof q.correctIndex !== 'number' || !q.solutionText) {
-                    console.warn('Skipping malformed question:', q);
-                    continue;
-                }
+            // Build all write operations
+            const writes = [];
+            const savedQuestionIds = [];
 
-                const seqNumber = await getNextQuestionNumber(classKey, subjectKey);
+            for (let i = 0; i < validQuestions.length; i++) {
+                const q = validQuestions[i];
+                const seqNumber = seqNumbers[i];
                 const questionId = generateQuestionId(classKey, subjectKey, seqNumber);
 
                 const questionDoc = {
@@ -184,43 +223,35 @@ async function processBatch(batch) {
                 };
 
                 const docRef = db.collection('questions').doc(questionId);
-                batchWrite.set(docRef, questionDoc);
-                savedQuestions.push(questionId);
-            } catch (err) {
-                console.error(`Failed to save question: ${err.message}`);
-                // Continue saving others even if one fails
+                writes.push({ docRef, data: questionDoc });
+                savedQuestionIds.push(questionId);
             }
-        }
 
-        // Commit the batch
-        if (savedQuestions.length > 0) {
-            try {
-                await batchWrite.commit();
-                console.log(`✅ Saved ${savedQuestions.length} questions for item`);
-            } catch (err) {
-                console.error('Failed to commit batch write:', err.message);
-                if (!item.sent) {
-                    item.sent = true;
-                    clearRequestTimeout(item);
-                    item.res.json({
-                        status: 'error',
-                        message: `Database write failed: ${err.message}`,
-                        questionsProcessed: 0
-                    });
-                }
-                continue;
+            // Commit writes in batches of 500
+            await commitBatchWrites(writes);
+            console.log(`✅ Saved ${savedQuestionIds.length} questions for item`);
+
+            // Respond to the client
+            if (!item.sent) {
+                item.sent = true;
+                clearRequestTimeout(item);
+                item.res.json({
+                    status: 'success',
+                    message: `Processed ${savedQuestionIds.length} questions.`,
+                    questionsProcessed: savedQuestionIds.length
+                });
             }
-        }
-
-        // Respond to the client
-        if (!item.sent) {
-            item.sent = true;
-            clearRequestTimeout(item);
-            item.res.json({
-                status: 'success',
-                message: `Processed ${savedQuestions.length} questions.`,
-                questionsProcessed: savedQuestions.length
-            });
+        } catch (err) {
+            console.error(`Failed to process item: ${err.message}`);
+            if (!item.sent) {
+                item.sent = true;
+                clearRequestTimeout(item);
+                item.res.json({
+                    status: 'error',
+                    message: `Database operation failed: ${err.message}`,
+                    questionsProcessed: 0
+                });
+            }
         }
     }
 }
