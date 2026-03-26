@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const { GoogleGenAI } = require("@google/genai");
-const { Pinecone } = require('@pinecone-database/pinecone');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 require('dotenv').config();
@@ -32,49 +31,79 @@ const db = firebaseInitialized ? admin.firestore() : null;
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Initialize Pinecone
-const pc = new Pinecone({ apiKey: process.env.PINECONE_API_KEY });
-const index = pc.index(process.env.PINECONE_INDEX_NAME);
+// ---- Prompt for Extraction ----
+const EXTRACTION_PROMPT = `
+You are an AI assistant specialized in extracting multiple-choice questions from educational materials. 
+Given an image of a textbook page, identify all multiple-choice questions present. 
+For each question, extract the following fields:
 
-// ---- Prompts ----
-const NORMALIZATION_PROMPT = `
-You are an assistant that always responds in valid JSON format. 
-Given the following question text and possibly an image, rewrite the question clearly without changing meaning. 
-If the image contains an educational diagram, describe it as well. 
-Also classify if the question is a VALID academic question.
+- questionText: The text of the question (preserve LaTeX formatting exactly as $...$)
+- options: An array of four strings, each representing a possible answer
+- correctIndex: The index (0‑based) of the correct option
+- solutionText: The explanation or solution (preserve LaTeX formatting exactly as $...$)
 
-Respond ONLY with a JSON object in this exact format:
-{
-  "normalized_question": "...",
-  "validity": "VALID" or "INVALID"
-}
+Respond ONLY with a valid JSON array of objects following this exact schema:
 
-Do not include any other text, explanations, or markdown formatting.
+[
+  {
+    "questionText": "...",
+    "options": ["...", "...", "...", "..."],
+    "correctIndex": 0,
+    "solutionText": "..."
+  },
+  ...
+]
+
+If no multiple-choice questions are found, return an empty array [].
+Do not include any other text, markdown, or commentary.
 `;
 
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;                    // Number of requests per batch
-const MAX_CONCURRENT_BATCHES = 5;          // Maximum parallel batch workers
-const MAX_WAIT_MS = 100;                   // Time to wait before processing a partial batch
-const RESPONSE_TIMEOUT_MS = 30000;          // Timeout for each request (30s for AI calls)
+const MAX_CONCURRENT_BATCHES = 5;         // Maximum parallel batch workers
+const MAX_WAIT_MS = 100;                  // Time to wait before processing a partial batch
+const RESPONSE_TIMEOUT_MS = 30000;        // Timeout for each request (30s for AI calls)
 
 // ---- Queue and Concurrency State ----
-const requestQueue = [];                    // { res, text, imageBase64, timeout, sent }
-let activeBatches = 0;                      // Number of currently processing batches
-let partialBatchTimeoutId = null;           // Timeout ID for partial batch
-
-// ---- Background Job Lock ----
-let isEmbeddingRunning = false;
+const requestQueue = [];                  // { res, imageBase64, class, subject, chapter, timeout, sent }
+let activeBatches = 0;                    // Number of currently processing batches
+let partialBatchTimeoutId = null;         // Timeout ID for partial batch
 
 // ---- Utility Functions ----
 
-function generateQuestionId() {
-    const timestamp = Date.now();
-    const random = crypto.randomBytes(4).toString('hex');
-    return `user-${timestamp}-${random}`;
+function generateQuestionId(classKey, subjectKey, sequenceNumber) {
+    // Format: CLASS9_SCIENCE_q1, CLASS10_MATHS_q2, etc.
+    return `${classKey}_${subjectKey}_q${sequenceNumber}`;
 }
 
-// ---- Token Logging Helper ----
+/**
+ * Get the next sequence number for a given class and subject.
+ * Uses a Firestore counter document to ensure atomic increments.
+ * @param {string} classKey e.g., "CLASS9"
+ * @param {string} subjectKey e.g., "SCIENCE"
+ * @returns {Promise<number>} The next available sequence number (starting from 1)
+ */
+async function getNextQuestionNumber(classKey, subjectKey) {
+    if (!db) throw new Error('Firestore not initialized');
+
+    const counterId = `${classKey}_${subjectKey}`;
+    const counterRef = db.collection('counters').doc(counterId);
+
+    // Use a transaction to increment atomically
+    const result = await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(counterRef);
+        let currentNumber = 1;
+        if (doc.exists) {
+            currentNumber = doc.data().currentNumber + 1;
+        }
+        transaction.set(counterRef, { currentNumber }, { merge: true });
+        return currentNumber;
+    });
+
+    return result;
+}
+
+// ---- Token Logging Helper (unchanged) ----
 function logTokenUsage(response, callType) {
     try {
         if (response?.usageMetadata) {
@@ -90,28 +119,34 @@ function logTokenUsage(response, callType) {
 
 // ---- AI Functions ----
 
-async function normalizeAndValidate(text, imageBase64) {
-    console.log(`[Normalize] Calling Gemini at ${new Date().toISOString()}`);
+/**
+ * Sends an image to Gemini and extracts an array of questions.
+ * @param {string} imageBase64 Base64 image data (may include data URL prefix)
+ * @param {string} classText e.g., "Class 9"
+ * @param {string} subjectText e.g., "Science"
+ * @param {string} chapterText e.g., "Matter in Our Surroundings"
+ * @returns {Promise<Array>} Array of question objects
+ */
+async function extractQuestionsFromImage(imageBase64, classText, subjectText, chapterText) {
+    console.log(`[Extract] Calling Gemini at ${new Date().toISOString()}`);
+
+    // Prepare the prompt with metadata
+    const userPrompt = `Class: ${classText}\nSubject: ${subjectText}\nChapter: ${chapterText}\n\nExtract all multiple-choice questions from the attached image.`;
+
     try {
-        const parts = [];
-        if (text) {
-            parts.push({ text: `Question text: ${text}` });
-        }
-        if (imageBase64) {
-            const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-            parts.push({ inlineData: { mimeType: 'image/png', data: base64Data } });
-        }
-        if (parts.length === 0) {
-            return { normalized_question: "", validity: "INVALID" };
-        }
+        // Strip data URL prefix if present
+        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash-lite',
-            contents: [{ role: 'user', parts }],
+            contents: [
+                { text: userPrompt },
+                { inlineData: { mimeType: 'image/png', data: base64Data } }
+            ],
             config: {
-                systemInstruction: { parts: [{ text: NORMALIZATION_PROMPT }] },
-                generationConfig: { 
-                    temperature: 0.6, 
+                systemInstruction: { parts: [{ text: EXTRACTION_PROMPT }] },
+                generationConfig: {
+                    temperature: 0.6,
                     topP: 0.95,
                     responseMimeType: 'application/json'   // Force JSON output
                 },
@@ -119,130 +154,46 @@ async function normalizeAndValidate(text, imageBase64) {
             }
         });
 
-        // Log token usage for normalization call
-        logTokenUsage(response, 'normalization');
+        // Log token usage for extraction call
+        logTokenUsage(response, 'extraction');
 
         let fullText = "";
         if (response?.candidates?.length > 0) {
             fullText = response.candidates[0]?.content?.parts?.[0]?.text || "";
         }
 
-        // Strip possible markdown code fences (```json ... ```)
+        // Strip possible markdown code fences
         const jsonString = fullText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
 
-        // Attempt to parse JSON
+        // Parse the JSON array
         try {
-            const parsed = JSON.parse(jsonString);
-            return {
-                normalized_question: parsed.normalized_question || "",
-                validity: parsed.validity === "VALID" ? "VALID" : "INVALID"
-            };
-        } catch (parseErr) {
-            console.error("JSON parse error, raw response:", fullText);
-            return { normalized_question: "", validity: "INVALID" };
-        }
-    } catch (err) {
-        console.error("Normalization failed:", err.message);
-        return { normalized_question: "", validity: "INVALID" };
-    }
-}
-
-async function generateEmbeddingsBatch(texts) {
-    if (!Array.isArray(texts) || texts.length === 0) throw new Error('Cannot embed empty text array');
-
-    const response = await ai.models.embedContent({
-        model: 'gemini-embedding-001',
-        contents: texts,
-        config: { outputDimensionality: 768 }
-    });
-
-    // Log token usage for embedding call
-    logTokenUsage(response, 'embedding');
-
-    if (response.embeddings && response.embeddings.length === texts.length) {
-        return response.embeddings.map(e => e.values);
-    }
-    throw new Error("No embeddings returned or mismatch in count");
-}
-
-// ---- Firestore Watcher with Lock (unchanged) ----
-
-async function embedPendingQuestions() {
-    if (!db) return;
-    if (isEmbeddingRunning) {
-        console.log('⚠️ Previous embedPendingQuestions still running, skipping...');
-        return;
-    }
-    isEmbeddingRunning = true;
-    try {
-        const snapshot = await db.collection("questions")
-            .where("embedded", "==", false)
-            .limit(5000)
-            .get();
-
-        if (snapshot.empty) return;
-
-        const docs = snapshot.docs;
-        const EMBED_BATCH_SIZE = 20;
-        const CONCURRENCY = 50;
-        const batches = [];
-
-        for (let i = 0; i < docs.length; i += EMBED_BATCH_SIZE) {
-            batches.push(docs.slice(i, i + EMBED_BATCH_SIZE));
-        }
-
-        let current = 0;
-        async function processNextBatch() {
-            if (current >= batches.length) return;
-            const batch = batches[current++];
-            const texts = batch.map(doc => doc.data().question || "");
-
-            try {
-                const vectors = await generateEmbeddingsBatch(texts);
-                const upserts = batch.map((doc, idx) => ({
-                    id: doc.id,
-                    values: vectors[idx],
-                    metadata: { text: texts[idx] }
-                }));
-
-                await index.upsert(upserts);
-                await Promise.all(batch.map(doc => doc.ref.update({ embedded: true })));
-
-                console.log(`✅ Embedded batch: ${batch.map(d => d.id).join(', ')}`);
-            } catch (err) {
-                console.error("Failed embedding batch:", err.message);
+            const questions = JSON.parse(jsonString);
+            if (Array.isArray(questions)) {
+                return questions;
+            } else {
+                console.warn('Unexpected response format (not an array):', questions);
+                return [];
             }
-
-            await processNextBatch();
+        } catch (parseErr) {
+            console.error('JSON parse error, raw response:', fullText);
+            return [];
         }
-
-        const workers = [];
-        for (let i = 0; i < CONCURRENCY && i < batches.length; i++) {
-            workers.push(processNextBatch());
-        }
-        await Promise.all(workers);
-
     } catch (err) {
-        console.error("Error fetching pending questions:", err.message);
-    } finally {
-        isEmbeddingRunning = false;
+        console.error('Extraction failed:', err.message);
+        return [];
     }
 }
 
-// Run watcher every 1 minute
-setInterval(embedPendingQuestions, 60 * 1000);
-
-// ---- Queue Processing Helpers (unchanged) ----
+// ---- Queue Processing Helpers ----
 
 function setupRequestTimeout(item) {
     item.timeout = setTimeout(() => {
         if (!item.sent) {
             item.sent = true;
             item.res.json({
-                question: "Timeout",
-                solution: "Request took too long. Please try again.",
-                videoUrl: "",
-                imageUrl: ""
+                status: 'error',
+                message: 'Request took too long. Please try again.',
+                questionsProcessed: 0
             });
             console.log('⏰ Request timeout');
         }
@@ -272,10 +223,9 @@ async function tryStartBatch() {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
-                    question: "Error",
-                    solution: "An internal error occurred.",
-                    videoUrl: "",
-                    imageUrl: ""
+                    status: 'error',
+                    message: 'An internal error occurred.',
+                    questionsProcessed: 0
                 });
             }
         });
@@ -285,122 +235,114 @@ async function tryStartBatch() {
     }
 }
 
+/**
+ * Process a batch of ingestion requests.
+ * For each item, call Gemini to extract questions, then save them to Firestore.
+ * @param {Array} batch Array of request objects
+ */
 async function processBatch(batch) {
-    // Step 1: Normalize each item (sequentially)
-    const validItems = [];
-    const normalizedTexts = [];
-
+    // Process each item sequentially to avoid overloading Gemini
     for (const item of batch) {
-        const { text, imageBase64 } = item;
-        const { normalized_question, validity } = await normalizeAndValidate(text, imageBase64);
+        const { imageBase64, class: className, subject, chapter } = item;
 
-        if (validity !== "VALID" || !normalized_question) {
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    question: text || "Question",
-                    solution: "The question is not a valid academic question.",
-                    videoUrl: "",
-                    imageUrl: ""
-                });
-            }
-            continue;
-        }
-
-        validItems.push(item);
-        normalizedTexts.push(normalized_question);
-    }
-
-    if (validItems.length === 0) return;
-
-    // Step 2: Generate embeddings for all normalized texts in one batch
-    let vectors;
-    try {
-        vectors = await generateEmbeddingsBatch(normalizedTexts);
-    } catch (err) {
-        console.error('Embedding generation failed:', err.message);
-        validItems.forEach(item => {
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    question: "Error",
-                    solution: "Unable to process question.",
-                    videoUrl: "",
-                    imageUrl: ""
-                });
-            }
-        });
-        return;
-    }
-
-    // Step 3: Run Pinecone queries (topK=3) in parallel
-    const queryPromises = validItems.map(async (item, idx) => {
-        const vector = vectors[idx];
-        const normalized = normalizedTexts[idx];
+        // Step 1: Extract questions from the image
+        let extractedQuestions = [];
         try {
-            const queryResponse = await index.query({
-                vector,
-                topK: 3,
-                includeMetadata: true
-            });
-            return { item, vector, normalized, queryResponse };
+            extractedQuestions = await extractQuestionsFromImage(imageBase64, className, subject, chapter);
         } catch (err) {
-            console.error('Pinecone query failed:', err.message);
-            return { item, vector, normalized, error: err };
-        }
-    });
-
-    const results = await Promise.all(queryPromises);
-
-    // Step 4: Process each result (NO SOLUTION GENERATION, NO STORAGE)
-    for (const res of results) {
-        const { item, normalized, queryResponse, error } = res;
-
-        // If error or no matches at all → return empty solution
-        if (error || !queryResponse?.matches?.length) {
+            console.error('Extraction failed for an item:', err.message);
             if (!item.sent) {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
-                    question: normalized,
-                    solution: "",
-                    videoUrl: "",
-                    imageUrl: ""
+                    status: 'error',
+                    message: `Failed to extract questions: ${err.message}`,
+                    questionsProcessed: 0
                 });
             }
             continue;
         }
 
-        // Find best match with score >= 0.85
-        const matches = queryResponse.matches;
-        const bestMatch = matches.find(m => m.score >= 0.85) || null;
+        if (extractedQuestions.length === 0) {
+            if (!item.sent) {
+                item.sent = true;
+                clearRequestTimeout(item);
+                item.res.json({
+                    status: 'success',
+                    message: 'No multiple-choice questions found in the image.',
+                    questionsProcessed: 0
+                });
+            }
+            continue;
+        }
 
-        if (bestMatch) {
-            const metadata = bestMatch.metadata || {};
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    question: metadata.question || normalized,
-                    solution: metadata.solution || "",          // empty if missing
-                    videoUrl: metadata.videoUrl || "",
-                    imageUrl: metadata.imageUrl || ""
-                });
+        // Step 2: Generate keys for Firestore
+        const classKey = `CLASS${className.replace(/\D/g, '')}`; // e.g., "CLASS9"
+        const subjectKey = subject.toUpperCase().replace(/\s/g, '_'); // e.g., "SCIENCE"
+
+        // Step 3: Save each question to Firestore with incremented IDs
+        const savedQuestions = [];
+        const batchWrite = db.batch();
+
+        for (const q of extractedQuestions) {
+            try {
+                const seqNumber = await getNextQuestionNumber(classKey, subjectKey);
+                const questionId = generateQuestionId(classKey, subjectKey, seqNumber);
+
+                const questionDoc = {
+                    questionId,
+                    questionText: q.questionText,
+                    options: q.options,
+                    correctIndex: q.correctIndex,
+                    solutionText: q.solutionText,
+                    questionImageUrl: null,
+                    solutionVideoUrl: null,
+                    solutionImageUrl: null,
+                    class: className,
+                    subject: subject,
+                    chapter: chapter,
+                    embedded: false,  // Kept for potential future use, but no longer embedded
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+
+                const docRef = db.collection('questions').doc(questionId);
+                batchWrite.set(docRef, questionDoc);
+                savedQuestions.push(questionId);
+            } catch (err) {
+                console.error(`Failed to save question: ${err.message}`);
+                // Continue saving others even if one fails
             }
-        } else {
-            // No match with sufficient score → return empty solution, no storage
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    question: normalized,
-                    solution: "",
-                    videoUrl: "",
-                    imageUrl: ""
-                });
+        }
+
+        // Commit the batch
+        if (savedQuestions.length > 0) {
+            try {
+                await batchWrite.commit();
+                console.log(`✅ Saved ${savedQuestions.length} questions for item`);
+            } catch (err) {
+                console.error('Failed to commit batch write:', err.message);
+                if (!item.sent) {
+                    item.sent = true;
+                    clearRequestTimeout(item);
+                    item.res.json({
+                        status: 'error',
+                        message: `Database write failed: ${err.message}`,
+                        questionsProcessed: 0
+                    });
+                }
+                continue;
             }
+        }
+
+        // Step 4: Respond to the client
+        if (!item.sent) {
+            item.sent = true;
+            clearRequestTimeout(item);
+            item.res.json({
+                status: 'success',
+                message: `Processed ${savedQuestions.length} questions.`,
+                questionsProcessed: savedQuestions.length
+            });
         }
     }
 }
@@ -427,14 +369,29 @@ function scheduleProcessing() {
 
 // ---- API Endpoint ----
 
-app.post('/api/search', async (req, res) => {
+app.post('/api/ingest', async (req, res) => {
     try {
-        const { text, imageBase64 } = req.body;
+        const { imageBase64, class: className, subject, chapter } = req.body;
+
+        if (!imageBase64) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Image data is required'
+            });
+        }
+        if (!className || !subject || !chapter) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'Class, subject, and chapter are required'
+            });
+        }
 
         const item = {
             res,
-            text: text || '',
             imageBase64,
+            class: className,
+            subject,
+            chapter,
             sent: false,
             timeout: null
         };
@@ -446,11 +403,10 @@ app.post('/api/search', async (req, res) => {
     } catch (error) {
         console.error("Critical Backend Error:", error);
         if (!res.headersSent) {
-            res.json({
-                question: "Error",
-                solution: "A critical error occurred.",
-                videoUrl: "",
-                imageUrl: ""
+            res.status(500).json({
+                status: 'error',
+                message: 'A critical error occurred.',
+                questionsProcessed: 0
             });
         }
     }
