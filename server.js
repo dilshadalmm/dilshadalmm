@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const { GoogleGenAI } = require("@google/genai");
 const admin = require('firebase-admin');
 const crypto = require('crypto');
 require('dotenv').config();
@@ -28,36 +27,6 @@ try {
 }
 const db = firebaseInitialized ? admin.firestore() : null;
 
-// Initialize Gemini
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-// ---- Prompt for Extraction ----
-const EXTRACTION_PROMPT = `
-You are an AI assistant specialized in extracting multiple-choice questions from educational materials. 
-Given an image of a textbook page, identify all multiple-choice questions present. 
-For each question, extract the following fields:
-
-- questionText: The text of the question (preserve LaTeX formatting exactly as $...$)
-- options: An array of four strings, each representing a possible answer
-- correctIndex: The index (0‑based) of the correct option
-- solutionText: The explanation or solution (preserve LaTeX formatting exactly as $...$)
-
-Respond ONLY with a valid JSON array of objects following this exact schema:
-
-[
-  {
-    "questionText": "...",
-    "options": ["...", "...", "...", "..."],
-    "correctIndex": 0,
-    "solutionText": "..."
-  },
-  ...
-]
-
-If no multiple-choice questions are found, return an empty array [].
-Do not include any other text, markdown, or commentary.
-`;
-
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;                    // Number of requests per batch
 const MAX_CONCURRENT_BATCHES = 5;         // Maximum parallel batch workers
@@ -65,7 +34,7 @@ const MAX_WAIT_MS = 100;                  // Time to wait before processing a pa
 const RESPONSE_TIMEOUT_MS = 30000;        // Timeout for each request (30s for AI calls)
 
 // ---- Queue and Concurrency State ----
-const requestQueue = [];                  // { res, imageBase64, class, subject, chapter, timeout, sent }
+const requestQueue = [];                  // { res, questions, class, subject, chapter, timeout, sent }
 let activeBatches = 0;                    // Number of currently processing batches
 let partialBatchTimeoutId = null;         // Timeout ID for partial batch
 
@@ -101,87 +70,6 @@ async function getNextQuestionNumber(classKey, subjectKey) {
     });
 
     return result;
-}
-
-// ---- Token Logging Helper ----
-function logTokenUsage(response, callType) {
-    try {
-        if (response?.usageMetadata) {
-            const usage = response.usageMetadata;
-            console.log(`[Token Usage][${callType}] input: ${usage.promptTokenCount || 0}, output: ${usage.candidatesTokenCount || 0}, total: ${usage.totalTokenCount || 0}`);
-        } else {
-            console.log(`[Token Usage][${callType}] Token usage data not available for this request`);
-        }
-    } catch (err) {
-        console.log(`[Token Usage][${callType}] Failed to log token usage: ${err.message}`);
-    }
-}
-
-// ---- AI Functions ----
-
-/**
- * Sends an image to Gemini and extracts an array of questions.
- * @param {string} imageBase64 Base64 image data (may include data URL prefix)
- * @param {string} classText e.g., "Class 10"
- * @param {string} subjectText e.g., "Zoology"
- * @param {string} chapterText e.g., "Matter in Our Surroundings"
- * @returns {Promise<Array>} Array of question objects
- */
-async function extractQuestionsFromImage(imageBase64, classText, subjectText, chapterText) {
-    console.log(`[Extract] Calling Gemini at ${new Date().toISOString()}`);
-
-    // Prepare the prompt with metadata
-    const userPrompt = `Class: ${classText}\nSubject: ${subjectText}\nChapter: ${chapterText}\n\nExtract all multiple-choice questions from the attached image.`;
-
-    try {
-        // Strip data URL prefix if present
-        const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-lite',
-            contents: [
-                { text: userPrompt },
-                { inlineData: { mimeType: 'image/png', data: base64Data } }
-            ],
-            config: {
-                systemInstruction: { parts: [{ text: EXTRACTION_PROMPT }] },
-                generationConfig: {
-                    temperature: 0.6,
-                    topP: 0.95,
-                    responseMimeType: 'application/json'   // Force JSON output
-                },
-                thinkingConfig: { thinkingBudget: 0 }
-            }
-        });
-
-        // Log token usage for extraction call
-        logTokenUsage(response, 'extraction');
-
-        let fullText = "";
-        if (response?.candidates?.length > 0) {
-            fullText = response.candidates[0]?.content?.parts?.[0]?.text || "";
-        }
-
-        // Strip possible markdown code fences
-        const jsonString = fullText.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim();
-
-        // Parse the JSON array
-        try {
-            const questions = JSON.parse(jsonString);
-            if (Array.isArray(questions)) {
-                return questions;
-            } else {
-                console.warn('Unexpected response format (not an array):', questions);
-                return [];
-            }
-        } catch (parseErr) {
-            console.error('JSON parse error, raw response:', fullText);
-            return [];
-        }
-    } catch (err) {
-        console.error('Extraction failed:', err.message);
-        return [];
-    }
 }
 
 // ---- Queue Processing Helpers ----
@@ -237,56 +125,45 @@ async function tryStartBatch() {
 
 /**
  * Process a batch of ingestion requests.
- * For each item, call Gemini to extract questions, then save them to Firestore.
+ * For each item, directly save the provided questions to Firestore.
  * @param {Array} batch Array of request objects
  */
 async function processBatch(batch) {
-    // Process each item sequentially to avoid overloading Gemini
+    // Process each item sequentially to avoid overloading Firestore
     for (const item of batch) {
-        const { imageBase64, class: className, subject, chapter } = item;
+        const { questions, class: className, subject, chapter } = item;
 
-        // Step 1: Extract questions from the image
-        let extractedQuestions = [];
-        try {
-            extractedQuestions = await extractQuestionsFromImage(imageBase64, className, subject, chapter);
-        } catch (err) {
-            console.error('Extraction failed for an item:', err.message);
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    status: 'error',
-                    message: `Failed to extract questions: ${err.message}`,
-                    questionsProcessed: 0
-                });
-            }
-            continue;
-        }
-
-        if (extractedQuestions.length === 0) {
+        // Validate that questions is an array and not empty
+        if (!Array.isArray(questions) || questions.length === 0) {
             if (!item.sent) {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
                     status: 'success',
-                    message: 'No multiple-choice questions found in the image.',
+                    message: 'No questions provided.',
                     questionsProcessed: 0
                 });
             }
             continue;
         }
 
-        // Step 2: Generate sanitized keys for Firestore
-        // Convert class and subject to uppercase, replace spaces with underscores
+        // Generate sanitized keys for Firestore
         const classKey = className.trim().toUpperCase().replace(/\s+/g, '_');
         const subjectKey = subject.trim().toUpperCase().replace(/\s+/g, '_');
 
-        // Step 3: Save each question to Firestore with incremented IDs
+        // Save each question to Firestore with incremented IDs
         const savedQuestions = [];
         const batchWrite = db.batch();
 
-        for (const q of extractedQuestions) {
+        for (const q of questions) {
             try {
+                // Validate required fields
+                if (!q.questionText || !Array.isArray(q.options) || q.options.length !== 4 ||
+                    typeof q.correctIndex !== 'number' || !q.solutionText) {
+                    console.warn('Skipping malformed question:', q);
+                    continue;
+                }
+
                 const seqNumber = await getNextQuestionNumber(classKey, subjectKey);
                 const questionId = generateQuestionId(classKey, subjectKey, seqNumber);
 
@@ -296,13 +173,13 @@ async function processBatch(batch) {
                     options: q.options,
                     correctIndex: q.correctIndex,
                     solutionText: q.solutionText,
-                    questionImageUrl: null,
-                    solutionVideoUrl: null,
-                    solutionImageUrl: null,
+                    questionImageUrl: q.questionImageUrl || null,
+                    solutionVideoUrl: q.solutionVideoUrl || null,
+                    solutionImageUrl: q.solutionImageUrl || null,
                     class: className,
                     subject: subject,
                     chapter: chapter,
-                    embedded: false,  // Kept for potential future use, but no longer embedded
+                    embedded: false,
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 };
 
@@ -335,7 +212,7 @@ async function processBatch(batch) {
             }
         }
 
-        // Step 4: Respond to the client
+        // Respond to the client
         if (!item.sent) {
             item.sent = true;
             clearRequestTimeout(item);
@@ -372,24 +249,24 @@ function scheduleProcessing() {
 
 app.post('/api/ingest', async (req, res) => {
     try {
-        const { imageBase64, class: className, subject, chapter } = req.body;
+        const { questions, class: className, subject, chapter } = req.body;
 
-        if (!imageBase64) {
+        if (!questions || !Array.isArray(questions)) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Image data is required'
+                message: 'questions array is required'
             });
         }
         if (!className || !subject || !chapter) {
             return res.status(400).json({
                 status: 'error',
-                message: 'Class, subject, and chapter are required'
+                message: 'class, subject, and chapter are required'
             });
         }
 
         const item = {
             res,
-            imageBase64,
+            questions,
             class: className,
             subject,
             chapter,
