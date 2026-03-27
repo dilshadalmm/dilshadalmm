@@ -27,6 +27,56 @@ try {
 }
 const db = firebaseInitialized ? admin.firestore() : null;
 
+// ---- Hashing & Normalization Functions ----
+/**
+ * Normalize a string by:
+ * - converting to lowercase
+ * - removing punctuation (.,!?;:'"()[]{} etc.)
+ * - collapsing multiple spaces
+ * - trimming leading/trailing whitespace
+ * @param {string} text
+ * @returns {string} normalized text
+ */
+function normalizeText(text) {
+    if (!text || typeof text !== 'string') return '';
+    // Lowercase
+    let normalized = text.toLowerCase();
+    // Remove punctuation (keep alphanumeric, spaces, and basic math symbols +-*/=)
+    normalized = normalized.replace(/[^\w\s+\-*/=]/g, ' ');
+    // Collapse multiple spaces
+    normalized = normalized.replace(/\s+/g, ' ').trim();
+    return normalized;
+}
+
+/**
+ * Generate a deterministic SHA‑256 hash for a question.
+ * Duplicate detection treats two questions as equal if they have:
+ * - the same normalized question text
+ * - the same set of normalized options (order‑independent)
+ * 
+ * Steps:
+ * 1. Normalize the question text.
+ * 2. Normalize each option.
+ * 3. Sort normalized options (alphabetically).
+ * 4. Combine normalized question and sorted options with a separator.
+ * 5. Return SHA‑256 hash of the combined string.
+ * 
+ * @param {object} q - question object with questionText and options array
+ * @returns {string} hex hash
+ */
+function createQuestionHash(q) {
+    // Normalize question text
+    const normalizedQuestion = normalizeText(q.questionText);
+    // Normalize each option
+    const normalizedOptions = (q.options || []).map(opt => normalizeText(opt));
+    // Sort options alphabetically (order‑independent)
+    const sortedOptions = [...normalizedOptions].sort();
+    // Combine question and options
+    const combined = `${normalizedQuestion}|${sortedOptions.join('|')}`;
+    // Compute SHA‑256 hash
+    return crypto.createHash('sha256').update(combined).digest('hex');
+}
+
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;                    // Number of requests per batch
 const MAX_CONCURRENT_BATCHES = 5;         // Maximum parallel batch workers
@@ -144,27 +194,45 @@ async function tryStartBatch() {
 }
 
 /**
+ * Check which hashes already exist in Firestore.
+ * Uses batched queries (max 10 hashes per query) to avoid per‑hash calls.
+ * @param {string[]} hashes - array of hash strings
+ * @returns {Promise<Set<string>>} set of existing hashes
+ */
+async function getExistingHashes(hashes) {
+    if (!db || !hashes.length) return new Set();
+    const existing = new Set();
+    const chunkSize = 10;
+    for (let i = 0; i < hashes.length; i += chunkSize) {
+        const chunk = hashes.slice(i, i + chunkSize);
+        const snapshot = await db.collection('questions')
+            .where('questionHash', 'in', chunk)
+            .select('questionHash')
+            .get();
+        snapshot.forEach(doc => {
+            const hash = doc.data().questionHash;
+            if (hash) existing.add(hash);
+        });
+    }
+    return existing;
+}
+
+/**
  * Process a batch of ingestion requests.
- * For each item, directly save the provided questions to Firestore.
+ * For each item, compute hashes, filter duplicates, and save new questions.
  * Uses a single counter transaction per request to reserve all needed IDs,
  * then commits the questions in chunks of 500.
  * @param {Array} batch Array of request objects
  */
 async function processBatch(batch) {
+    // Step 1: Gather all valid questions and compute their hashes
+    const allItemsData = []; // { item, validQuestions, hashes }
     for (const item of batch) {
         const { questions, class: className, subject, chapter } = item;
 
         // Validate that questions is an array and not empty
         if (!Array.isArray(questions) || questions.length === 0) {
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    status: 'success',
-                    message: 'No questions provided.',
-                    questionsProcessed: 0
-                });
-            }
+            allItemsData.push({ item, validQuestions: [], hashes: [] });
             continue;
         }
 
@@ -177,12 +245,57 @@ async function processBatch(batch) {
         );
 
         if (validQuestions.length === 0) {
+            allItemsData.push({ item, validQuestions: [], hashes: [] });
+            continue;
+        }
+
+        // Compute hashes for valid questions
+        const hashes = validQuestions.map(q => createQuestionHash(q));
+        allItemsData.push({ item, validQuestions, hashes });
+    }
+
+    // Step 2: Collect all hashes to check duplicates in one go
+    const allHashes = allItemsData.flatMap(data => data.hashes);
+    let existingHashesSet = new Set();
+    if (allHashes.length > 0) {
+        existingHashesSet = await getExistingHashes(allHashes);
+    }
+
+    // Step 3: Process each item, filtering duplicates and saving new questions
+    for (const { item, validQuestions, hashes } of allItemsData) {
+        if (validQuestions.length === 0) {
             if (!item.sent) {
                 item.sent = true;
                 clearRequestTimeout(item);
                 item.res.json({
                     status: 'success',
-                    message: 'No valid questions provided.',
+                    message: validQuestions.length === 0 ? 'No valid questions provided.' : 'No questions provided.',
+                    questionsProcessed: 0
+                });
+            }
+            continue;
+        }
+
+        // Filter out duplicates
+        const newQuestions = [];
+        const newHashes = [];
+        for (let i = 0; i < validQuestions.length; i++) {
+            const hash = hashes[i];
+            if (!existingHashesSet.has(hash)) {
+                newQuestions.push(validQuestions[i]);
+                newHashes.push(hash);
+                // Mark this hash as seen within the batch to avoid intra‑batch duplicates
+                existingHashesSet.add(hash);
+            }
+        }
+
+        if (newQuestions.length === 0) {
+            if (!item.sent) {
+                item.sent = true;
+                clearRequestTimeout(item);
+                item.res.json({
+                    status: 'success',
+                    message: 'All provided questions are duplicates.',
                     questionsProcessed: 0
                 });
             }
@@ -190,21 +303,22 @@ async function processBatch(batch) {
         }
 
         // Generate sanitized keys for Firestore
-        const classKey = className.trim().toUpperCase().replace(/\s+/g, '_');
-        const subjectKey = subject.trim().toUpperCase().replace(/\s+/g, '_');
+        const classKey = item.class.trim().toUpperCase().replace(/\s+/g, '_');
+        const subjectKey = item.subject.trim().toUpperCase().replace(/\s+/g, '_');
 
         try {
             // Reserve sequence numbers in one transaction
-            const seqNumbers = await getNextQuestionNumbers(classKey, subjectKey, validQuestions.length);
+            const seqNumbers = await getNextQuestionNumbers(classKey, subjectKey, newQuestions.length);
 
             // Build all write operations
             const writes = [];
             const savedQuestionIds = [];
 
-            for (let i = 0; i < validQuestions.length; i++) {
-                const q = validQuestions[i];
+            for (let i = 0; i < newQuestions.length; i++) {
+                const q = newQuestions[i];
                 const seqNumber = seqNumbers[i];
                 const questionId = generateQuestionId(classKey, subjectKey, seqNumber);
+                const hash = newHashes[i];
 
                 const questionDoc = {
                     questionId,
@@ -215,10 +329,11 @@ async function processBatch(batch) {
                     questionImageUrl: q.questionImageUrl || null,
                     solutionVideoUrl: q.solutionVideoUrl || null,
                     solutionImageUrl: q.solutionImageUrl || null,
-                    class: className,
-                    subject: subject,
-                    chapter: chapter,
-                    embedded: false,
+                    class: item.class,
+                    subject: item.subject,
+                    chapter: item.chapter,
+                    embedded: false,                // keep for embedding pipeline
+                    questionHash: hash,              // new field for duplicate detection
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 };
 
@@ -229,7 +344,7 @@ async function processBatch(batch) {
 
             // Commit writes in batches of 500
             await commitBatchWrites(writes);
-            console.log(`✅ Saved ${savedQuestionIds.length} questions for item`);
+            console.log(`✅ Saved ${savedQuestionIds.length} new questions for item`);
 
             // Respond to the client
             if (!item.sent) {
@@ -237,7 +352,7 @@ async function processBatch(batch) {
                 clearRequestTimeout(item);
                 item.res.json({
                     status: 'success',
-                    message: `Processed ${savedQuestionIds.length} questions.`,
+                    message: `Processed ${savedQuestionIds.length} questions. (${validQuestions.length - savedQuestionIds.length} duplicates skipped)`,
                     questionsProcessed: savedQuestionIds.length
                 });
             }
