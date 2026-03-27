@@ -142,6 +142,23 @@ async function commitBatchWrites(writes) {
     }
 }
 
+/**
+ * Helper to delete an array of Firestore document references in batches of 500.
+ * @param {Array<FirebaseFirestore.DocumentReference>} docRefs
+ */
+async function commitBatchDeletes(docRefs) {
+    if (!docRefs.length) return;
+    const chunkSize = 500;
+    for (let i = 0; i < docRefs.length; i += chunkSize) {
+        const chunk = docRefs.slice(i, i + chunkSize);
+        const batch = db.batch();
+        for (const docRef of chunk) {
+            batch.delete(docRef);
+        }
+        await batch.commit();
+    }
+}
+
 // ---- Queue Processing Helpers ----
 
 function setupRequestTimeout(item) {
@@ -546,6 +563,290 @@ app.get('/api/quiz', async (req, res) => {
     } catch (error) {
         console.error('Error in /api/quiz:', error);
         return res.status(500).json({
+            success: false,
+            error: 'An internal server error occurred'
+        });
+    }
+});
+
+// ---- ADMIN ENDPOINTS (Edit, Delete, Fetch) ----
+
+/**
+ * DELETE /api/question
+ * Deletes a single question by its questionId.
+ * Request body: { "questionId": "CLASS_10_ZOOLOGY_q1" }
+ * Response: { success: true, message: "Question deleted successfully" } or error.
+ */
+app.delete('/api/question', async (req, res) => {
+    try {
+        const { questionId } = req.body;
+
+        if (!questionId || typeof questionId !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'questionId is required and must be a string'
+            });
+        }
+
+        if (!db) {
+            console.error('Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Database service unavailable'
+            });
+        }
+
+        const docRef = db.collection('questions').doc(questionId);
+        const doc = await docRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).json({
+                success: false,
+                error: 'Question not found'
+            });
+        }
+
+        await docRef.delete();
+        console.log(`🗑️ Deleted question: ${questionId}`);
+        res.json({
+            success: true,
+            message: 'Question deleted successfully'
+        });
+    } catch (error) {
+        console.error('Error in DELETE /api/question:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An internal server error occurred'
+        });
+    }
+});
+
+/**
+ * DELETE /api/questions/bulk
+ * Bulk delete questions. Supports two modes:
+ * 1. By array of questionIds: { "questionIds": ["id1", "id2"] }
+ * 2. By class, subject, chapter: { "class": "...", "subject": "...", "chapter": "..." }
+ * Returns { success: true, deletedCount: N }
+ */
+app.delete('/api/questions/bulk', async (req, res) => {
+    try {
+        const { questionIds, class: className, subject, chapter } = req.body;
+
+        if (!db) {
+            console.error('Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Database service unavailable'
+            });
+        }
+
+        let docRefs = [];
+
+        // Mode 1: delete by IDs
+        if (questionIds && Array.isArray(questionIds) && questionIds.length > 0) {
+            // Validate each ID is a string
+            for (const id of questionIds) {
+                if (typeof id !== 'string') {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Each questionId must be a string'
+                    });
+                }
+                docRefs.push(db.collection('questions').doc(id));
+            }
+        }
+        // Mode 2: delete by class/subject/chapter
+        else if (className && subject && chapter) {
+            const snapshot = await db.collection('questions')
+                .where('class', '==', className)
+                .where('subject', '==', subject)
+                .where('chapter', '==', chapter)
+                .get();
+
+            if (snapshot.empty) {
+                return res.json({ success: true, deletedCount: 0 });
+            }
+
+            docRefs = snapshot.docs.map(doc => doc.ref);
+        }
+        else {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid request. Provide either "questionIds" array or "class", "subject", "chapter"'
+            });
+        }
+
+        if (docRefs.length === 0) {
+            return res.json({ success: true, deletedCount: 0 });
+        }
+
+        // Perform batched deletions
+        await commitBatchDeletes(docRefs);
+        console.log(`🗑️ Bulk deleted ${docRefs.length} questions`);
+        res.json({
+            success: true,
+            deletedCount: docRefs.length
+        });
+    } catch (error) {
+        console.error('Error in DELETE /api/questions/bulk:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An internal server error occurred'
+        });
+    }
+});
+
+/**
+ * PUT /api/question
+ * Updates an existing question. Only provided fields are updated.
+ * The questionHash is recalculated based on the updated questionText and options.
+ * Request body contains the fields to update (questionId is required).
+ * Response: { success: true, message: "Question updated successfully" }
+ */
+app.put('/api/question', async (req, res) => {
+    try {
+        const {
+            questionId,
+            questionText,
+            options,
+            correctIndex,
+            solutionText,
+            questionImageUrl,
+            solutionVideoUrl,
+            solutionImageUrl
+        } = req.body;
+
+        if (!questionId || typeof questionId !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'questionId is required and must be a string'
+            });
+        }
+
+        if (!db) {
+            console.error('Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Database service unavailable'
+            });
+        }
+
+        const docRef = db.collection('questions').doc(questionId);
+        const doc = await docRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).json({
+                success: false,
+                error: 'Question not found'
+            });
+        }
+
+        // Build update object
+        const updateData = {};
+
+        if (questionText !== undefined) updateData.questionText = questionText;
+        if (options !== undefined) updateData.options = options;
+        if (correctIndex !== undefined) updateData.correctIndex = correctIndex;
+        if (solutionText !== undefined) updateData.solutionText = solutionText;
+        if (questionImageUrl !== undefined) updateData.questionImageUrl = questionImageUrl;
+        if (solutionVideoUrl !== undefined) updateData.solutionVideoUrl = solutionVideoUrl;
+        if (solutionImageUrl !== undefined) updateData.solutionImageUrl = solutionImageUrl;
+
+        // Recalculate hash if either questionText or options changed
+        if (updateData.questionText !== undefined || updateData.options !== undefined) {
+            // Use current data for fields not being updated
+            const currentData = doc.data();
+            const newQuestion = {
+                questionText: updateData.questionText !== undefined ? updateData.questionText : currentData.questionText,
+                options: updateData.options !== undefined ? updateData.options : currentData.options
+            };
+            updateData.questionHash = createQuestionHash(newQuestion);
+        }
+
+        // Add updated timestamp
+        updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        await docRef.update(updateData);
+        console.log(`✏️ Updated question: ${questionId}`);
+        res.json({
+            success: true,
+            message: 'Question updated successfully'
+        });
+    } catch (error) {
+        console.error('Error in PUT /api/question:', error);
+        res.status(500).json({
+            success: false,
+            error: 'An internal server error occurred'
+        });
+    }
+});
+
+/**
+ * GET /api/questions
+ * Admin endpoint to fetch questions with optional filters.
+ * Query parameters:
+ *   - class (optional) : filter by class
+ *   - subject (optional) : filter by subject
+ *   - chapter (optional) : filter by chapter
+ *   - limit (optional) : maximum number of questions to return (default 50)
+ * Returns: { success: true, questions: [...] }
+ */
+app.get('/api/questions', async (req, res) => {
+    try {
+        const { class: className, subject, chapter, limit: limitParam } = req.query;
+
+        if (!db) {
+            console.error('Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Database service unavailable'
+            });
+        }
+
+        // Parse limit
+        let limit = 50;
+        if (limitParam) {
+            const parsed = parseInt(limitParam, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                limit = parsed;
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    error: 'limit must be a positive integer'
+                });
+            }
+        }
+
+        // Build query
+        let query = db.collection('questions');
+        if (className) query = query.where('class', '==', className);
+        if (subject) query = query.where('subject', '==', subject);
+        if (chapter) query = query.where('chapter', '==', chapter);
+
+        const snapshot = await query.limit(limit).get();
+
+        const questions = snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Return only necessary fields for editing
+            return {
+                questionId: data.questionId,
+                questionText: data.questionText,
+                options: data.options,
+                correctIndex: data.correctIndex,
+                solutionText: data.solutionText,
+                questionImageUrl: data.questionImageUrl || null,
+                solutionVideoUrl: data.solutionVideoUrl || null,
+                solutionImageUrl: data.solutionImageUrl || null
+            };
+        });
+
+        res.json({
+            success: true,
+            questions
+        });
+    } catch (error) {
+        console.error('Error in GET /api/questions:', error);
+        res.status(500).json({
             success: false,
             error: 'An internal server error occurred'
         });
