@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Studentplus - Smart Question Ingestion & Admin</title>
-    <!-- Creepster Font for Brand Name -->
     <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
     <style>
-        /* ----- GLOBAL RESET & SCROLLBAR HIDE (keep vertical scroll) ----- */
+        /* ... existing styles unchanged ... */
         * {
             margin: 0;
             padding: 0;
@@ -16,12 +15,10 @@
             -webkit-tap-highlight-color: transparent;
             -webkit-touch-callout: none;
         }
-
         input, textarea, #file-name, .result-meta, .file-label, .question-card, .modal-content input, .modal-content textarea, .modal-content select {
             user-select: text;
             -webkit-user-select: text;
         }
-
         html {
             overflow-y: scroll;
             scrollbar-width: none;
@@ -30,7 +27,6 @@
         html::-webkit-scrollbar {
             display: none;
         }
-
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #f5f7fb;
@@ -40,7 +36,6 @@
             overflow-x: hidden;
             min-height: 100vh;
         }
-
         .container {
             max-width: 1000px;
             margin: 0 auto;
@@ -50,7 +45,6 @@
             padding: 1.8rem 2rem 2.2rem;
             overflow-x: hidden;
         }
-
         .brand-header {
             display: flex;
             align-items: center;
@@ -85,7 +79,6 @@
             font-size: 0.9rem;
             margin-top: 0.25rem;
         }
-
         .form-group {
             margin-bottom: 1.3rem;
         }
@@ -280,7 +273,6 @@
             flex: 1;
             margin-bottom: 0;
         }
-        /* Modal Styles */
         .modal {
             display: none;
             position: fixed;
@@ -333,7 +325,6 @@
 </head>
 <body>
 <div class="container">
-    <!-- Branding: Logo + Creepster Text -->
     <div class="brand-header">
         <img class="brand-logo" src="https://i.postimg.cc/y88hFhh3/20260311_205800_0000.png" alt="Studentplus logo" draggable="false">
         <span class="brand-name">Studentplus</span>
@@ -376,7 +367,7 @@
 
     <hr>
 
-    <!-- SECTION 1: FETCH QUESTIONS (Admin Viewer) -->
+    <!-- SECTION 1: FETCH QUESTIONS -->
     <div class="section-title">🔍 Fetch Stored Questions</div>
     <div class="inline-form-row">
         <div class="form-group">
@@ -522,7 +513,21 @@
 
     let lastFetchParams = null;
 
-    // Helper functions
+    // Helper: safe fetch with JSON parsing and error handling
+    async function safeFetchJSON(url, options = {}) {
+        const response = await fetch(url, options);
+        let responseText = null;
+        try {
+            responseText = await response.text();
+            // Attempt to parse as JSON
+            const data = JSON.parse(responseText);
+            return { response, data };
+        } catch (parseError) {
+            // JSON parse failed – return the raw text for error reporting
+            throw new Error(`Invalid JSON response (status ${response.status}): ${responseText.substring(0, 200)}${responseText.length > 200 ? '...' : ''}`);
+        }
+    }
+
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -559,7 +564,7 @@
         btn.innerHTML = originalText;
     }
 
-    // Fetch questions
+    // Fetch questions with improved error handling
     async function fetchQuestions() {
         const className = fetchClass.value.trim();
         const subject = fetchSubject.value.trim();
@@ -579,16 +584,16 @@
 
         questionsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="spinner"></span> Loading questions...</div>';
         try {
-            const response = await fetch(url);
-            const data = await response.json();
+            const { response, data } = await safeFetchJSON(url);
             if (response.ok && data.success) {
                 renderQuestions(data.questions);
             } else {
                 questionsContainer.innerHTML = `<div class="result-card result-error"><p>${escapeHtml(data.error || 'Failed to fetch questions.')}</p></div>`;
             }
         } catch (err) {
-            console.error(err);
+            console.error('Fetch error:', err);
             questionsContainer.innerHTML = `<div class="result-card result-error"><p>Network error: ${escapeHtml(err.message)}</p></div>`;
+            showAdminResult(false, 'Error fetching questions: ' + err.message);
         }
     }
 
@@ -638,12 +643,11 @@
 
     async function deleteQuestion(questionId) {
         try {
-            const response = await fetch(DELETE_API, {
+            const { response, data } = await safeFetchJSON(DELETE_API, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ questionId })
             });
-            const data = await response.json();
             if (response.ok && data.success) {
                 showAdminResult(true, `Question ${questionId} deleted successfully.`);
                 if (lastFetchParams) fetchQuestions();
@@ -657,7 +661,7 @@
     }
 
     async function openEditModal(questionId) {
-        // Fetch full question data first
+        // Fetch all questions to find the specific one
         try {
             const params = new URLSearchParams();
             params.append('class', '');
@@ -665,8 +669,7 @@
             params.append('chapter', '');
             params.append('limit', 1000);
             const fetchUrl = `${FETCH_API}?${params.toString()}`;
-            const response = await fetch(fetchUrl);
-            const data = await response.json();
+            const { response, data } = await safeFetchJSON(fetchUrl);
             if (response.ok && data.success) {
                 const question = data.questions.find(q => q.questionId === questionId);
                 if (!question) {
@@ -688,7 +691,7 @@
                 document.getElementById('editSolutionImageUrl').value = question.solutionImageUrl || '';
                 editModal.style.display = 'flex';
             } else {
-                showAdminResult(false, 'Could not fetch question details.');
+                showAdminResult(false, data.error || 'Could not fetch question details.');
             }
         } catch (err) {
             showAdminResult(false, `Error: ${err.message}`);
@@ -717,12 +720,11 @@
         const originalText = updateBtn.innerHTML;
         showLoading(updateBtn, 'Updating...');
         try {
-            const response = await fetch(EDIT_API, {
+            const { response, data } = await safeFetchJSON(EDIT_API, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            const data = await response.json();
             if (response.ok && data.success) {
                 showAdminResult(true, 'Question updated successfully.');
                 editModal.style.display = 'none';
@@ -750,17 +752,15 @@
         const originalText = btn.innerHTML;
         showLoading(btn, 'Deleting...');
         try {
-            const response = await fetch(BULK_DELETE_API, {
+            const { response, data } = await safeFetchJSON(BULK_DELETE_API, {
                 method: 'DELETE',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ class: className, subject, chapter })
             });
-            const data = await response.json();
             if (response.ok && data.success) {
                 showAdminResult(true, `Successfully deleted ${data.deletedCount} questions.`);
                 if (lastFetchParams) fetchQuestions();
                 else questionsContainer.innerHTML = '';
-                // Optionally clear bulk fields
                 bulkClass.value = '';
                 bulkSubject.value = '';
                 bulkChapter.value = '';
@@ -774,7 +774,7 @@
         }
     }
 
-    // INGESTION LOGIC (unchanged)
+    // INGESTION LOGIC (unchanged, but improved error handling for consistency)
     function displayResult(success, message, details = null) {
         resultArea.style.display = 'block';
         const resultClass = success ? 'result-success' : 'result-error';
@@ -840,27 +840,23 @@
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 45000);
-            const response = await fetch(INGEST_API, {
+            const { response, data } = await safeFetchJSON(INGEST_API, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
-            const data = await response.json();
-            if (response.ok) {
-                if (data.status === 'success') {
-                    displayResult(true, data.message || `Successfully processed ${data.questionsProcessed} questions.`, { questionsProcessed: data.questionsProcessed });
-                } else {
-                    displayResult(false, data.message || 'Server reported an error.', data);
-                }
+            if (response.ok && data.status === 'success') {
+                displayResult(true, data.message || `Successfully processed ${data.questionsProcessed} questions.`, { questionsProcessed: data.questionsProcessed });
             } else {
-                displayResult(false, `Server error (${response.status}): ${data.message || 'Please try again later.'}`, data);
+                displayResult(false, data.message || 'Server reported an error.', data);
             }
         } catch (error) {
             let errorMsg = 'Network or CORS error. Make sure the server is reachable.';
             if (error.name === 'AbortError') errorMsg = 'Request timed out. The server took too long to respond.';
             else if (error.message.includes('Failed to fetch')) errorMsg = 'Cannot connect to the server. The backend might be down (503) or unreachable. Please verify the server status.';
+            else errorMsg = error.message;
             displayResult(false, errorMsg, { error: error.message });
         } finally {
             submitBtn.disabled = false;
