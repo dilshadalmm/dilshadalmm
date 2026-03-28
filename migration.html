@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Firestore Metadata Migration Tool</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Firestore Metadata Migration – One‑time Tool</title>
     <!-- Firebase SDKs (modular, v10.12.2) -->
     <script type="importmap">
         {
@@ -34,7 +34,6 @@
             border-radius: 28px;
             box-shadow: 0 20px 35px -12px rgba(0,0,0,0.15);
             overflow: hidden;
-            transition: all 0.2s;
         }
         .header {
             background: #1e293b;
@@ -42,10 +41,9 @@
             padding: 24px 32px;
         }
         .header h1 {
-            margin: 0 0 6px 0;
+            margin: 0 0 6px;
             font-weight: 600;
             font-size: 1.9rem;
-            letter-spacing: -0.3px;
         }
         .header p {
             margin: 0;
@@ -55,99 +53,17 @@
         .content {
             padding: 28px 32px 32px;
         }
-        .config-section {
-            background: #f8fafc;
-            border-radius: 20px;
-            padding: 20px 24px;
-            margin-bottom: 32px;
-            border: 1px solid #e2e8f0;
-        }
-        .config-title {
-            font-weight: 600;
-            font-size: 1.2rem;
-            margin-bottom: 16px;
-            color: #0f172a;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .config-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 16px 20px;
-            margin-bottom: 24px;
-        }
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .input-group label {
-            font-size: 0.75rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #334155;
-        }
-        .input-group input {
-            padding: 10px 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 14px;
-            font-size: 0.85rem;
-            background: white;
-            transition: 0.2s;
-        }
-        .input-group input:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-        }
-        .btn {
-            background: #1e293b;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 40px;
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: white;
-            cursor: pointer;
-            transition: 0.2s;
-            margin-right: 12px;
-        }
-        .btn-primary {
-            background: #2563eb;
-            box-shadow: 0 2px 6px rgba(37,99,235,0.2);
-        }
-        .btn-primary:hover:not(:disabled) {
-            background: #1d4ed8;
-            transform: scale(0.98);
-        }
-        .btn-outline {
-            background: transparent;
-            border: 1px solid #cbd5e1;
-            color: #1e293b;
-        }
-        .btn-outline:hover:not(:disabled) {
-            background: #f1f5f9;
-        }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
         .migration-panel {
             background: #ffffff;
             border-radius: 20px;
             border: 1px solid #e2e8f0;
             padding: 20px 24px;
-            margin-top: 8px;
         }
         .progress-area {
             background: #f1f5f9;
             border-radius: 20px;
             padding: 16px 20px;
             margin: 20px 0 16px;
-            font-family: monospace;
-            font-size: 0.9rem;
         }
         .status-text {
             font-weight: 500;
@@ -171,7 +87,7 @@
             border-radius: 18px;
             font-size: 0.8rem;
             font-family: 'SF Mono', monospace;
-            max-height: 220px;
+            max-height: 240px;
             overflow-y: auto;
             white-space: pre-wrap;
             word-break: break-word;
@@ -189,9 +105,28 @@
             font-size: 0.85rem;
             font-weight: 500;
         }
-        hr {
-            margin: 16px 0;
-            border-color: #e2e8f0;
+        .btn {
+            background: #1e293b;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: white;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-primary {
+            background: #2563eb;
+            box-shadow: 0 2px 6px rgba(37,99,235,0.2);
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #1d4ed8;
+            transform: scale(0.98);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         .warning-note {
             background: #fffbeb;
@@ -201,11 +136,17 @@
             font-size: 0.8rem;
             margin-top: 18px;
         }
+        .error-note {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+            color: #991b1b;
+        }
         .flex-btns {
             display: flex;
             gap: 12px;
             align-items: center;
             flex-wrap: wrap;
+            margin-bottom: 16px;
         }
     </style>
 </head>
@@ -216,49 +157,33 @@
         <p>One‑time migration: questions → courses, subjects, chapters with accurate question counts</p>
     </div>
     <div class="content">
-        <!-- Firebase configuration panel (editable) -->
-        <div class="config-section">
-            <div class="config-title">
-                🔧 Firebase Project Settings
-            </div>
-            <div class="config-grid" id="firebaseConfigFields">
-                <div class="input-group"><label>API Key</label><input type="text" id="apiKey" placeholder="AIzaSy..." value=""></div>
-                <div class="input-group"><label>Auth Domain</label><input type="text" id="authDomain" placeholder="your-project.firebaseapp.com" value=""></div>
-                <div class="input-group"><label>Project ID</label><input type="text" id="projectId" placeholder="your-project-id" value=""></div>
-                <div class="input-group"><label>Storage Bucket</label><input type="text" id="storageBucket" placeholder="your-project.appspot.com" value=""></div>
-                <div class="input-group"><label>Messaging Sender ID</label><input type="text" id="messagingSenderId" placeholder="1234567890" value=""></div>
-                <div class="input-group"><label>App ID</label><input type="text" id="appId" placeholder="1:...:web:..." value=""></div>
-            </div>
-            <div class="flex-btns">
-                <button id="initFirebaseBtn" class="btn btn-primary">✅ Initialize Firebase</button>
-                <span style="font-size:0.75rem; color:#475569;">Paste your config and click init</span>
-            </div>
-        </div>
-
-        <!-- Migration Control Panel -->
         <div class="migration-panel">
             <div style="font-weight:600; margin-bottom:12px;">🚀 Migration Runner</div>
-            <button id="startMigrationBtn" class="btn btn-primary" disabled>▶ Start Migration</button>
-            <button id="resetUiBtn" class="btn btn-outline" disabled>⟳ Reset UI</button>
+            <div class="flex-btns">
+                <button id="startMigrationBtn" class="btn btn-primary">▶ Start Migration</button>
+                <button id="resetUiBtn" class="btn">⟳ Reset UI</button>
+            </div>
             
             <div class="progress-area">
                 <div class="status-text">
                     <span>📊 Status:</span>
-                    <span id="migrationStatus" class="status-badge">⏳ Not initialized</span>
+                    <span id="migrationStatus" class="status-badge">⏳ Initializing Firebase...</span>
                 </div>
                 <div><span>📄 Questions processed:</span> <strong id="questionsProcessed">0</strong></div>
-                <div class="stats" id="statsPreview">
+                <div class="stats">
                     <span>📚 Courses: <span id="courseCountStat">—</span></span>
                     <span>📖 Subjects: <span id="subjectCountStat">—</span></span>
                     <span>📑 Chapters: <span id="chapterCountStat">—</span></span>
                 </div>
             </div>
             <div class="log" id="logPanel">
-                🔹 Ready — paste Firebase config and click "Initialize Firebase".
+                🔹 Connecting to Firestore...
             </div>
-            <div class="warning-note">
-                ⚠️ This migration will read ALL documents in "questions" collection and write/overwrite metadata in "courses", "subjects", "chapters".<br>
-                ✅ Supports both legacy fields (class/subject/chapter) and array "mappings". Batch writes up to 500 ops. Safe for thousands of docs.
+            <div class="warning-note" id="permissionHelp" style="display: none;">
+                ⚠️ <strong>Permission denied</strong> – Your Firestore security rules are blocking access.<br>
+                For this one‑time migration, you can <strong>temporarily</strong> set your rules to:<br>
+                <code style="background:#f1f5f9; display:inline-block; padding:4px 8px; border-radius:8px; margin-top:6px;">rules_version = '2';<br>service cloud.firestore {<br>  match /databases/{database}/documents {<br>    match /{document=**} {<br>      allow read, write: if true;<br>    }<br>  }<br>}</code><br>
+                <span style="font-size:0.75rem;">After migration, restore your original rules.</span>
             </div>
         </div>
     </div>
@@ -280,8 +205,20 @@
         FieldValue
     } from 'firebase/firestore';
 
+    // ------------------------------------------------------------
+    // HARDCODED FIREBASE CONFIG (provided in the problem)
+    // ------------------------------------------------------------
+    const firebaseConfig = {
+        apiKey: "AIzaSyC6NRjkwiazA-aYF4okvnLW4qpCyMg8O9E",
+        authDomain: "fir-f3d53.firebaseapp.com",
+        databaseURL: "https://fir-f3d53-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "fir-f3d53",
+        storageBucket: "fir-f3d53.firebasestorage.app",
+        messagingSenderId: "683707045028",
+        appId: "1:683707045028:web:93990fa0de8767dda90231"
+    };
+    
     // DOM elements
-    const initBtn = document.getElementById('initFirebaseBtn');
     const startBtn = document.getElementById('startMigrationBtn');
     const resetBtn = document.getElementById('resetUiBtn');
     const migrationStatusSpan = document.getElementById('migrationStatus');
@@ -290,13 +227,13 @@
     const subjectCountStatSpan = document.getElementById('subjectCountStat');
     const chapterCountStatSpan = document.getElementById('chapterCountStat');
     const logPanel = document.getElementById('logPanel');
+    const permissionHelpDiv = document.getElementById('permissionHelp');
     
-    // state variables
     let db = null;
     let migrationRunning = false;
     let firebaseApp = null;
     
-    // Helper: log to panel (append)
+    // Helper: log to panel
     function addLog(message, isError = false) {
         const logDiv = logPanel;
         const prefix = isError ? '❌ ' : '🔹 ';
@@ -309,13 +246,12 @@
         if (isError) line.style.color = '#f87171';
         logDiv.appendChild(line);
         logDiv.scrollTop = logDiv.scrollHeight;
-        // keep last 200 lines tidy
-        while (logDiv.children.length > 180) logDiv.removeChild(logDiv.firstChild);
+        while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
     }
     
     function clearLog() {
         logPanel.innerHTML = '';
-        addLog('Log cleared. Ready for migration.');
+        addLog('Log cleared.');
     }
     
     function updateStatsPreview(courses, subjects, chapters) {
@@ -324,16 +260,15 @@
         chapterCountStatSpan.innerText = chapters !== undefined ? chapters : '—';
     }
     
-    // Helper: normalize string to id (lowercase, underscores)
     function normalizeId(str) {
         if (!str) return '';
         return str.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     }
     
-    // Core migration logic: scan questions, count, batch write metadata
+    // Core migration logic
     async function runMigration() {
         if (!db) {
-            addLog('Firestore not initialized. Please initialize Firebase first.', true);
+            addLog('Firestore not initialized. Please refresh the page.', true);
             return;
         }
         if (migrationRunning) {
@@ -343,25 +278,21 @@
         
         migrationRunning = true;
         startBtn.disabled = true;
-        initBtn.disabled = true;
         migrationStatusSpan.innerText = '🔄 FETCHING QUESTIONS';
         migrationStatusSpan.style.background = '#facc15';
         questionsProcessedSpan.innerText = '0';
         updateStatsPreview('...', '...', '...');
         addLog('🚀 Starting metadata migration — scanning questions collection...');
         
-        // counters using Maps
-        const coursesCount = new Map();      // key: courseId -> count
-        const coursesName = new Map();       // key: courseId -> original class name
-        
-        const subjectsCount = new Map();     // key: subjectId -> count
-        const subjectsClassMap = new Map();  // subjectId -> original class string
-        const subjectsSubjectMap = new Map();// subjectId -> original subject string
-        
-        const chaptersCount = new Map();     // key: chapterId -> count
-        const chaptersClassMap = new Map();  // chapterId -> original class
-        const chaptersSubjectMap = new Map();// chapterId -> original subject
-        const chaptersChapterMap = new Map();// chapterId -> original chapter
+        const coursesCount = new Map();
+        const coursesName = new Map();
+        const subjectsCount = new Map();
+        const subjectsClassMap = new Map();
+        const subjectsSubjectMap = new Map();
+        const chaptersCount = new Map();
+        const chaptersClassMap = new Map();
+        const chaptersSubjectMap = new Map();
+        const chaptersChapterMap = new Map();
         
         let processedDocs = 0;
         let lastDoc = null;
@@ -370,7 +301,6 @@
         
         try {
             const questionsRef = collection(db, 'questions');
-            // Pagination loop
             while (hasMore) {
                 let q;
                 if (lastDoc) {
@@ -388,55 +318,37 @@
                     const data = docSnap.data();
                     let mappingsToProcess = [];
                     
-                    // SUPPORT BOTH FORMATS:
-                    // 1) If "mappings" exists and is array -> use it
                     if (data.mappings && Array.isArray(data.mappings) && data.mappings.length > 0) {
                         mappingsToProcess = data.mappings;
-                    } 
-                    // 2) legacy: class, subject, chapter fields present
-                    else if (data.class && data.subject && data.chapter) {
+                    } else if (data.class && data.subject && data.chapter) {
                         mappingsToProcess.push({
                             class: data.class,
                             subject: data.subject,
                             chapter: data.chapter
                         });
                     }
-                    // If no valid mapping, skip
-                    if (mappingsToProcess.length === 0) continue;
                     
-                    // Process each mapping entry
                     for (const mapItem of mappingsToProcess) {
                         const rawClass = mapItem.class ? String(mapItem.class).trim() : '';
                         const rawSubject = mapItem.subject ? String(mapItem.subject).trim() : '';
                         const rawChapter = mapItem.chapter ? String(mapItem.chapter).trim() : '';
-                        if (!rawClass || !rawSubject || !rawChapter) {
-                            // skip incomplete mapping
-                            continue;
-                        }
-                        // generate IDs
+                        if (!rawClass || !rawSubject || !rawChapter) continue;
+                        
                         const courseId = normalizeId(rawClass);
                         if (!courseId) continue;
                         const subjectId = `${courseId}_${normalizeId(rawSubject)}`;
                         const chapterId = `${subjectId}_${normalizeId(rawChapter)}`;
                         
-                        // ---- COURSES ----
-                        const prevCourseCount = coursesCount.get(courseId) || 0;
-                        coursesCount.set(courseId, prevCourseCount + 1);
-                        if (!coursesName.has(courseId)) {
-                            coursesName.set(courseId, rawClass);
-                        }
+                        coursesCount.set(courseId, (coursesCount.get(courseId) || 0) + 1);
+                        if (!coursesName.has(courseId)) coursesName.set(courseId, rawClass);
                         
-                        // ---- SUBJECTS ----
-                        const prevSubjCount = subjectsCount.get(subjectId) || 0;
-                        subjectsCount.set(subjectId, prevSubjCount + 1);
+                        subjectsCount.set(subjectId, (subjectsCount.get(subjectId) || 0) + 1);
                         if (!subjectsClassMap.has(subjectId)) {
                             subjectsClassMap.set(subjectId, rawClass);
                             subjectsSubjectMap.set(subjectId, rawSubject);
                         }
                         
-                        // ---- CHAPTERS ----
-                        const prevChapCount = chaptersCount.get(chapterId) || 0;
-                        chaptersCount.set(chapterId, prevChapCount + 1);
+                        chaptersCount.set(chapterId, (chaptersCount.get(chapterId) || 0) + 1);
                         if (!chaptersClassMap.has(chapterId)) {
                             chaptersClassMap.set(chapterId, rawClass);
                             chaptersSubjectMap.set(chapterId, rawSubject);
@@ -445,11 +357,9 @@
                     }
                 }
                 
-                // update preview counts (distinct metadata)
                 updateStatsPreview(coursesCount.size, subjectsCount.size, chaptersCount.size);
                 lastDoc = docs[docs.length - 1];
                 if (docs.length < PAGE_SIZE) hasMore = false;
-                // small delay to keep UI responsive
                 await new Promise(r => setTimeout(r, 10));
             }
             
@@ -458,38 +368,30 @@
             migrationStatusSpan.innerText = '✍️ WRITING METADATA';
             
             if (processedDocs === 0) {
-                addLog('⚠️ No questions found with valid class/subject/chapter. Nothing to write.', false);
+                addLog('⚠️ No questions with valid class/subject/chapter found.', false);
                 migrationStatusSpan.innerText = '⚠️ No data';
                 migrationRunning = false;
                 startBtn.disabled = false;
-                initBtn.disabled = false;
                 return;
             }
             
-            // ---- Prepare batch writes (courses, subjects, chapters) ----
-            const writes = []; // {ref, data}
+            const writes = [];
             const nowTimestamp = FieldValue.serverTimestamp();
             
-            // Courses
             for (const [courseId, total] of coursesCount.entries()) {
-                const courseRef = doc(db, 'courses', courseId);
-                const originalName = coursesName.get(courseId) || courseId;
                 writes.push({
-                    ref: courseRef,
+                    ref: doc(db, 'courses', courseId),
                     data: {
-                        name: originalName,
+                        name: coursesName.get(courseId),
                         totalQuestions: total,
                         createdAt: nowTimestamp,
                         updatedAt: nowTimestamp
                     }
                 });
             }
-            
-            // Subjects
             for (const [subjectId, total] of subjectsCount.entries()) {
-                const subjectRef = doc(db, 'subjects', subjectId);
                 writes.push({
-                    ref: subjectRef,
+                    ref: doc(db, 'subjects', subjectId),
                     data: {
                         class: subjectsClassMap.get(subjectId),
                         subject: subjectsSubjectMap.get(subjectId),
@@ -499,12 +401,9 @@
                     }
                 });
             }
-            
-            // Chapters
             for (const [chapterId, total] of chaptersCount.entries()) {
-                const chapterRef = doc(db, 'chapters', chapterId);
                 writes.push({
-                    ref: chapterRef,
+                    ref: doc(db, 'chapters', chapterId),
                     data: {
                         class: chaptersClassMap.get(chapterId),
                         subject: chaptersSubjectMap.get(chapterId),
@@ -516,9 +415,7 @@
                 });
             }
             
-            addLog(`📦 Preparing to write ${writes.length} metadata documents (courses + subjects + chapters).`);
-            
-            // batch commit in chunks of 500
+            addLog(`📦 Preparing to write ${writes.length} metadata documents.`);
             const BATCH_LIMIT = 500;
             let committed = 0;
             for (let i = 0; i < writes.length; i += BATCH_LIMIT) {
@@ -530,78 +427,34 @@
                 await batch.commit();
                 committed += chunk.length;
                 addLog(`✓ Committed batch: ${committed}/${writes.length} metadata docs`);
-                // small breathing
                 await new Promise(r => setTimeout(r, 80));
             }
             
             addLog(`🎉 Migration completed successfully!`);
-            addLog(`✨ Final totals:`);
             addLog(`   • ${coursesCount.size} courses updated.`);
             addLog(`   • ${subjectsCount.size} subjects updated.`);
             addLog(`   • ${chaptersCount.size} chapters updated.`);
             migrationStatusSpan.innerText = '✅ COMPLETED';
             migrationStatusSpan.style.background = '#22c55e';
             updateStatsPreview(coursesCount.size, subjectsCount.size, chaptersCount.size);
+            permissionHelpDiv.style.display = 'none';
             
         } catch (err) {
             console.error(err);
             addLog(`Migration error: ${err.message || err}`, true);
             migrationStatusSpan.innerText = '❌ ERROR';
             migrationStatusSpan.style.background = '#ef4444';
+            if (err.message && (err.message.includes('permission') || err.message.includes('PERMISSION_DENIED'))) {
+                permissionHelpDiv.style.display = 'block';
+            } else {
+                permissionHelpDiv.style.display = 'none';
+            }
         } finally {
             migrationRunning = false;
             startBtn.disabled = false;
-            initBtn.disabled = false;
-            // keep reset button enabled
-            resetBtn.disabled = false;
         }
     }
     
-    // Initialize Firebase from user inputs
-    function initFirebase() {
-        try {
-            const apiKey = document.getElementById('apiKey').value.trim();
-            const authDomain = document.getElementById('authDomain').value.trim();
-            const projectId = document.getElementById('projectId').value.trim();
-            const storageBucket = document.getElementById('storageBucket').value.trim();
-            const messagingSenderId = document.getElementById('messagingSenderId').value.trim();
-            const appId = document.getElementById('appId').value.trim();
-            
-            if (!apiKey || !projectId || !authDomain) {
-                addLog('Please fill at least API Key, Auth Domain and Project ID', true);
-                return false;
-            }
-            const config = {
-                apiKey,
-                authDomain,
-                projectId,
-                storageBucket,
-                messagingSenderId,
-                appId,
-            };
-            if (firebaseApp) {
-                // cleanup previous if exists (optional)
-                try {
-                    firebaseApp.delete();
-                } catch(e) {}
-            }
-            firebaseApp = initializeApp(config);
-            db = getFirestore(firebaseApp);
-            addLog('✅ Firebase initialized successfully. Ready for migration.');
-            migrationStatusSpan.innerText = '⚡ Ready';
-            migrationStatusSpan.style.background = '#86efac';
-            startBtn.disabled = false;
-            resetBtn.disabled = false;
-            return true;
-        } catch (err) {
-            addLog(`Firebase init error: ${err.message}`, true);
-            migrationStatusSpan.innerText = '⚠️ Init failed';
-            startBtn.disabled = true;
-            return false;
-        }
-    }
-    
-    // reset UI state (does not clear firebase, but resets counters display and log)
     function resetUI() {
         if (migrationRunning) {
             addLog('Migration in progress, cannot reset now', true);
@@ -609,47 +462,58 @@
         }
         questionsProcessedSpan.innerText = '0';
         updateStatsPreview('—', '—', '—');
-        migrationStatusSpan.innerText = db ? '⚡ Ready' : '⏳ Not initialized';
-        if (!db) migrationStatusSpan.style.background = '#e2e8f0';
-        else migrationStatusSpan.style.background = '#86efac';
+        migrationStatusSpan.innerText = db ? '⚡ Ready' : '⚠️ Not connected';
+        if (db) migrationStatusSpan.style.background = '#86efac';
+        else migrationStatusSpan.style.background = '#e2e8f0';
         clearLog();
-        addLog('UI reset. Firebase still connected. You can start migration again.');
+        addLog('UI reset. Ready for migration.');
+        permissionHelpDiv.style.display = 'none';
     }
     
-    // ---- Event listeners ----
-    initBtn.addEventListener('click', () => {
-        initFirebase();
-    });
+    // Initialize Firebase automatically
+    async function autoInitFirebase() {
+        try {
+            firebaseApp = initializeApp(firebaseConfig);
+            db = getFirestore(firebaseApp);
+            addLog('✅ Firebase initialized automatically (config embedded).');
+            migrationStatusSpan.innerText = '⚡ Ready';
+            migrationStatusSpan.style.background = '#86efac';
+            startBtn.disabled = false;
+            resetBtn.disabled = false;
+            // optional: test a quick read to catch permission issues early
+            try {
+                const testQuery = query(collection(db, 'questions'), limit(1));
+                await getDocs(testQuery);
+                addLog('✅ Permission check passed – Firestore is readable.');
+                permissionHelpDiv.style.display = 'none';
+            } catch (permErr) {
+                addLog(`⚠️ Permission check failed: ${permErr.message}`, true);
+                migrationStatusSpan.innerText = '⛔ PERMISSION ERROR';
+                migrationStatusSpan.style.background = '#ef4444';
+                permissionHelpDiv.style.display = 'block';
+                startBtn.disabled = true;
+            }
+        } catch (err) {
+            addLog(`Firebase init error: ${err.message}`, true);
+            migrationStatusSpan.innerText = '❌ Init failed';
+            startBtn.disabled = true;
+        }
+    }
     
-    startBtn.addEventListener('click', async () => {
+    // Event listeners
+    startBtn.addEventListener('click', () => {
         if (!db) {
-            addLog('Firebase not initialized. Please click "Initialize Firebase" first.', true);
+            addLog('Firebase not connected. Refresh page.', true);
             return;
         }
-        if (migrationRunning) {
-            addLog('Migration already active, please wait.', true);
-            return;
-        }
-        // reset processed display before run
-        questionsProcessedSpan.innerText = '0';
-        updateStatsPreview('...', '...', '...');
-        await runMigration();
+        if (migrationRunning) return;
+        runMigration();
     });
     
-    resetBtn.addEventListener('click', () => {
-        resetUI();
-    });
+    resetBtn.addEventListener('click', resetUI);
     
-    // prefill placeholder example data (just to guide, but user must paste their own)
-    // optional: set default demo placeholder not to confuse
-    document.getElementById('apiKey').placeholder = "AIzaSyC6NRjkwiazA-aYF4okvnLW4qpCyMg8O9E";
-    document.getElementById('authDomain').placeholder = "fir-f3d53.firebaseapp.com";
-    document.getElementById('projectId').placeholder = "fir-f3d53";
-    document.getElementById('storageBucket').placeholder = "fir-f3d53.firebasestorage.app";
-    document.getElementById('messagingSenderId').placeholder = "683707045028";
-    document.getElementById('appId').placeholder = "1:683707045028:web:93990fa0de8767dda90231";
-    
-    addLog('🔧 Paste your Firebase configuration above and click "Initialize Firebase".');
+    // Start everything
+    autoInitFirebase();
 </script>
 </body>
 </html>
