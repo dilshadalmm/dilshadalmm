@@ -542,7 +542,7 @@ app.get('/api/quiz', async (req, res) => {
     }
 });
 
-// ---- ADMIN ENDPOINTS ----
+// ==================== ADMIN ENDPOINTS (UPDATED) ====================
 
 /**
  * DELETE /api/question
@@ -595,6 +595,7 @@ app.delete('/api/question', async (req, res) => {
 /**
  * DELETE /api/questions/bulk
  * Bulk delete by IDs or by class/subject/chapter.
+ * Supports both legacy and new mapping-based questions.
  */
 app.delete('/api/questions/bulk', async (req, res) => {
     try {
@@ -608,7 +609,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
             });
         }
 
-        let docRefs = [];
+        const docRefsSet = new Set(); // use Set to avoid duplicates
 
         if (questionIds && Array.isArray(questionIds) && questionIds.length > 0) {
             for (const id of questionIds) {
@@ -618,20 +619,28 @@ app.delete('/api/questions/bulk', async (req, res) => {
                         error: 'Each questionId must be a string'
                     });
                 }
-                docRefs.push(db.collection('questions').doc(id));
+                docRefsSet.add(db.collection('questions').doc(id));
             }
         } else if (className && subject && chapter) {
-            const snapshot = await db.collection('questions')
+            // 1. Query legacy fields
+            const legacySnapshot = await db.collection('questions')
                 .where('class', '==', className)
                 .where('subject', '==', subject)
                 .where('chapter', '==', chapter)
                 .get();
 
-            if (snapshot.empty) {
-                return res.json({ success: true, deletedCount: 0 });
-            }
+            legacySnapshot.forEach(doc => docRefsSet.add(doc.ref));
 
-            docRefs = snapshot.docs.map(doc => doc.ref);
+            // 2. Query new mapping format
+            const mappingSnapshot = await db.collection('questions')
+                .where('mappings', 'array-contains', {
+                    class: className,
+                    subject: subject,
+                    chapter: chapter
+                })
+                .get();
+
+            mappingSnapshot.forEach(doc => docRefsSet.add(doc.ref));
         } else {
             return res.status(400).json({
                 success: false,
@@ -639,11 +648,12 @@ app.delete('/api/questions/bulk', async (req, res) => {
             });
         }
 
+        const docRefs = Array.from(docRefsSet);
         if (docRefs.length === 0) {
             return res.json({ success: true, deletedCount: 0 });
         }
 
-        // Batched deletes
+        // Batched deletes (max 500 per batch)
         const chunkSize = 500;
         for (let i = 0; i < docRefs.length; i += chunkSize) {
             const chunk = docRefs.slice(i, i + chunkSize);
@@ -670,8 +680,10 @@ app.delete('/api/questions/bulk', async (req, res) => {
 
 /**
  * PUT /api/question
- * Updates an existing question. If mappings are provided, they are updated as well.
- * The questionHash is recalculated if questionText or options change.
+ * Updates an existing question.
+ * - If mappings are provided, they are merged with existing mappings (preserving existing ones).
+ * - Legacy documents are automatically converted to mapping format when mappings are updated.
+ * - questionHash is recalculated if questionText or options change.
  */
 app.put('/api/question', async (req, res) => {
     try {
@@ -684,7 +696,7 @@ app.put('/api/question', async (req, res) => {
             questionImageUrl,
             solutionVideoUrl,
             solutionImageUrl,
-            mappings   // new: optional full mappings array
+            mappings   // optional: array of {class, subject, chapter} to merge
         } = req.body;
 
         if (!questionId || typeof questionId !== 'string') {
@@ -712,8 +724,10 @@ app.put('/api/question', async (req, res) => {
             });
         }
 
+        const currentData = doc.data();
         const updateData = {};
 
+        // --- Update simple fields ---
         if (questionText !== undefined) updateData.questionText = questionText;
         if (options !== undefined) updateData.options = options;
         if (correctIndex !== undefined) updateData.correctIndex = correctIndex;
@@ -721,11 +735,37 @@ app.put('/api/question', async (req, res) => {
         if (questionImageUrl !== undefined) updateData.questionImageUrl = questionImageUrl;
         if (solutionVideoUrl !== undefined) updateData.solutionVideoUrl = solutionVideoUrl;
         if (solutionImageUrl !== undefined) updateData.solutionImageUrl = solutionImageUrl;
-        if (mappings !== undefined) updateData.mappings = mappings;
 
-        // Recalculate hash if questionText or options changed
+        // --- Handle mappings (merge) ---
+        if (mappings !== undefined && Array.isArray(mappings)) {
+            // Gather existing mappings from current document
+            let existingMappings = [];
+            if (currentData.mappings && Array.isArray(currentData.mappings)) {
+                existingMappings = currentData.mappings;
+            } else if (currentData.class && currentData.subject && currentData.chapter) {
+                // Legacy document: convert to a single mapping
+                existingMappings = [{
+                    class: currentData.class,
+                    subject: currentData.subject,
+                    chapter: currentData.chapter
+                }];
+            }
+
+            // Merge: combine existing and new, deduplicate by (class,subject,chapter)
+            const mergedMap = new Map();
+            for (const m of existingMappings) {
+                const key = `${m.class}|${m.subject}|${m.chapter}`;
+                mergedMap.set(key, m);
+            }
+            for (const m of mappings) {
+                const key = `${m.class}|${m.subject}|${m.chapter}`;
+                mergedMap.set(key, m);
+            }
+            updateData.mappings = Array.from(mergedMap.values());
+        }
+
+        // --- Recalculate hash if needed ---
         if (updateData.questionText !== undefined || updateData.options !== undefined) {
-            const currentData = doc.data();
             const newQuestion = {
                 questionText: updateData.questionText !== undefined ? updateData.questionText : currentData.questionText,
                 options: updateData.options !== undefined ? updateData.options : currentData.options
@@ -733,9 +773,10 @@ app.put('/api/question', async (req, res) => {
             updateData.questionHash = createQuestionHash(newQuestion);
         }
 
+        // --- Add timestamp and perform update ---
         updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
-
         await docRef.update(updateData);
+
         console.log(`✏️ Updated question: ${questionId}`);
         res.json({
             success: true,
@@ -752,8 +793,12 @@ app.put('/api/question', async (req, res) => {
 
 /**
  * GET /api/questions
- * Admin endpoint to fetch questions with optional filters.
- * Returns mappings if present.
+ * Admin endpoint to fetch questions with optional filters (class, subject, chapter).
+ * Supports both legacy and new mapping-based questions.
+ * 
+ * Note: When filtering by class/subject/chapter, the new mapping format is only
+ * queried if all three are provided (exact mapping). For partial filters, only
+ * legacy documents are considered. This is a limitation of Firestore's array-contains.
  */
 app.get('/api/questions', async (req, res) => {
     try {
@@ -780,32 +825,72 @@ app.get('/api/questions', async (req, res) => {
             }
         }
 
-        let query = db.collection('questions');
-        if (className) query = query.where('class', '==', className);
-        if (subject) query = query.where('subject', '==', subject);
-        if (chapter) query = query.where('chapter', '==', chapter);
+        // Map to store unique questions by questionId
+        const questionsMap = new Map();
 
-        const snapshot = await query.limit(limit).get();
+        // 1. Build legacy query (supports partial filters)
+        let legacyQuery = db.collection('questions');
+        if (className) legacyQuery = legacyQuery.where('class', '==', className);
+        if (subject) legacyQuery = legacyQuery.where('subject', '==', subject);
+        if (chapter) legacyQuery = legacyQuery.where('chapter', '==', chapter);
 
-        const questions = snapshot.docs.map(doc => {
-            const data = doc.data();
+        // 2. Build mapping query only if all three filters are provided
+        let mappingQuery = null;
+        if (className && subject && chapter) {
+            mappingQuery = db.collection('questions')
+                .where('mappings', 'array-contains', {
+                    class: className,
+                    subject: subject,
+                    chapter: chapter
+                });
+        }
+
+        // Execute queries in parallel
+        const promises = [legacyQuery.limit(limit).get()];
+        if (mappingQuery) promises.push(mappingQuery.limit(limit).get());
+
+        const snapshots = await Promise.all(promises);
+
+        // Process all snapshots
+        for (const snapshot of snapshots) {
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (!questionsMap.has(data.questionId)) {
+                    questionsMap.set(data.questionId, data);
+                }
+            });
+        }
+
+        let questions = Array.from(questionsMap.values());
+
+        // Apply final limit after deduplication (if needed)
+        if (questions.length > limit) {
+            questions = questions.slice(0, limit);
+        }
+
+        // Format output (include mappings if present)
+        const formattedQuestions = questions.map(q => {
             const result = {
-                questionId: data.questionId,
-                questionText: data.questionText,
-                options: data.options,
-                correctIndex: data.correctIndex,
-                solutionText: data.solutionText,
-                questionImageUrl: data.questionImageUrl || null,
-                solutionVideoUrl: data.solutionVideoUrl || null,
-                solutionImageUrl: data.solutionImageUrl || null
+                questionId: q.questionId,
+                questionText: q.questionText,
+                options: q.options,
+                correctIndex: q.correctIndex,
+                solutionText: q.solutionText,
+                questionImageUrl: q.questionImageUrl || null,
+                solutionVideoUrl: q.solutionVideoUrl || null,
+                solutionImageUrl: q.solutionImageUrl || null
             };
-            if (data.mappings) result.mappings = data.mappings;
+            if (q.mappings) result.mappings = q.mappings;
+            // For backward compatibility, also include legacy fields if present
+            if (q.class) result.class = q.class;
+            if (q.subject) result.subject = q.subject;
+            if (q.chapter) result.chapter = q.chapter;
             return result;
         });
 
         res.json({
             success: true,
-            questions
+            questions: formattedQuestions
         });
     } catch (error) {
         console.error('Error in GET /api/questions:', error);
