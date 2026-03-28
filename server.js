@@ -28,138 +28,104 @@ try {
 const db = firebaseInitialized ? admin.firestore() : null;
 
 // ---- Hashing & Normalization Functions ----
-/**
- * Normalize a string by:
- * - converting to lowercase
- * - removing punctuation (.,!?;:'"()[]{} etc.)
- * - collapsing multiple spaces
- * - trimming leading/trailing whitespace
- * @param {string} text
- * @returns {string} normalized text
- */
 function normalizeText(text) {
     if (!text || typeof text !== 'string') return '';
-    // Lowercase
     let normalized = text.toLowerCase();
-    // Remove punctuation (keep alphanumeric, spaces, and basic math symbols +-*/=)
     normalized = normalized.replace(/[^\w\s+\-*/=]/g, ' ');
-    // Collapse multiple spaces
     normalized = normalized.replace(/\s+/g, ' ').trim();
     return normalized;
 }
 
-/**
- * Generate a deterministic SHA‑256 hash for a question.
- * Duplicate detection treats two questions as equal if they have:
- * - the same normalized question text
- * - the same set of normalized options (order‑independent)
- * 
- * Steps:
- * 1. Normalize the question text.
- * 2. Normalize each option.
- * 3. Sort normalized options (alphabetically).
- * 4. Combine normalized question and sorted options with a separator.
- * 5. Return SHA‑256 hash of the combined string.
- * 
- * @param {object} q - question object with questionText and options array
- * @returns {string} hex hash
- */
 function createQuestionHash(q) {
-    // Normalize question text
     const normalizedQuestion = normalizeText(q.questionText);
-    // Normalize each option
     const normalizedOptions = (q.options || []).map(opt => normalizeText(opt));
-    // Sort options alphabetically (order‑independent)
     const sortedOptions = [...normalizedOptions].sort();
-    // Combine question and options
     const combined = `${normalizedQuestion}|${sortedOptions.join('|')}`;
-    // Compute SHA‑256 hash
     return crypto.createHash('sha256').update(combined).digest('hex');
 }
 
 // ---- Configuration Constants ----
-const BATCH_SIZE = 20;                    // Number of requests per batch
-const MAX_CONCURRENT_BATCHES = 5;         // Maximum parallel batch workers
-const MAX_WAIT_MS = 100;                  // Time to wait before processing a partial batch
-const RESPONSE_TIMEOUT_MS = 60000;        // Increased to 60 seconds for large batches
+const BATCH_SIZE = 20;
+const MAX_CONCURRENT_BATCHES = 5;
+const MAX_WAIT_MS = 100;
+const RESPONSE_TIMEOUT_MS = 60000;
 
 // ---- Queue and Concurrency State ----
-const requestQueue = [];                  // { res, questions, class, subject, chapter, timeout, sent }
-let activeBatches = 0;                    // Number of currently processing batches
-let partialBatchTimeoutId = null;         // Timeout ID for partial batch
+const requestQueue = [];
+let activeBatches = 0;
+let partialBatchTimeoutId = null;
 
 // ---- Utility Functions ----
 
-function generateQuestionId(classKey, subjectKey, sequenceNumber) {
-    // Format: CLASS_10_ZOOLOGY_q1, IOE_MATHMATICS_q1, LOKSEWA_GK_q1, etc.
-    return `${classKey}_${subjectKey}_q${sequenceNumber}`;
-}
-
-/**
- * Get the next 'count' sequence numbers for a given class/subject.
- * Uses a single transaction to atomically increment the counter.
- * @param {string} classKey e.g., "CLASS_10"
- * @param {string} subjectKey e.g., "ZOOLOGY"
- * @param {number} count Number of sequence numbers to reserve
- * @returns {Promise<number[]>} Array of numbers [start, start+1, ..., start+count-1]
- */
-async function getNextQuestionNumbers(classKey, subjectKey, count) {
-    if (!db) throw new Error('Firestore not initialized');
-    if (count <= 0) return [];
-
-    const counterId = `${classKey}_${subjectKey}`;
-    const counterRef = db.collection('counters').doc(counterId);
-
-    return await db.runTransaction(async (transaction) => {
-        const doc = await transaction.get(counterRef);
-        let current = 1;
-        if (doc.exists) {
-            current = doc.data().currentNumber + 1;
-        }
-        const nextNumbers = [];
-        for (let i = 0; i < count; i++) {
-            nextNumbers.push(current + i);
-        }
-        transaction.set(counterRef, { currentNumber: current + count - 1 }, { merge: true });
-        return nextNumbers;
-    });
-}
-
 /**
  * Helper to split an array of Firestore writes into batches of 500.
- * @param {Array<{docRef: FirebaseFirestore.DocumentReference, data: object}>} writes
+ * Supports both set (create) and update operations.
  */
-async function commitBatchWrites(writes) {
-    if (!writes.length) return;
+async function commitMixedWrites(createWrites, updateWrites) {
+    const allOperations = [];
+    for (const { docRef, data } of createWrites) {
+        allOperations.push({ type: 'set', docRef, data });
+    }
+    for (const { docRef, data } of updateWrites) {
+        allOperations.push({ type: 'update', docRef, data });
+    }
     const chunkSize = 500;
-    for (let i = 0; i < writes.length; i += chunkSize) {
-        const chunk = writes.slice(i, i + chunkSize);
+    for (let i = 0; i < allOperations.length; i += chunkSize) {
+        const chunk = allOperations.slice(i, i + chunkSize);
         const batch = db.batch();
-        for (const { docRef, data } of chunk) {
-            batch.set(docRef, data);
+        for (const op of chunk) {
+            if (op.type === 'set') {
+                batch.set(op.docRef, op.data);
+            } else if (op.type === 'update') {
+                batch.update(op.docRef, op.data);
+            }
         }
         await batch.commit();
     }
 }
 
 /**
- * Helper to delete an array of Firestore document references in batches of 500.
- * @param {Array<FirebaseFirestore.DocumentReference>} docRefs
+ * Check which hashes already exist in Firestore.
+ * Returns a Set of existing hash strings.
  */
-async function commitBatchDeletes(docRefs) {
-    if (!docRefs.length) return;
-    const chunkSize = 500;
-    for (let i = 0; i < docRefs.length; i += chunkSize) {
-        const chunk = docRefs.slice(i, i + chunkSize);
-        const batch = db.batch();
-        for (const docRef of chunk) {
-            batch.delete(docRef);
-        }
-        await batch.commit();
+async function getExistingHashes(hashes) {
+    if (!db || !hashes.length) return new Set();
+    const existing = new Set();
+    const chunkSize = 10;
+    for (let i = 0; i < hashes.length; i += chunkSize) {
+        const chunk = hashes.slice(i, i + chunkSize);
+        const snapshot = await db.collection('questions')
+            .where('questionHash', 'in', chunk)
+            .select('questionHash')
+            .get();
+        snapshot.forEach(doc => {
+            const hash = doc.data().questionHash;
+            if (hash) existing.add(hash);
+        });
     }
+    return existing;
 }
 
-// ---- Queue Processing Helpers ----
+/**
+ * Fetch full documents for given hashes (max 10 per query).
+ * Returns a Map: hash → document data.
+ */
+async function getExistingDocsByHashes(hashes) {
+    if (!db || !hashes.length) return new Map();
+    const map = new Map();
+    const chunkSize = 10;
+    for (let i = 0; i < hashes.length; i += chunkSize) {
+        const chunk = hashes.slice(i, i + chunkSize);
+        const snapshot = await db.collection('questions')
+            .where('questionHash', 'in', chunk)
+            .get();
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            map.set(data.questionHash, data);
+        });
+    }
+    return map;
+}
 
 function setupRequestTimeout(item) {
     item.timeout = setTimeout(() => {
@@ -211,49 +177,18 @@ async function tryStartBatch() {
 }
 
 /**
- * Check which hashes already exist in Firestore.
- * Uses batched queries (max 10 hashes per query) to avoid per‑hash calls.
- * @param {string[]} hashes - array of hash strings
- * @returns {Promise<Set<string>>} set of existing hashes
- */
-async function getExistingHashes(hashes) {
-    if (!db || !hashes.length) return new Set();
-    const existing = new Set();
-    const chunkSize = 10;
-    for (let i = 0; i < hashes.length; i += chunkSize) {
-        const chunk = hashes.slice(i, i + chunkSize);
-        const snapshot = await db.collection('questions')
-            .where('questionHash', 'in', chunk)
-            .select('questionHash')
-            .get();
-        snapshot.forEach(doc => {
-            const hash = doc.data().questionHash;
-            if (hash) existing.add(hash);
-        });
-    }
-    return existing;
-}
-
-/**
  * Process a batch of ingestion requests.
- * For each item, compute hashes, filter duplicates, and save new questions.
- * Uses a single counter transaction per request to reserve all needed IDs,
- * then commits the questions in chunks of 500.
- * @param {Array} batch Array of request objects
+ * New logic: creates new docs for unseen questions, and updates existing docs
+ * by adding the new mapping (class/subject/chapter) if not already present.
+ * Uses UUIDs for new question IDs.
  */
 async function processBatch(batch) {
-    // Step 1: Gather all valid questions and compute their hashes
-    const allItemsData = []; // { item, validQuestions, hashes }
+    // ---- Step 1: Collect all valid questions with their hashes and item info ----
+    const allQuestions = []; // { item, question, hash }
     for (const item of batch) {
-        const { questions, class: className, subject, chapter } = item;
+        const { questions } = item;
+        if (!Array.isArray(questions) || questions.length === 0) continue;
 
-        // Validate that questions is an array and not empty
-        if (!Array.isArray(questions) || questions.length === 0) {
-            allItemsData.push({ item, validQuestions: [], hashes: [] });
-            continue;
-        }
-
-        // Filter valid questions
         const validQuestions = questions.filter(q =>
             q.questionText &&
             Array.isArray(q.options) && q.options.length === 4 &&
@@ -261,129 +196,172 @@ async function processBatch(batch) {
             q.solutionText
         );
 
-        if (validQuestions.length === 0) {
-            allItemsData.push({ item, validQuestions: [], hashes: [] });
-            continue;
+        for (const q of validQuestions) {
+            const hash = createQuestionHash(q);
+            allQuestions.push({ item, question: q, hash });
         }
-
-        // Compute hashes for valid questions
-        const hashes = validQuestions.map(q => createQuestionHash(q));
-        allItemsData.push({ item, validQuestions, hashes });
     }
 
-    // Step 2: Collect all hashes to check duplicates in one go
-    const allHashes = allItemsData.flatMap(data => data.hashes);
-    let existingHashesSet = new Set();
-    if (allHashes.length > 0) {
-        existingHashesSet = await getExistingHashes(allHashes);
+    if (allQuestions.length === 0) {
+        // No valid questions in any item; respond accordingly
+        for (const item of batch) {
+            if (!item.sent) {
+                item.sent = true;
+                clearRequestTimeout(item);
+                item.res.json({
+                    status: 'success',
+                    message: 'No valid questions provided.',
+                    questionsProcessed: 0
+                });
+            }
+        }
+        return;
     }
 
-    // Step 3: Process each item, filtering duplicates and saving new questions
-    for (const { item, validQuestions, hashes } of allItemsData) {
-        if (validQuestions.length === 0) {
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    status: 'success',
-                    message: validQuestions.length === 0 ? 'No valid questions provided.' : 'No questions provided.',
-                    questionsProcessed: 0
-                });
-            }
+    // ---- Step 2: Get set of existing hashes ----
+    const allHashes = allQuestions.map(q => q.hash);
+    const existingHashesSet = await getExistingHashes(allHashes);
+
+    // ---- Step 3: Fetch full documents for existing hashes ----
+    const existingDocsMap = await getExistingDocsByHashes(Array.from(existingHashesSet));
+
+    // ---- Step 4: Process each question to decide new doc or update ----
+    const newDocs = [];              // { item, question, hash, mapping }
+    const updatesMap = new Map();    // key: docRef.path → { docRef, currentMappings, newMappingsSet }
+    const itemCounts = new Map();    // key: item object → { newCount, updatedCount }
+
+    // Helper to get or init counts for an item
+    function getItemCounts(item) {
+        if (!itemCounts.has(item)) {
+            itemCounts.set(item, { newCount: 0, updatedCount: 0 });
+        }
+        return itemCounts.get(item);
+    }
+
+    for (const { item, question, hash } of allQuestions) {
+        const mapping = {
+            class: item.class,
+            subject: item.subject,
+            chapter: item.chapter
+        };
+        const counts = getItemCounts(item);
+
+        if (!existingDocsMap.has(hash)) {
+            // ---- CASE A: Question does not exist - create new ----
+            newDocs.push({ item, question, hash, mapping });
+            counts.newCount++;
             continue;
         }
 
-        // Filter out duplicates
-        const newQuestions = [];
-        const newHashes = [];
-        for (let i = 0; i < validQuestions.length; i++) {
-            const hash = hashes[i];
-            if (!existingHashesSet.has(hash)) {
-                newQuestions.push(validQuestions[i]);
-                newHashes.push(hash);
-                // Mark this hash as seen within the batch to avoid intra‑batch duplicates
-                existingHashesSet.add(hash);
-            }
+        // ---- CASE B: Question already exists - update mappings if needed ----
+        const docData = existingDocsMap.get(hash);
+        const docRef = db.collection('questions').doc(docData.questionId);
+        let currentMappings = docData.mappings;
+        if (!currentMappings) {
+            // Convert legacy format
+            currentMappings = [{
+                class: docData.class,
+                subject: docData.subject,
+                chapter: docData.chapter
+            }];
         }
 
-        if (newQuestions.length === 0) {
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    status: 'success',
-                    message: 'All provided questions are duplicates.',
-                    questionsProcessed: 0
+        // Check if mapping already present
+        const mappingExists = currentMappings.some(m =>
+            m.class === mapping.class &&
+            m.subject === mapping.subject &&
+            m.chapter === mapping.chapter
+        );
+
+        if (!mappingExists) {
+            const path = docRef.path;
+            if (!updatesMap.has(path)) {
+                updatesMap.set(path, {
+                    docRef,
+                    currentMappings,
+                    newMappingsSet: new Set()
                 });
             }
-            continue;
+            const entry = updatesMap.get(path);
+            const mappingKey = `${mapping.class}|${mapping.subject}|${mapping.chapter}`;
+            // Avoid duplicate within batch
+            if (!entry.newMappingsSet.has(mappingKey)) {
+                entry.newMappingsSet.add(mappingKey);
+                counts.updatedCount++;
+            }
         }
+        // If mapping already exists, no change → not counted
+    }
 
-        // Generate sanitized keys for Firestore
-        const classKey = item.class.trim().toUpperCase().replace(/\s+/g, '_');
-        const subjectKey = item.subject.trim().toUpperCase().replace(/\s+/g, '_');
+    // ---- Step 5: Prepare create writes for new docs (using UUID) ----
+    const createWrites = [];
+    for (const { item, question, hash, mapping } of newDocs) {
+        const questionId = crypto.randomUUID();
+        const questionDoc = {
+            questionId,
+            questionText: question.questionText,
+            options: question.options,
+            correctIndex: question.correctIndex,
+            solutionText: question.solutionText,
+            questionImageUrl: question.questionImageUrl || null,
+            solutionVideoUrl: question.solutionVideoUrl || null,
+            solutionImageUrl: question.solutionImageUrl || null,
+            mappings: [mapping],
+            questionHash: hash,
+            embedded: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        const docRef = db.collection('questions').doc(questionId);
+        createWrites.push({ docRef, data: questionDoc });
+    }
 
-        try {
-            // Reserve sequence numbers in one transaction
-            const seqNumbers = await getNextQuestionNumbers(classKey, subjectKey, newQuestions.length);
-
-            // Build all write operations
-            const writes = [];
-            const savedQuestionIds = [];
-
-            for (let i = 0; i < newQuestions.length; i++) {
-                const q = newQuestions[i];
-                const seqNumber = seqNumbers[i];
-                const questionId = generateQuestionId(classKey, subjectKey, seqNumber);
-                const hash = newHashes[i];
-
-                const questionDoc = {
-                    questionId,
-                    questionText: q.questionText,
-                    options: q.options,
-                    correctIndex: q.correctIndex,
-                    solutionText: q.solutionText,
-                    questionImageUrl: q.questionImageUrl || null,
-                    solutionVideoUrl: q.solutionVideoUrl || null,
-                    solutionImageUrl: q.solutionImageUrl || null,
-                    class: item.class,
-                    subject: item.subject,
-                    chapter: item.chapter,
-                    embedded: false,                // keep for embedding pipeline
-                    questionHash: hash,              // new field for duplicate detection
-                    createdAt: admin.firestore.FieldValue.serverTimestamp()
-                };
-
-                const docRef = db.collection('questions').doc(questionId);
-                writes.push({ docRef, data: questionDoc });
-                savedQuestionIds.push(questionId);
+    // ---- Step 6: Prepare update writes for existing docs ----
+    const updateWrites = [];
+    for (const { docRef, currentMappings, newMappingsSet } of updatesMap.values()) {
+        const newMappingsArray = [...currentMappings];
+        for (const key of newMappingsSet) {
+            const [classVal, subjectVal, chapterVal] = key.split('|');
+            newMappingsArray.push({ class: classVal, subject: subjectVal, chapter: chapterVal });
+        }
+        // Deduplicate final array (should already be unique, but safe)
+        const uniqueMappings = [];
+        const seen = new Set();
+        for (const m of newMappingsArray) {
+            const k = `${m.class}|${m.subject}|${m.chapter}`;
+            if (!seen.has(k)) {
+                seen.add(k);
+                uniqueMappings.push(m);
             }
-
-            // Commit writes in batches of 500
-            await commitBatchWrites(writes);
-            console.log(`✅ Saved ${savedQuestionIds.length} new questions for item`);
-
-            // Respond to the client
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    status: 'success',
-                    message: `Processed ${savedQuestionIds.length} questions. (${validQuestions.length - savedQuestionIds.length} duplicates skipped)`,
-                    questionsProcessed: savedQuestionIds.length
-                });
+        }
+        updateWrites.push({
+            docRef,
+            data: {
+                mappings: uniqueMappings,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
             }
-        } catch (err) {
-            console.error(`Failed to process item: ${err.message}`);
-            if (!item.sent) {
-                item.sent = true;
-                clearRequestTimeout(item);
-                item.res.json({
-                    status: 'error',
-                    message: `Database operation failed: ${err.message}`,
-                    questionsProcessed: 0
-                });
-            }
+        });
+    }
+
+    // ---- Step 7: Commit all writes in batches ----
+    if (createWrites.length || updateWrites.length) {
+        await commitMixedWrites(createWrites, updateWrites);
+    }
+
+    // ---- Step 8: Send responses for each item ----
+    for (const item of batch) {
+        if (!item.sent) {
+            const counts = itemCounts.get(item) || { newCount: 0, updatedCount: 0 };
+            const totalProcessed = counts.newCount + counts.updatedCount;
+            const message = totalProcessed === 0
+                ? 'No new questions or mappings added.'
+                : `Processed ${totalProcessed} questions (${counts.newCount} new, ${counts.updatedCount} updated).`;
+            item.sent = true;
+            clearRequestTimeout(item);
+            item.res.json({
+                status: 'success',
+                message,
+                questionsProcessed: totalProcessed
+            });
         }
     }
 }
@@ -455,34 +433,11 @@ app.post('/api/ingest', async (req, res) => {
 
 /**
  * GET /api/quiz
- * Query parameters:
- *   - className (required) : e.g., "Class 10"
- *   - subject   (required) : e.g., "Zoology"
- *   - chapter   (required) : e.g., "Matter in Our Surroundings"
- *   - limit     (optional) : number of questions to return (default = 10)
- *
- * Returns a JSON object:
- *   {
- *     success: true,
- *     questions: [
- *       {
- *         questionText,
- *         options,
- *         solutionText,
- *         correctIndex,
- *         solutionVideoUrl,
- *         questionImageUrl,
- *         solutionImageUrl
- *       },
- *       ...
- *     ]
- *   }
- *
- * If no questions match, returns 404 with { success: false, error: "No questions found for the given criteria" }
+ * Supports both legacy and new mapping schemas.
+ * Returns combined, shuffled, and limited questions.
  */
 app.get('/api/quiz', async (req, res) => {
     try {
-        // 1. Extract and validate query parameters
         const { className, subject, chapter, limit: limitParam } = req.query;
 
         if (!className || !subject || !chapter) {
@@ -492,7 +447,6 @@ app.get('/api/quiz', async (req, res) => {
             });
         }
 
-        // Parse limit – default to 10, ensure it's a positive integer
         let limit = 10;
         if (limitParam) {
             const parsed = parseInt(limitParam, 10);
@@ -506,7 +460,6 @@ app.get('/api/quiz', async (req, res) => {
             }
         }
 
-        // 2. Ensure Firestore is available
         if (!db) {
             console.error('Firestore not initialized');
             return res.status(500).json({
@@ -515,35 +468,56 @@ app.get('/api/quiz', async (req, res) => {
             });
         }
 
-        // 3. Build and execute the Firestore query
         const questionsRef = db.collection('questions');
-        const snapshot = await questionsRef
+
+        // Query for new mapping schema
+        const mappedQuery = questionsRef.where('mappings', 'array-contains', {
+            class: className,
+            subject: subject,
+            chapter: chapter
+        });
+
+        // Query for legacy schema
+        const legacyQuery = questionsRef
             .where('class', '==', className)
             .where('subject', '==', subject)
-            .where('chapter', '==', chapter)
-            .get();
+            .where('chapter', '==', chapter);
 
-        // 4. Check if any documents were found
-        if (snapshot.empty) {
+        const [mappedSnapshot, legacySnapshot] = await Promise.all([
+            mappedQuery.get(),
+            legacyQuery.get()
+        ]);
+
+        // Combine and deduplicate by questionId
+        const questionsMap = new Map();
+        const addDocs = (snapshot) => {
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                if (!questionsMap.has(data.questionId)) {
+                    questionsMap.set(data.questionId, data);
+                }
+            });
+        };
+        addDocs(mappedSnapshot);
+        addDocs(legacySnapshot);
+
+        let questions = Array.from(questionsMap.values());
+
+        if (questions.length === 0) {
             return res.status(404).json({
                 success: false,
                 error: 'No questions found for the given criteria'
             });
         }
 
-        // 5. Extract document data into an array
-        let questions = snapshot.docs.map(doc => doc.data());
-
-        // 6. Shuffle using Fisher‑Yates (in‑place)
+        // Shuffle
         for (let i = questions.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [questions[i], questions[j]] = [questions[j], questions[i]];
         }
 
-        // 7. Apply limit (slice after shuffle)
         const limitedQuestions = questions.slice(0, limit);
 
-        // 8. Map to the required response schema
         const formattedQuestions = limitedQuestions.map(q => ({
             questionText: q.questionText,
             options: q.options,
@@ -554,7 +528,6 @@ app.get('/api/quiz', async (req, res) => {
             solutionImageUrl: q.solutionImageUrl || null
         }));
 
-        // 9. Send success response
         return res.json({
             success: true,
             questions: formattedQuestions
@@ -569,13 +542,11 @@ app.get('/api/quiz', async (req, res) => {
     }
 });
 
-// ---- ADMIN ENDPOINTS (Edit, Delete, Fetch) ----
+// ---- ADMIN ENDPOINTS ----
 
 /**
  * DELETE /api/question
  * Deletes a single question by its questionId.
- * Request body: { "questionId": "CLASS_10_ZOOLOGY_q1" }
- * Response: { success: true, message: "Question deleted successfully" } or error.
  */
 app.delete('/api/question', async (req, res) => {
     try {
@@ -623,10 +594,7 @@ app.delete('/api/question', async (req, res) => {
 
 /**
  * DELETE /api/questions/bulk
- * Bulk delete questions. Supports two modes:
- * 1. By array of questionIds: { "questionIds": ["id1", "id2"] }
- * 2. By class, subject, chapter: { "class": "...", "subject": "...", "chapter": "..." }
- * Returns { success: true, deletedCount: N }
+ * Bulk delete by IDs or by class/subject/chapter.
  */
 app.delete('/api/questions/bulk', async (req, res) => {
     try {
@@ -642,9 +610,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
 
         let docRefs = [];
 
-        // Mode 1: delete by IDs
         if (questionIds && Array.isArray(questionIds) && questionIds.length > 0) {
-            // Validate each ID is a string
             for (const id of questionIds) {
                 if (typeof id !== 'string') {
                     return res.status(400).json({
@@ -654,9 +620,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
                 }
                 docRefs.push(db.collection('questions').doc(id));
             }
-        }
-        // Mode 2: delete by class/subject/chapter
-        else if (className && subject && chapter) {
+        } else if (className && subject && chapter) {
             const snapshot = await db.collection('questions')
                 .where('class', '==', className)
                 .where('subject', '==', subject)
@@ -668,8 +632,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
             }
 
             docRefs = snapshot.docs.map(doc => doc.ref);
-        }
-        else {
+        } else {
             return res.status(400).json({
                 success: false,
                 error: 'Invalid request. Provide either "questionIds" array or "class", "subject", "chapter"'
@@ -680,8 +643,17 @@ app.delete('/api/questions/bulk', async (req, res) => {
             return res.json({ success: true, deletedCount: 0 });
         }
 
-        // Perform batched deletions
-        await commitBatchDeletes(docRefs);
+        // Batched deletes
+        const chunkSize = 500;
+        for (let i = 0; i < docRefs.length; i += chunkSize) {
+            const chunk = docRefs.slice(i, i + chunkSize);
+            const batch = db.batch();
+            for (const ref of chunk) {
+                batch.delete(ref);
+            }
+            await batch.commit();
+        }
+
         console.log(`🗑️ Bulk deleted ${docRefs.length} questions`);
         res.json({
             success: true,
@@ -698,10 +670,8 @@ app.delete('/api/questions/bulk', async (req, res) => {
 
 /**
  * PUT /api/question
- * Updates an existing question. Only provided fields are updated.
- * The questionHash is recalculated based on the updated questionText and options.
- * Request body contains the fields to update (questionId is required).
- * Response: { success: true, message: "Question updated successfully" }
+ * Updates an existing question. If mappings are provided, they are updated as well.
+ * The questionHash is recalculated if questionText or options change.
  */
 app.put('/api/question', async (req, res) => {
     try {
@@ -713,7 +683,8 @@ app.put('/api/question', async (req, res) => {
             solutionText,
             questionImageUrl,
             solutionVideoUrl,
-            solutionImageUrl
+            solutionImageUrl,
+            mappings   // new: optional full mappings array
         } = req.body;
 
         if (!questionId || typeof questionId !== 'string') {
@@ -741,7 +712,6 @@ app.put('/api/question', async (req, res) => {
             });
         }
 
-        // Build update object
         const updateData = {};
 
         if (questionText !== undefined) updateData.questionText = questionText;
@@ -751,10 +721,10 @@ app.put('/api/question', async (req, res) => {
         if (questionImageUrl !== undefined) updateData.questionImageUrl = questionImageUrl;
         if (solutionVideoUrl !== undefined) updateData.solutionVideoUrl = solutionVideoUrl;
         if (solutionImageUrl !== undefined) updateData.solutionImageUrl = solutionImageUrl;
+        if (mappings !== undefined) updateData.mappings = mappings;
 
-        // Recalculate hash if either questionText or options changed
+        // Recalculate hash if questionText or options changed
         if (updateData.questionText !== undefined || updateData.options !== undefined) {
-            // Use current data for fields not being updated
             const currentData = doc.data();
             const newQuestion = {
                 questionText: updateData.questionText !== undefined ? updateData.questionText : currentData.questionText,
@@ -763,7 +733,6 @@ app.put('/api/question', async (req, res) => {
             updateData.questionHash = createQuestionHash(newQuestion);
         }
 
-        // Add updated timestamp
         updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
 
         await docRef.update(updateData);
@@ -784,12 +753,7 @@ app.put('/api/question', async (req, res) => {
 /**
  * GET /api/questions
  * Admin endpoint to fetch questions with optional filters.
- * Query parameters:
- *   - class (optional) : filter by class
- *   - subject (optional) : filter by subject
- *   - chapter (optional) : filter by chapter
- *   - limit (optional) : maximum number of questions to return (default 50)
- * Returns: { success: true, questions: [...] }
+ * Returns mappings if present.
  */
 app.get('/api/questions', async (req, res) => {
     try {
@@ -803,7 +767,6 @@ app.get('/api/questions', async (req, res) => {
             });
         }
 
-        // Parse limit
         let limit = 50;
         if (limitParam) {
             const parsed = parseInt(limitParam, 10);
@@ -817,7 +780,6 @@ app.get('/api/questions', async (req, res) => {
             }
         }
 
-        // Build query
         let query = db.collection('questions');
         if (className) query = query.where('class', '==', className);
         if (subject) query = query.where('subject', '==', subject);
@@ -827,8 +789,7 @@ app.get('/api/questions', async (req, res) => {
 
         const questions = snapshot.docs.map(doc => {
             const data = doc.data();
-            // Return only necessary fields for editing
-            return {
+            const result = {
                 questionId: data.questionId,
                 questionText: data.questionText,
                 options: data.options,
@@ -838,6 +799,8 @@ app.get('/api/questions', async (req, res) => {
                 solutionVideoUrl: data.solutionVideoUrl || null,
                 solutionImageUrl: data.solutionImageUrl || null
             };
+            if (data.mappings) result.mappings = data.mappings;
+            return result;
         });
 
         res.json({
@@ -854,8 +817,6 @@ app.get('/api/questions', async (req, res) => {
 });
 
 // ---- Dynamic Metadata Endpoints ----
-
-// Cache for metadata to reduce Firestore reads (optional, but efficient)
 let metadataCache = {
     classes: null,
     subjectsByClass: {},
@@ -864,9 +825,6 @@ let metadataCache = {
 };
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/**
- * Helper to refresh metadata cache if stale.
- */
 async function refreshMetadataCache() {
     if (!db) return;
     const now = Date.now();
@@ -874,27 +832,47 @@ async function refreshMetadataCache() {
         return;
     }
     console.log('Refreshing metadata cache...');
-    // Fetch all question documents (only needed fields)
-    const snapshot = await db.collection('questions').select('class', 'subject', 'chapter').get();
+    // Fetch all necessary fields from questions
+    const snapshot = await db.collection('questions')
+        .select('class', 'subject', 'chapter', 'mappings')
+        .get();
+
     const classesSet = new Set();
     const subjectsMap = new Map(); // class -> Set of subjects
     const chaptersMap = new Map(); // `${class}|${subject}` -> Set of chapters
 
     snapshot.forEach(doc => {
         const data = doc.data();
-        const className = data.class;
-        const subject = data.subject;
-        const chapter = data.chapter;
 
-        if (className) classesSet.add(className);
-        if (className && subject) {
-            if (!subjectsMap.has(className)) subjectsMap.set(className, new Set());
-            subjectsMap.get(className).add(subject);
-        }
-        if (className && subject && chapter) {
-            const key = `${className}|${subject}`;
-            if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
-            chaptersMap.get(key).add(chapter);
+        // If mappings exist, iterate over them
+        if (data.mappings && Array.isArray(data.mappings)) {
+            data.mappings.forEach(m => {
+                if (m.class) classesSet.add(m.class);
+                if (m.class && m.subject) {
+                    if (!subjectsMap.has(m.class)) subjectsMap.set(m.class, new Set());
+                    subjectsMap.get(m.class).add(m.subject);
+                }
+                if (m.class && m.subject && m.chapter) {
+                    const key = `${m.class}|${m.subject}`;
+                    if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
+                    chaptersMap.get(key).add(m.chapter);
+                }
+            });
+        } else {
+            // Legacy document
+            const className = data.class;
+            const subject = data.subject;
+            const chapter = data.chapter;
+            if (className) classesSet.add(className);
+            if (className && subject) {
+                if (!subjectsMap.has(className)) subjectsMap.set(className, new Set());
+                subjectsMap.get(className).add(subject);
+            }
+            if (className && subject && chapter) {
+                const key = `${className}|${subject}`;
+                if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
+                chaptersMap.get(key).add(chapter);
+            }
         }
     });
 
@@ -910,10 +888,6 @@ async function refreshMetadataCache() {
     };
 }
 
-/**
- * GET /api/classes
- * Returns list of all distinct class values.
- */
 app.get('/api/classes', async (req, res) => {
     try {
         if (!db) throw new Error('Firestore not initialized');
@@ -925,10 +899,6 @@ app.get('/api/classes', async (req, res) => {
     }
 });
 
-/**
- * GET /api/subjects?class=<className>
- * Returns list of subjects for a given class.
- */
 app.get('/api/subjects', async (req, res) => {
     try {
         const { class: className } = req.query;
@@ -945,10 +915,6 @@ app.get('/api/subjects', async (req, res) => {
     }
 });
 
-/**
- * GET /api/chapters?class=<className>&subject=<subject>
- * Returns list of chapters for a given class and subject.
- */
 app.get('/api/chapters', async (req, res) => {
     try {
         const { class: className, subject } = req.query;
