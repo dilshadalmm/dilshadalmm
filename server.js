@@ -181,6 +181,7 @@ async function tryStartBatch() {
  * New logic: creates new docs for unseen questions, and updates existing docs
  * by adding the new mapping (class/subject/chapter) if not already present.
  * Uses UUIDs for new question IDs.
+ * Also updates metadata counts for new questions (only when a question is created).
  */
 async function processBatch(batch) {
     // ---- Step 1: Collect all valid questions with their hashes and item info ----
@@ -295,6 +296,7 @@ async function processBatch(batch) {
 
     // ---- Step 5: Prepare create writes for new docs (using UUID) ----
     const createWrites = [];
+    const newQuestionTriples = []; // { class, subject, chapter } for each new question
     for (const { item, question, hash, mapping } of newDocs) {
         const questionId = crypto.randomUUID();
         const questionDoc = {
@@ -313,6 +315,7 @@ async function processBatch(batch) {
         };
         const docRef = db.collection('questions').doc(questionId);
         createWrites.push({ docRef, data: questionDoc });
+        newQuestionTriples.push({ class: mapping.class, subject: mapping.subject, chapter: mapping.chapter });
     }
 
     // ---- Step 6: Prepare update writes for existing docs ----
@@ -347,7 +350,12 @@ async function processBatch(batch) {
         await commitMixedWrites(createWrites, updateWrites);
     }
 
-    // ---- Step 8: Send responses for each item ----
+    // ---- Step 8: Update metadata counts for newly created questions ----
+    if (newQuestionTriples.length > 0) {
+        await batchUpdateMetadataCounts(newQuestionTriples, 1);
+    }
+
+    // ---- Step 9: Send responses for each item ----
     for (const item of batch) {
         if (!item.sent) {
             const counts = itemCounts.get(item) || { newCount: 0, updatedCount: 0 };
@@ -385,6 +393,245 @@ function scheduleProcessing() {
         }
     }
 }
+
+// ==================== METADATA MANAGEMENT ====================
+
+// Helper to get document IDs for metadata collections
+function getCourseId(className) {
+    return `class_${className}`.replace(/\s+/g, '_');
+}
+
+function getSubjectId(className, subject) {
+    return `class_${className}_subject_${subject}`.replace(/\s+/g, '_');
+}
+
+function getChapterId(className, subject, chapter) {
+    return `class_${className}_subject_${subject}_chapter_${chapter}`.replace(/\s+/g, '_');
+}
+
+/**
+ * Increment count for a single (class, subject, chapter) triple.
+ * Used for batch updates.
+ */
+async function updateSingleMetadataCount(className, subject, chapter, incrementBy) {
+    if (!db) return;
+    const courseId = getCourseId(className);
+    const subjectId = getSubjectId(className, subject);
+    const chapterId = getChapterId(className, subject, chapter);
+
+    const batch = db.batch();
+
+    // Course
+    const courseRef = db.collection('courses').doc(courseId);
+    batch.set(courseRef, {
+        name: className,
+        totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // Subject
+    const subjectRef = db.collection('subjects').doc(subjectId);
+    batch.set(subjectRef, {
+        class: className,
+        subject: subject,
+        totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // Chapter
+    const chapterRef = db.collection('chapters').doc(chapterId);
+    batch.set(chapterRef, {
+        class: className,
+        subject: subject,
+        chapter: chapter,
+        totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    await batch.commit();
+}
+
+/**
+ * Batch increment counts for multiple triples.
+ * @param {Array} triples - Array of { class, subject, chapter } objects
+ * @param {number} incrementBy - +1 for creation, -1 for deletion
+ */
+async function batchUpdateMetadataCounts(triples, incrementBy) {
+    if (!db || triples.length === 0) return;
+    // Group by triple to avoid duplicate increments for the same triple in the same batch
+    const tripleCountMap = new Map();
+    for (const t of triples) {
+        const key = `${t.class}|${t.subject}|${t.chapter}`;
+        tripleCountMap.set(key, (tripleCountMap.get(key) || 0) + 1);
+    }
+
+    const batchPromises = [];
+    for (const [key, count] of tripleCountMap.entries()) {
+        const [className, subject, chapter] = key.split('|');
+        // For each triple, we need to increment by (count * incrementBy)
+        const totalIncrement = count * incrementBy;
+        if (totalIncrement === 0) continue;
+        batchPromises.push(updateSingleMetadataCount(className, subject, chapter, totalIncrement));
+    }
+
+    await Promise.all(batchPromises);
+}
+
+/**
+ * Decrement counts for all mappings of a question.
+ * Used when a question is deleted.
+ */
+async function decrementCountsForQuestion(questionData) {
+    let mappings = questionData.mappings;
+    if (!mappings) {
+        // Legacy format
+        if (questionData.class && questionData.subject && questionData.chapter) {
+            mappings = [{ class: questionData.class, subject: questionData.subject, chapter: questionData.chapter }];
+        } else {
+            return; // no valid mappings
+        }
+    }
+    const triples = mappings.map(m => ({ class: m.class, subject: m.subject, chapter: m.chapter }));
+    await batchUpdateMetadataCounts(triples, -1);
+}
+
+/**
+ * Adjust counts when a question's mappings change.
+ * @param {Object} oldData - The question document before update.
+ * @param {Object} newData - The updated fields (containing new mappings or legacy fields).
+ */
+async function adjustCountsForMappingChange(oldData, newData) {
+    // Get old mappings
+    let oldMappings = oldData.mappings;
+    if (!oldMappings && oldData.class && oldData.subject && oldData.chapter) {
+        oldMappings = [{ class: oldData.class, subject: oldData.subject, chapter: oldData.chapter }];
+    }
+    // Get new mappings
+    let newMappings = newData.mappings;
+    if (!newMappings && newData.class && newData.subject && newData.chapter) {
+        newMappings = [{ class: newData.class, subject: newData.subject, chapter: newData.chapter }];
+    }
+    if (!oldMappings || !newMappings) return;
+
+    // Compute differences: triples to decrement (old - new) and to increment (new - old)
+    const oldSet = new Set(oldMappings.map(m => `${m.class}|${m.subject}|${m.chapter}`));
+    const newSet = new Set(newMappings.map(m => `${m.class}|${m.subject}|${m.chapter}`));
+
+    const toDecrement = [];
+    const toIncrement = [];
+
+    for (const key of oldSet) {
+        if (!newSet.has(key)) {
+            const [c, s, ch] = key.split('|');
+            toDecrement.push({ class: c, subject: s, chapter: ch });
+        }
+    }
+    for (const key of newSet) {
+        if (!oldSet.has(key)) {
+            const [c, s, ch] = key.split('|');
+            toIncrement.push({ class: c, subject: s, chapter: ch });
+        }
+    }
+
+    if (toDecrement.length) await batchUpdateMetadataCounts(toDecrement, -1);
+    if (toIncrement.length) await batchUpdateMetadataCounts(toIncrement, 1);
+}
+
+// ---- In‑Memory Cache for Metadata ----
+let metadataCache = {
+    classes: [],
+    subjectsByClass: {},
+    chaptersByClassSubject: {}
+};
+
+/**
+ * Load metadata from Firestore into cache on server start.
+ */
+async function loadMetadataCache() {
+    if (!db) return;
+    console.log('🔄 Loading metadata cache from Firestore...');
+    const coursesSnapshot = await db.collection('courses').get();
+    const subjectsSnapshot = await db.collection('subjects').get();
+    const chaptersSnapshot = await db.collection('chapters').get();
+
+    const classesSet = new Set();
+    const subjectsMap = new Map(); // class -> Set of subjects
+    const chaptersMap = new Map(); // `${class}|${subject}` -> Set of chapters
+
+    coursesSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.name) classesSet.add(data.name);
+    });
+
+    subjectsSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.class && data.subject) {
+            if (!subjectsMap.has(data.class)) subjectsMap.set(data.class, new Set());
+            subjectsMap.get(data.class).add(data.subject);
+        }
+    });
+
+    chaptersSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.class && data.subject && data.chapter) {
+            const key = `${data.class}|${data.subject}`;
+            if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
+            chaptersMap.get(key).add(data.chapter);
+        }
+    });
+
+    metadataCache = {
+        classes: Array.from(classesSet).sort(),
+        subjectsByClass: Object.fromEntries(
+            Array.from(subjectsMap.entries()).map(([c, s]) => [c, Array.from(s).sort()])
+        ),
+        chaptersByClassSubject: Object.fromEntries(
+            Array.from(chaptersMap.entries()).map(([key, ch]) => [key, Array.from(ch).sort()])
+        )
+    };
+    console.log('✅ Metadata cache loaded');
+}
+
+/**
+ * Update the in‑memory cache when a new metadata entry is added.
+ * @param {string} className
+ * @param {string} subject
+ * @param {string} chapter
+ */
+function updateCacheForNewTriple(className, subject, chapter) {
+    // Add class if new
+    if (!metadataCache.classes.includes(className)) {
+        metadataCache.classes.push(className);
+        metadataCache.classes.sort();
+    }
+    // Add subject under class
+    if (!metadataCache.subjectsByClass[className]) {
+        metadataCache.subjectsByClass[className] = [];
+    }
+    if (!metadataCache.subjectsByClass[className].includes(subject)) {
+        metadataCache.subjectsByClass[className].push(subject);
+        metadataCache.subjectsByClass[className].sort();
+    }
+    // Add chapter under class+subject
+    const key = `${className}|${subject}`;
+    if (!metadataCache.chaptersByClassSubject[key]) {
+        metadataCache.chaptersByClassSubject[key] = [];
+    }
+    if (!metadataCache.chaptersByClassSubject[key].includes(chapter)) {
+        metadataCache.chaptersByClassSubject[key].push(chapter);
+        metadataCache.chaptersByClassSubject[key].sort();
+    }
+}
+
+/**
+ * Remove a triple from the cache (when counts drop to zero and document is deleted).
+ * Actually we don't delete metadata documents when counts become zero,
+ * but we might want to remove them from cache if they have no questions.
+ * For simplicity, we leave them in cache; they will be empty counts but still appear.
+ * If we want to remove, we would need to check if totalQuestions == 0.
+ * This is optional.
+ */
+// Not implemented for brevity; can be added if needed.
 
 // ---- API Endpoint ----
 
@@ -546,7 +793,7 @@ app.get('/api/quiz', async (req, res) => {
 
 /**
  * DELETE /api/question
- * Deletes a single question by its questionId.
+ * Deletes a single question by its questionId and updates metadata counts.
  */
 app.delete('/api/question', async (req, res) => {
     try {
@@ -577,6 +824,10 @@ app.delete('/api/question', async (req, res) => {
             });
         }
 
+        const questionData = doc.data();
+        // Decrement counts for all mappings of this question
+        await decrementCountsForQuestion(questionData);
+
         await docRef.delete();
         console.log(`🗑️ Deleted question: ${questionId}`);
         res.json({
@@ -596,6 +847,7 @@ app.delete('/api/question', async (req, res) => {
  * DELETE /api/questions/bulk
  * Bulk delete by IDs or by class/subject/chapter.
  * Supports both legacy and new mapping-based questions.
+ * Updates metadata counts for each deleted question.
  */
 app.delete('/api/questions/bulk', async (req, res) => {
     try {
@@ -609,7 +861,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
             });
         }
 
-        const docRefsSet = new Set(); // use Set to avoid duplicates
+        let docRefsSet = new Set(); // use Set to avoid duplicates
 
         if (questionIds && Array.isArray(questionIds) && questionIds.length > 0) {
             for (const id of questionIds) {
@@ -653,6 +905,20 @@ app.delete('/api/questions/bulk', async (req, res) => {
             return res.json({ success: true, deletedCount: 0 });
         }
 
+        // Fetch all questions data before deletion to update counts
+        const questionsData = [];
+        for (const ref of docRefs) {
+            const doc = await ref.get();
+            if (doc.exists) {
+                questionsData.push(doc.data());
+            }
+        }
+
+        // Decrement counts for each question
+        for (const data of questionsData) {
+            await decrementCountsForQuestion(data);
+        }
+
         // Batched deletes (max 500 per batch)
         const chunkSize = 500;
         for (let i = 0; i < docRefs.length; i += chunkSize) {
@@ -684,6 +950,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
  * - If mappings are provided, they are merged with existing mappings (preserving existing ones).
  * - Legacy documents are automatically converted to mapping format when mappings are updated.
  * - questionHash is recalculated if questionText or options change.
+ * - Metadata counts are adjusted if mappings change.
  */
 app.put('/api/question', async (req, res) => {
     try {
@@ -737,6 +1004,7 @@ app.put('/api/question', async (req, res) => {
         if (solutionImageUrl !== undefined) updateData.solutionImageUrl = solutionImageUrl;
 
         // --- Handle mappings (merge) ---
+        let newMappings = null;
         if (mappings !== undefined && Array.isArray(mappings)) {
             // Gather existing mappings from current document
             let existingMappings = [];
@@ -761,7 +1029,8 @@ app.put('/api/question', async (req, res) => {
                 const key = `${m.class}|${m.subject}|${m.chapter}`;
                 mergedMap.set(key, m);
             }
-            updateData.mappings = Array.from(mergedMap.values());
+            newMappings = Array.from(mergedMap.values());
+            updateData.mappings = newMappings;
         }
 
         // --- Recalculate hash if needed ---
@@ -776,6 +1045,11 @@ app.put('/api/question', async (req, res) => {
         // --- Add timestamp and perform update ---
         updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
         await docRef.update(updateData);
+
+        // --- Adjust metadata counts if mappings changed ---
+        if (newMappings !== null) {
+            await adjustCountsForMappingChange(currentData, { mappings: newMappings });
+        }
 
         console.log(`✏️ Updated question: ${questionId}`);
         res.json({
@@ -795,10 +1069,6 @@ app.put('/api/question', async (req, res) => {
  * GET /api/questions
  * Admin endpoint to fetch questions with optional filters (class, subject, chapter).
  * Supports both legacy and new mapping-based questions.
- * 
- * Note: When filtering by class/subject/chapter, the new mapping format is only
- * queried if all three are provided (exact mapping). For partial filters, only
- * legacy documents are considered. This is a limitation of Firestore's array-contains.
  */
 app.get('/api/questions', async (req, res) => {
     try {
@@ -901,82 +1171,11 @@ app.get('/api/questions', async (req, res) => {
     }
 });
 
-// ---- Dynamic Metadata Endpoints ----
-let metadataCache = {
-    classes: null,
-    subjectsByClass: {},
-    chaptersByClassAndSubject: {},
-    lastFetch: 0
-};
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-
-async function refreshMetadataCache() {
-    if (!db) return;
-    const now = Date.now();
-    if (metadataCache.lastFetch && (now - metadataCache.lastFetch < CACHE_TTL_MS)) {
-        return;
-    }
-    console.log('Refreshing metadata cache...');
-    // Fetch all necessary fields from questions
-    const snapshot = await db.collection('questions')
-        .select('class', 'subject', 'chapter', 'mappings')
-        .get();
-
-    const classesSet = new Set();
-    const subjectsMap = new Map(); // class -> Set of subjects
-    const chaptersMap = new Map(); // `${class}|${subject}` -> Set of chapters
-
-    snapshot.forEach(doc => {
-        const data = doc.data();
-
-        // If mappings exist, iterate over them
-        if (data.mappings && Array.isArray(data.mappings)) {
-            data.mappings.forEach(m => {
-                if (m.class) classesSet.add(m.class);
-                if (m.class && m.subject) {
-                    if (!subjectsMap.has(m.class)) subjectsMap.set(m.class, new Set());
-                    subjectsMap.get(m.class).add(m.subject);
-                }
-                if (m.class && m.subject && m.chapter) {
-                    const key = `${m.class}|${m.subject}`;
-                    if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
-                    chaptersMap.get(key).add(m.chapter);
-                }
-            });
-        } else {
-            // Legacy document
-            const className = data.class;
-            const subject = data.subject;
-            const chapter = data.chapter;
-            if (className) classesSet.add(className);
-            if (className && subject) {
-                if (!subjectsMap.has(className)) subjectsMap.set(className, new Set());
-                subjectsMap.get(className).add(subject);
-            }
-            if (className && subject && chapter) {
-                const key = `${className}|${subject}`;
-                if (!chaptersMap.has(key)) chaptersMap.set(key, new Set());
-                chaptersMap.get(key).add(chapter);
-            }
-        }
-    });
-
-    metadataCache = {
-        classes: Array.from(classesSet).sort(),
-        subjectsByClass: Object.fromEntries(
-            Array.from(subjectsMap.entries()).map(([c, s]) => [c, Array.from(s).sort()])
-        ),
-        chaptersByClassAndSubject: Object.fromEntries(
-            Array.from(chaptersMap.entries()).map(([key, ch]) => [key, Array.from(ch).sort()])
-        ),
-        lastFetch: Date.now()
-    };
-}
+// ---- Dynamic Metadata Endpoints (served from cache) ----
 
 app.get('/api/classes', async (req, res) => {
     try {
         if (!db) throw new Error('Firestore not initialized');
-        await refreshMetadataCache();
         res.json({ success: true, classes: metadataCache.classes });
     } catch (error) {
         console.error('Error fetching classes:', error);
@@ -991,7 +1190,6 @@ app.get('/api/subjects', async (req, res) => {
             return res.status(400).json({ success: false, error: 'class parameter is required' });
         }
         if (!db) throw new Error('Firestore not initialized');
-        await refreshMetadataCache();
         const subjects = metadataCache.subjectsByClass[className] || [];
         res.json({ success: true, subjects });
     } catch (error) {
@@ -1007,9 +1205,8 @@ app.get('/api/chapters', async (req, res) => {
             return res.status(400).json({ success: false, error: 'class and subject parameters are required' });
         }
         if (!db) throw new Error('Firestore not initialized');
-        await refreshMetadataCache();
         const key = `${className}|${subject}`;
-        const chapters = metadataCache.chaptersByClassAndSubject[key] || [];
+        const chapters = metadataCache.chaptersByClassSubject[key] || [];
         res.json({ success: true, chapters });
     } catch (error) {
         console.error('Error fetching chapters:', error);
@@ -1018,5 +1215,10 @@ app.get('/api/chapters', async (req, res) => {
 });
 
 app.get('/health', (req, res) => res.send('Active'));
+
+// Initialize metadata cache on startup
+if (db) {
+    loadMetadataCache().catch(err => console.error('Failed to load metadata cache:', err));
+}
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
