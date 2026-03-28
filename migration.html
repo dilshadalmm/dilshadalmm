@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Firestore Metadata Migration – One‑time Tool</title>
+    <title>Firestore Metadata Migration – Fixed</title>
     <!-- Firebase SDKs (modular, v10.12.2) -->
     <script type="importmap">
         {
@@ -98,13 +98,6 @@
             flex-wrap: wrap;
             margin: 18px 0 10px;
         }
-        .stat-card {
-            background: #f8fafc;
-            padding: 10px 16px;
-            border-radius: 28px;
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
         .btn {
             background: #1e293b;
             border: none;
@@ -135,11 +128,6 @@
             border-radius: 16px;
             font-size: 0.8rem;
             margin-top: 18px;
-        }
-        .error-note {
-            background: #fee2e2;
-            border-left: 4px solid #ef4444;
-            color: #991b1b;
         }
         .flex-btns {
             display: flex;
@@ -200,9 +188,8 @@
         limit, 
         startAfter,
         doc,
-        setDoc,
         writeBatch,
-        FieldValue
+        serverTimestamp   // ✅ fixed: serverTimestamp is a standalone function
     } from 'firebase/firestore';
 
     // ------------------------------------------------------------
@@ -233,7 +220,6 @@
     let migrationRunning = false;
     let firebaseApp = null;
     
-    // Helper: log to panel
     function addLog(message, isError = false) {
         const logDiv = logPanel;
         const prefix = isError ? '❌ ' : '🔹 ';
@@ -265,7 +251,6 @@
         return str.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     }
     
-    // Core migration logic
     async function runMigration() {
         if (!db) {
             addLog('Firestore not initialized. Please refresh the page.', true);
@@ -376,7 +361,7 @@
             }
             
             const writes = [];
-            const nowTimestamp = FieldValue.serverTimestamp();
+            const nowTimestamp = serverTimestamp(); // ✅ fixed
             
             for (const [courseId, total] of coursesCount.entries()) {
                 writes.push({
@@ -470,7 +455,6 @@
         permissionHelpDiv.style.display = 'none';
     }
     
-    // Initialize Firebase automatically
     async function autoInitFirebase() {
         try {
             firebaseApp = initializeApp(firebaseConfig);
@@ -480,7 +464,7 @@
             migrationStatusSpan.style.background = '#86efac';
             startBtn.disabled = false;
             resetBtn.disabled = false;
-            // optional: test a quick read to catch permission issues early
+            // quick permission test
             try {
                 const testQuery = query(collection(db, 'questions'), limit(1));
                 await getDocs(testQuery);
@@ -500,7 +484,6 @@
         }
     }
     
-    // Event listeners
     startBtn.addEventListener('click', () => {
         if (!db) {
             addLog('Firebase not connected. Refresh page.', true);
@@ -512,7 +495,6 @@
     
     resetBtn.addEventListener('click', resetUI);
     
-    // Start everything
     autoInitFirebase();
 </script>
 </body>
