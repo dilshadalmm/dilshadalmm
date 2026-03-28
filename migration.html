@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Firestore Metadata Migration Tool</title>
+    <!-- Firebase SDKs (modular, v10.12.2) -->
+    <script type="importmap">
+        {
+            "imports": {
+                "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+                "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
+            }
+        }
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Roboto', sans-serif;
+        }
+        body {
+            background: #f0f4f8;
+            margin: 0;
+            padding: 24px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            max-width: 1000px;
+            width: 100%;
+            background: white;
+            border-radius: 28px;
+            box-shadow: 0 20px 35px -12px rgba(0,0,0,0.15);
+            overflow: hidden;
+            transition: all 0.2s;
+        }
+        .header {
+            background: #1e293b;
+            color: white;
+            padding: 24px 32px;
+        }
+        .header h1 {
+            margin: 0 0 6px 0;
+            font-weight: 600;
+            font-size: 1.9rem;
+            letter-spacing: -0.3px;
+        }
+        .header p {
+            margin: 0;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+        .content {
+            padding: 28px 32px 32px;
+        }
+        .config-section {
+            background: #f8fafc;
+            border-radius: 20px;
+            padding: 20px 24px;
+            margin-bottom: 32px;
+            border: 1px solid #e2e8f0;
+        }
+        .config-title {
+            font-weight: 600;
+            font-size: 1.2rem;
+            margin-bottom: 16px;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px 20px;
+            margin-bottom: 24px;
+        }
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .input-group label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #334155;
+        }
+        .input-group input {
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 14px;
+            font-size: 0.85rem;
+            background: white;
+            transition: 0.2s;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+        }
+        .btn {
+            background: #1e293b;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 40px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: white;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-right: 12px;
+        }
+        .btn-primary {
+            background: #2563eb;
+            box-shadow: 0 2px 6px rgba(37,99,235,0.2);
+        }
+        .btn-primary:hover:not(:disabled) {
+            background: #1d4ed8;
+            transform: scale(0.98);
+        }
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #cbd5e1;
+            color: #1e293b;
+        }
+        .btn-outline:hover:not(:disabled) {
+            background: #f1f5f9;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .migration-panel {
+            background: #ffffff;
+            border-radius: 20px;
+            border: 1px solid #e2e8f0;
+            padding: 20px 24px;
+            margin-top: 8px;
+        }
+        .progress-area {
+            background: #f1f5f9;
+            border-radius: 20px;
+            padding: 16px 20px;
+            margin: 20px 0 16px;
+            font-family: monospace;
+            font-size: 0.9rem;
+        }
+        .status-text {
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .status-badge {
+            background: #e2e8f0;
+            padding: 4px 12px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .log {
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 14px 18px;
+            border-radius: 18px;
+            font-size: 0.8rem;
+            font-family: 'SF Mono', monospace;
+            max-height: 220px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin: 18px 0 10px;
+        }
+        .stat-card {
+            background: #f8fafc;
+            padding: 10px 16px;
+            border-radius: 28px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        hr {
+            margin: 16px 0;
+            border-color: #e2e8f0;
+        }
+        .warning-note {
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            padding: 12px 16px;
+            border-radius: 16px;
+            font-size: 0.8rem;
+            margin-top: 18px;
+        }
+        .flex-btns {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="header">
+        <h1>📦 Metadata Migration Tool</h1>
+        <p>One‑time migration: questions → courses, subjects, chapters with accurate question counts</p>
+    </div>
+    <div class="content">
+        <!-- Firebase configuration panel (editable) -->
+        <div class="config-section">
+            <div class="config-title">
+                🔧 Firebase Project Settings
+            </div>
+            <div class="config-grid" id="firebaseConfigFields">
+                <div class="input-group"><label>API Key</label><input type="text" id="apiKey" placeholder="AIzaSy..." value=""></div>
+                <div class="input-group"><label>Auth Domain</label><input type="text" id="authDomain" placeholder="your-project.firebaseapp.com" value=""></div>
+                <div class="input-group"><label>Project ID</label><input type="text" id="projectId" placeholder="your-project-id" value=""></div>
+                <div class="input-group"><label>Storage Bucket</label><input type="text" id="storageBucket" placeholder="your-project.appspot.com" value=""></div>
+                <div class="input-group"><label>Messaging Sender ID</label><input type="text" id="messagingSenderId" placeholder="1234567890" value=""></div>
+                <div class="input-group"><label>App ID</label><input type="text" id="appId" placeholder="1:...:web:..." value=""></div>
+            </div>
+            <div class="flex-btns">
+                <button id="initFirebaseBtn" class="btn btn-primary">✅ Initialize Firebase</button>
+                <span style="font-size:0.75rem; color:#475569;">Paste your config and click init</span>
+            </div>
+        </div>
+
+        <!-- Migration Control Panel -->
+        <div class="migration-panel">
+            <div style="font-weight:600; margin-bottom:12px;">🚀 Migration Runner</div>
+            <button id="startMigrationBtn" class="btn btn-primary" disabled>▶ Start Migration</button>
+            <button id="resetUiBtn" class="btn btn-outline" disabled>⟳ Reset UI</button>
+            
+            <div class="progress-area">
+                <div class="status-text">
+                    <span>📊 Status:</span>
+                    <span id="migrationStatus" class="status-badge">⏳ Not initialized</span>
+                </div>
+                <div><span>📄 Questions processed:</span> <strong id="questionsProcessed">0</strong></div>
+                <div class="stats" id="statsPreview">
+                    <span>📚 Courses: <span id="courseCountStat">—</span></span>
+                    <span>📖 Subjects: <span id="subjectCountStat">—</span></span>
+                    <span>📑 Chapters: <span id="chapterCountStat">—</span></span>
+                </div>
+            </div>
+            <div class="log" id="logPanel">
+                🔹 Ready — paste Firebase config and click "Initialize Firebase".
+            </div>
+            <div class="warning-note">
+                ⚠️ This migration will read ALL documents in "questions" collection and write/overwrite metadata in "courses", "subjects", "chapters".<br>
+                ✅ Supports both legacy fields (class/subject/chapter) and array "mappings". Batch writes up to 500 ops. Safe for thousands of docs.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from 'firebase/app';
+    import { 
+        getFirestore, 
+        collection, 
+        getDocs, 
+        query, 
+        orderBy, 
+        limit, 
+        startAfter,
+        doc,
+        setDoc,
+        writeBatch,
+        FieldValue
+    } from 'firebase/firestore';
+
+    // DOM elements
+    const initBtn = document.getElementById('initFirebaseBtn');
+    const startBtn = document.getElementById('startMigrationBtn');
+    const resetBtn = document.getElementById('resetUiBtn');
+    const migrationStatusSpan = document.getElementById('migrationStatus');
+    const questionsProcessedSpan = document.getElementById('questionsProcessed');
+    const courseCountStatSpan = document.getElementById('courseCountStat');
+    const subjectCountStatSpan = document.getElementById('subjectCountStat');
+    const chapterCountStatSpan = document.getElementById('chapterCountStat');
+    const logPanel = document.getElementById('logPanel');
+    
+    // state variables
+    let db = null;
+    let migrationRunning = false;
+    let firebaseApp = null;
+    
+    // Helper: log to panel (append)
+    function addLog(message, isError = false) {
+        const logDiv = logPanel;
+        const prefix = isError ? '❌ ' : '🔹 ';
+        const time = new Date().toLocaleTimeString();
+        const line = document.createElement('div');
+        line.style.marginBottom = '6px';
+        line.style.borderBottom = '0.5px solid #334155';
+        line.style.paddingBottom = '4px';
+        line.innerHTML = `<span style="color:#94a3b8;">[${time}]</span> ${prefix}${message}`;
+        if (isError) line.style.color = '#f87171';
+        logDiv.appendChild(line);
+        logDiv.scrollTop = logDiv.scrollHeight;
+        // keep last 200 lines tidy
+        while (logDiv.children.length > 180) logDiv.removeChild(logDiv.firstChild);
+    }
+    
+    function clearLog() {
+        logPanel.innerHTML = '';
+        addLog('Log cleared. Ready for migration.');
+    }
+    
+    function updateStatsPreview(courses, subjects, chapters) {
+        courseCountStatSpan.innerText = courses !== undefined ? courses : '—';
+        subjectCountStatSpan.innerText = subjects !== undefined ? subjects : '—';
+        chapterCountStatSpan.innerText = chapters !== undefined ? chapters : '—';
+    }
+    
+    // Helper: normalize string to id (lowercase, underscores)
+    function normalizeId(str) {
+        if (!str) return '';
+        return str.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+    }
+    
+    // Core migration logic: scan questions, count, batch write metadata
+    async function runMigration() {
+        if (!db) {
+            addLog('Firestore not initialized. Please initialize Firebase first.', true);
+            return;
+        }
+        if (migrationRunning) {
+            addLog('Migration already running, please wait.', true);
+            return;
+        }
+        
+        migrationRunning = true;
+        startBtn.disabled = true;
+        initBtn.disabled = true;
+        migrationStatusSpan.innerText = '🔄 FETCHING QUESTIONS';
+        migrationStatusSpan.style.background = '#facc15';
+        questionsProcessedSpan.innerText = '0';
+        updateStatsPreview('...', '...', '...');
+        addLog('🚀 Starting metadata migration — scanning questions collection...');
+        
+        // counters using Maps
+        const coursesCount = new Map();      // key: courseId -> count
+        const coursesName = new Map();       // key: courseId -> original class name
+        
+        const subjectsCount = new Map();     // key: subjectId -> count
+        const subjectsClassMap = new Map();  // subjectId -> original class string
+        const subjectsSubjectMap = new Map();// subjectId -> original subject string
+        
+        const chaptersCount = new Map();     // key: chapterId -> count
+        const chaptersClassMap = new Map();  // chapterId -> original class
+        const chaptersSubjectMap = new Map();// chapterId -> original subject
+        const chaptersChapterMap = new Map();// chapterId -> original chapter
+        
+        let processedDocs = 0;
+        let lastDoc = null;
+        let hasMore = true;
+        const PAGE_SIZE = 500;
+        
+        try {
+            const questionsRef = collection(db, 'questions');
+            // Pagination loop
+            while (hasMore) {
+                let q;
+                if (lastDoc) {
+                    q = query(questionsRef, orderBy('__name__'), limit(PAGE_SIZE), startAfter(lastDoc));
+                } else {
+                    q = query(questionsRef, orderBy('__name__'), limit(PAGE_SIZE));
+                }
+                const snapshot = await getDocs(q);
+                const docs = snapshot.docs;
+                if (docs.length === 0) break;
+                
+                for (const docSnap of docs) {
+                    processedDocs++;
+                    questionsProcessedSpan.innerText = processedDocs;
+                    const data = docSnap.data();
+                    let mappingsToProcess = [];
+                    
+                    // SUPPORT BOTH FORMATS:
+                    // 1) If "mappings" exists and is array -> use it
+                    if (data.mappings && Array.isArray(data.mappings) && data.mappings.length > 0) {
+                        mappingsToProcess = data.mappings;
+                    } 
+                    // 2) legacy: class, subject, chapter fields present
+                    else if (data.class && data.subject && data.chapter) {
+                        mappingsToProcess.push({
+                            class: data.class,
+                            subject: data.subject,
+                            chapter: data.chapter
+                        });
+                    }
+                    // If no valid mapping, skip
+                    if (mappingsToProcess.length === 0) continue;
+                    
+                    // Process each mapping entry
+                    for (const mapItem of mappingsToProcess) {
+                        const rawClass = mapItem.class ? String(mapItem.class).trim() : '';
+                        const rawSubject = mapItem.subject ? String(mapItem.subject).trim() : '';
+                        const rawChapter = mapItem.chapter ? String(mapItem.chapter).trim() : '';
+                        if (!rawClass || !rawSubject || !rawChapter) {
+                            // skip incomplete mapping
+                            continue;
+                        }
+                        // generate IDs
+                        const courseId = normalizeId(rawClass);
+                        if (!courseId) continue;
+                        const subjectId = `${courseId}_${normalizeId(rawSubject)}`;
+                        const chapterId = `${subjectId}_${normalizeId(rawChapter)}`;
+                        
+                        // ---- COURSES ----
+                        const prevCourseCount = coursesCount.get(courseId) || 0;
+                        coursesCount.set(courseId, prevCourseCount + 1);
+                        if (!coursesName.has(courseId)) {
+                            coursesName.set(courseId, rawClass);
+                        }
+                        
+                        // ---- SUBJECTS ----
+                        const prevSubjCount = subjectsCount.get(subjectId) || 0;
+                        subjectsCount.set(subjectId, prevSubjCount + 1);
+                        if (!subjectsClassMap.has(subjectId)) {
+                            subjectsClassMap.set(subjectId, rawClass);
+                            subjectsSubjectMap.set(subjectId, rawSubject);
+                        }
+                        
+                        // ---- CHAPTERS ----
+                        const prevChapCount = chaptersCount.get(chapterId) || 0;
+                        chaptersCount.set(chapterId, prevChapCount + 1);
+                        if (!chaptersClassMap.has(chapterId)) {
+                            chaptersClassMap.set(chapterId, rawClass);
+                            chaptersSubjectMap.set(chapterId, rawSubject);
+                            chaptersChapterMap.set(chapterId, rawChapter);
+                        }
+                    }
+                }
+                
+                // update preview counts (distinct metadata)
+                updateStatsPreview(coursesCount.size, subjectsCount.size, chaptersCount.size);
+                lastDoc = docs[docs.length - 1];
+                if (docs.length < PAGE_SIZE) hasMore = false;
+                // small delay to keep UI responsive
+                await new Promise(r => setTimeout(r, 10));
+            }
+            
+            addLog(`✅ Finished scanning. Total questions processed: ${processedDocs}`);
+            addLog(`📊 Distinct courses: ${coursesCount.size}, subjects: ${subjectsCount.size}, chapters: ${chaptersCount.size}`);
+            migrationStatusSpan.innerText = '✍️ WRITING METADATA';
+            
+            if (processedDocs === 0) {
+                addLog('⚠️ No questions found with valid class/subject/chapter. Nothing to write.', false);
+                migrationStatusSpan.innerText = '⚠️ No data';
+                migrationRunning = false;
+                startBtn.disabled = false;
+                initBtn.disabled = false;
+                return;
+            }
+            
+            // ---- Prepare batch writes (courses, subjects, chapters) ----
+            const writes = []; // {ref, data}
+            const nowTimestamp = FieldValue.serverTimestamp();
+            
+            // Courses
+            for (const [courseId, total] of coursesCount.entries()) {
+                const courseRef = doc(db, 'courses', courseId);
+                const originalName = coursesName.get(courseId) || courseId;
+                writes.push({
+                    ref: courseRef,
+                    data: {
+                        name: originalName,
+                        totalQuestions: total,
+                        createdAt: nowTimestamp,
+                        updatedAt: nowTimestamp
+                    }
+                });
+            }
+            
+            // Subjects
+            for (const [subjectId, total] of subjectsCount.entries()) {
+                const subjectRef = doc(db, 'subjects', subjectId);
+                writes.push({
+                    ref: subjectRef,
+                    data: {
+                        class: subjectsClassMap.get(subjectId),
+                        subject: subjectsSubjectMap.get(subjectId),
+                        totalQuestions: total,
+                        createdAt: nowTimestamp,
+                        updatedAt: nowTimestamp
+                    }
+                });
+            }
+            
+            // Chapters
+            for (const [chapterId, total] of chaptersCount.entries()) {
+                const chapterRef = doc(db, 'chapters', chapterId);
+                writes.push({
+                    ref: chapterRef,
+                    data: {
+                        class: chaptersClassMap.get(chapterId),
+                        subject: chaptersSubjectMap.get(chapterId),
+                        chapter: chaptersChapterMap.get(chapterId),
+                        totalQuestions: total,
+                        createdAt: nowTimestamp,
+                        updatedAt: nowTimestamp
+                    }
+                });
+            }
+            
+            addLog(`📦 Preparing to write ${writes.length} metadata documents (courses + subjects + chapters).`);
+            
+            // batch commit in chunks of 500
+            const BATCH_LIMIT = 500;
+            let committed = 0;
+            for (let i = 0; i < writes.length; i += BATCH_LIMIT) {
+                const chunk = writes.slice(i, i + BATCH_LIMIT);
+                const batch = writeBatch(db);
+                for (const item of chunk) {
+                    batch.set(item.ref, item.data, { merge: true });
+                }
+                await batch.commit();
+                committed += chunk.length;
+                addLog(`✓ Committed batch: ${committed}/${writes.length} metadata docs`);
+                // small breathing
+                await new Promise(r => setTimeout(r, 80));
+            }
+            
+            addLog(`🎉 Migration completed successfully!`);
+            addLog(`✨ Final totals:`);
+            addLog(`   • ${coursesCount.size} courses updated.`);
+            addLog(`   • ${subjectsCount.size} subjects updated.`);
+            addLog(`   • ${chaptersCount.size} chapters updated.`);
+            migrationStatusSpan.innerText = '✅ COMPLETED';
+            migrationStatusSpan.style.background = '#22c55e';
+            updateStatsPreview(coursesCount.size, subjectsCount.size, chaptersCount.size);
+            
+        } catch (err) {
+            console.error(err);
+            addLog(`Migration error: ${err.message || err}`, true);
+            migrationStatusSpan.innerText = '❌ ERROR';
+            migrationStatusSpan.style.background = '#ef4444';
+        } finally {
+            migrationRunning = false;
+            startBtn.disabled = false;
+            initBtn.disabled = false;
+            // keep reset button enabled
+            resetBtn.disabled = false;
+        }
+    }
+    
+    // Initialize Firebase from user inputs
+    function initFirebase() {
+        try {
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const authDomain = document.getElementById('authDomain').value.trim();
+            const projectId = document.getElementById('projectId').value.trim();
+            const storageBucket = document.getElementById('storageBucket').value.trim();
+            const messagingSenderId = document.getElementById('messagingSenderId').value.trim();
+            const appId = document.getElementById('appId').value.trim();
+            
+            if (!apiKey || !projectId || !authDomain) {
+                addLog('Please fill at least API Key, Auth Domain and Project ID', true);
+                return false;
+            }
+            const config = {
+                apiKey,
+                authDomain,
+                projectId,
+                storageBucket,
+                messagingSenderId,
+                appId,
+            };
+            if (firebaseApp) {
+                // cleanup previous if exists (optional)
+                try {
+                    firebaseApp.delete();
+                } catch(e) {}
+            }
+            firebaseApp = initializeApp(config);
+            db = getFirestore(firebaseApp);
+            addLog('✅ Firebase initialized successfully. Ready for migration.');
+            migrationStatusSpan.innerText = '⚡ Ready';
+            migrationStatusSpan.style.background = '#86efac';
+            startBtn.disabled = false;
+            resetBtn.disabled = false;
+            return true;
+        } catch (err) {
+            addLog(`Firebase init error: ${err.message}`, true);
+            migrationStatusSpan.innerText = '⚠️ Init failed';
+            startBtn.disabled = true;
+            return false;
+        }
+    }
+    
+    // reset UI state (does not clear firebase, but resets counters display and log)
+    function resetUI() {
+        if (migrationRunning) {
+            addLog('Migration in progress, cannot reset now', true);
+            return;
+        }
+        questionsProcessedSpan.innerText = '0';
+        updateStatsPreview('—', '—', '—');
+        migrationStatusSpan.innerText = db ? '⚡ Ready' : '⏳ Not initialized';
+        if (!db) migrationStatusSpan.style.background = '#e2e8f0';
+        else migrationStatusSpan.style.background = '#86efac';
+        clearLog();
+        addLog('UI reset. Firebase still connected. You can start migration again.');
+    }
+    
+    // ---- Event listeners ----
+    initBtn.addEventListener('click', () => {
+        initFirebase();
+    });
+    
+    startBtn.addEventListener('click', async () => {
+        if (!db) {
+            addLog('Firebase not initialized. Please click "Initialize Firebase" first.', true);
+            return;
+        }
+        if (migrationRunning) {
+            addLog('Migration already active, please wait.', true);
+            return;
+        }
+        // reset processed display before run
+        questionsProcessedSpan.innerText = '0';
+        updateStatsPreview('...', '...', '...');
+        await runMigration();
+    });
+    
+    resetBtn.addEventListener('click', () => {
+        resetUI();
+    });
+    
+    // prefill placeholder example data (just to guide, but user must paste their own)
+    // optional: set default demo placeholder not to confuse
+    document.getElementById('apiKey').placeholder = "AIzaSyC6NRjkwiazA-aYF4okvnLW4qpCyMg8O9E";
+    document.getElementById('authDomain').placeholder = "fir-f3d53.firebaseapp.com";
+    document.getElementById('projectId').placeholder = "fir-f3d53";
+    document.getElementById('storageBucket').placeholder = "fir-f3d53.firebasestorage.app";
+    document.getElementById('messagingSenderId').placeholder = "683707045028";
+    document.getElementById('appId').placeholder = "1:683707045028:web:93990fa0de8767dda90231";
+    
+    addLog('🔧 Paste your Firebase configuration above and click "Initialize Firebase".');
+</script>
+</body>
+</html>
