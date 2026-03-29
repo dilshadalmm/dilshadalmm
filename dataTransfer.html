@@ -7,35 +7,34 @@
     <style>
         * {
             box-sizing: border-box;
+            font-family: system-ui, 'Segoe UI', 'Roboto', monospace;
         }
         body {
-            font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
-            background: #f1f5f9;
+            background: #f0f2f5;
             margin: 0;
-            padding: 24px;
-            color: #0f172a;
+            padding: 24px 20px;
         }
         .container {
             max-width: 1600px;
             margin: 0 auto;
         }
         h1 {
-            font-size: 1.8rem;
+            font-size: 1.9rem;
             font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #0f172a;
+            margin: 0 0 0.25rem 0;
+            color: #1e293b;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
         }
         .sub {
-            color: #334155;
-            margin-bottom: 2rem;
+            color: #475569;
+            margin-bottom: 28px;
             border-left: 4px solid #3b82f6;
             padding-left: 16px;
-            font-size: 0.95rem;
+            font-weight: 500;
         }
-        .config-grid {
+        .grid-2col {
             display: flex;
             flex-wrap: wrap;
             gap: 24px;
@@ -43,194 +42,180 @@
         }
         .config-card {
             flex: 1;
-            min-width: 320px;
+            min-width: 280px;
             background: white;
             border-radius: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
             overflow: hidden;
+            transition: all 0.2s;
             border: 1px solid #e2e8f0;
-            transition: box-shadow 0.2s;
         }
-        .config-card:hover {
-            box-shadow: 0 8px 20px rgba(0,0,0,0.08);
-        }
-        .card-header {
+        .config-header {
             background: #f8fafc;
             padding: 16px 20px;
+            font-weight: 700;
+            font-size: 1.2rem;
             border-bottom: 1px solid #e2e8f0;
-            font-weight: 600;
-            font-size: 1.1rem;
             display: flex;
             align-items: center;
             gap: 8px;
         }
-        .source-header { border-left: 5px solid #ef4444; }
-        .target-header { border-left: 5px solid #10b981; }
-        .config-card textarea {
+        .config-header.source { border-left: 5px solid #ef4444; }
+        .config-header.target { border-left: 5px solid #10b981; }
+        textarea {
             width: 100%;
-            height: 280px;
-            padding: 16px;
             font-family: 'SF Mono', 'Fira Code', monospace;
             font-size: 13px;
             background: #fefce8;
             border: none;
+            padding: 18px;
             resize: vertical;
             outline: none;
-            color: #1e293b;
+            color: #0f172a;
             line-height: 1.5;
+            border-bottom: 1px solid #e2e8f0;
         }
-        .config-card textarea:focus {
-            background: #fffbe6;
+        textarea:focus {
+            background: #fffae6;
         }
         .action-bar {
             display: flex;
-            flex-wrap: wrap;
             gap: 16px;
+            flex-wrap: wrap;
             align-items: center;
-            margin-bottom: 24px;
-            background: white;
-            padding: 16px 24px;
-            border-radius: 40px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
-            border: 1px solid #e2e8f0;
+            margin: 16px 0 24px;
         }
         button {
             background: #1e293b;
             border: none;
-            padding: 10px 24px;
+            padding: 12px 28px;
             border-radius: 40px;
-            font-weight: 500;
-            font-size: 0.9rem;
-            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.95rem;
             color: white;
-            transition: all 0.2s;
+            cursor: pointer;
+            transition: 0.2s;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
         button.primary {
             background: #3b82f6;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
         button.primary:hover {
             background: #2563eb;
-            transform: translateY(-1px);
+            transform: scale(1.01);
         }
         button.danger {
-            background: #ef4444;
-        }
-        button.danger:hover {
-            background: #dc2626;
+            background: #475569;
         }
         button:active {
-            transform: translateY(1px);
+            transform: scale(0.98);
         }
         button:disabled {
-            opacity: 0.6;
+            background: #94a3b8;
             cursor: not-allowed;
             transform: none;
         }
-        .status-panel {
+        .log-panel {
             background: #0f172a;
             color: #e2e8f0;
             border-radius: 20px;
-            padding: 16px 24px;
-            margin-bottom: 20px;
-            font-family: monospace;
-            font-size: 0.85rem;
+            padding: 20px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+            margin-top: 28px;
+            box-shadow: inset 0 0 0 1px #334155, 0 6px 12px rgba(0,0,0,0.1);
+        }
+        .log-header {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: baseline;
+            margin-bottom: 12px;
             flex-wrap: wrap;
             gap: 12px;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
         }
-        .sync-badge {
-            background: #334155;
-            padding: 4px 12px;
-            border-radius: 40px;
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-        .log-box {
-            background: #0f172a;
-            border-radius: 20px;
-            padding: 20px;
-            color: #cbd5e1;
-            font-family: 'SF Mono', monospace;
-            font-size: 12px;
-            height: 400px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-            line-height: 1.5;
-            border: 1px solid #334155;
-        }
-        .log-entry {
-            border-left: 3px solid #3b82f6;
-            padding-left: 12px;
-            margin-bottom: 8px;
-        }
-        .log-error {
-            border-left-color: #ef4444;
-            color: #fca5a5;
-        }
-        .log-success {
-            border-left-color: #10b981;
-        }
-        .stats {
-            font-size: 0.75rem;
+        .log-header span {
+            font-weight: 600;
+            letter-spacing: 0.5px;
             background: #1e293b;
             padding: 4px 12px;
-            border-radius: 24px;
+            border-radius: 40px;
+            font-size: 12px;
+        }
+        pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-y: auto;
+            max-height: 380px;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .stats {
+            background: #e6f0ff;
+            border-radius: 16px;
+            padding: 12px 20px;
+            margin-bottom: 18px;
+            display: flex;
+            gap: 28px;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .badge {
+            background: #1e293b;
+            color: white;
+            border-radius: 30px;
+            padding: 4px 12px;
+            font-size: 0.7rem;
         }
         hr {
-            margin: 8px 0;
+            margin: 12px 0;
             border-color: #334155;
         }
-        .flex-between {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        .warning {
+            color: #facc15;
         }
-        .small-note {
-            font-size: 0.7rem;
-            color: #94a3b8;
-            margin-top: 8px;
+        .error {
+            color: #f87171;
+        }
+        .success {
+            color: #4ade80;
         }
     </style>
 </head>
 <body>
 <div class="container">
-    <h1>🔥 Firestore Incremental Migration</h1>
-    <div class="sub">Copy documents from <strong>Source</strong> → <strong>Target</strong> using <code>updatedAt</code> / <code>createdAt</code> timestamps. Supports incremental sync, batch writes, and large collections.</div>
+    <h1>🔥 Firestore Incremental Sync</h1>
+    <div class="sub">Copy documents from <strong>Source → Target</strong> using <code>updatedAt</code> / <code>createdAt</code> timestamps. Minimal reads, batch writes, resume-safe.</div>
 
-    <div class="config-grid">
+    <div class="grid-2col">
         <!-- SOURCE CONFIG -->
         <div class="config-card">
-            <div class="card-header source-header">
-                📡 SOURCE Firebase Config
-            </div>
-            <textarea id="sourceConfigInput" placeholder='Paste your source Firebase config object, e.g.:
+            <div class="config-header source">📡 SOURCE Firebase Config</div>
+            <textarea id="sourceConfig" rows="10" placeholder='Paste your Firebase web config object, e.g.:
 
 const firebaseConfig = {
   apiKey: "AIzaSy...",
   authDomain: "xxx.firebaseapp.com",
-  projectId: "source-project",
+  projectId: "your-source-project",
   storageBucket: "...",
   messagingSenderId: "...",
   appId: "..."
 };'></textarea>
         </div>
-
         <!-- TARGET CONFIG -->
         <div class="config-card">
-            <div class="card-header target-header">
-                🎯 TARGET Firebase Config
-            </div>
-            <textarea id="targetConfigInput" placeholder='Paste your target Firebase config object:
+            <div class="config-header target">🎯 TARGET Firebase Config</div>
+            <textarea id="targetConfig" rows="10" placeholder='Paste target Firebase config:
 
 const firebaseConfig = {
-  apiKey: "...",
+  apiKey: "AIzaSy...",
   projectId: "target-project",
   ...
 };'></textarea>
@@ -239,415 +224,411 @@ const firebaseConfig = {
 
     <div class="action-bar">
         <button id="migrateBtn" class="primary">🚀 START INCREMENTAL MIGRATION</button>
-        <button id="clearLogsBtn">🗑 Clear Logs</button>
-        <div class="stats" id="statsPreview">Ready</div>
+        <button id="clearLogsBtn" class="danger">🗑 Clear Logs</button>
     </div>
 
-    <div class="status-panel" id="statusPanel">
-        <span>⚙️ Status: <span id="syncStatus">Idle</span></span>
-        <span class="sync-badge" id="lastSyncBadge">Last sync: —</span>
+    <div id="statsPanel" class="stats" style="display: none;">
+        <div>📄 <span id="collectionsProcessed">0</span> collections</div>
+        <div>📑 <span id="docsCopied">0</span> documents copied</div>
+        <div>⏱ Last sync time: <span id="lastSyncPreview">—</span></div>
     </div>
 
-    <div class="log-box" id="logContainer">
-        <div class="log-entry">✨ Tool ready. Paste Firebase configs for source & target projects.</div>
-        <div class="log-entry">📌 First run copies ALL documents, then incremental using updatedAt/createdAt.</div>
-        <div class="log-entry">⚠️ Ensure target project has Firestore and write permissions.</div>
+    <div class="log-panel">
+        <div class="log-header">
+            <span>📋 MIGRATION LOG</span>
+            <span class="badge" id="liveStatus">● idle</span>
+        </div>
+        <pre id="logArea">[ready] Paste both configs, then click "START".\nTool uses incremental queries (updatedAt/createdAt > lastSyncTime).\nHandles missing timestamps on first run &amp; deduplicates documents.\n✓ Batched writes (max 500) | ✓ resume with migration_meta/firestore_sync</pre>
     </div>
-    <div class="small-note">✔️ Documents missing both timestamps are copied once on initial sync, ignored later. Uses batch writes (max 500). Maintains <code>migration_meta/firestore_sync</code> in target.</div>
 </div>
 
 <script type="importmap">
     {
         "imports": {
-            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js",
-            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js"
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
         }
     }
 </script>
 
 <script type="module">
-    import { initializeApp, deleteApp } from 'firebase/app';
-    import { 
-        getFirestore, 
-        collection, 
-        doc, 
-        getDoc, 
-        setDoc, 
-        writeBatch, 
-        query, 
-        where, 
-        Timestamp, 
-        getDocs,
-        listCollections,
-        limit,
-        startAfter,
-        orderBy
-    } from 'firebase/firestore';
+    import { initializeApp, deleteApp, getApps } from 'firebase/app';
+    import { getFirestore, collection, doc, getDoc, getDocs, query, where, writeBatch, setDoc, listCollections, Timestamp, limit, startAfter, orderBy } from 'firebase/firestore';
 
-    // ---------- DOM elements ----------
-    const sourceConfigTextarea = document.getElementById('sourceConfigInput');
-    const targetConfigTextarea = document.getElementById('targetConfigInput');
+    // DOM elements
+    const sourceTextarea = document.getElementById('sourceConfig');
+    const targetTextarea = document.getElementById('targetConfig');
     const migrateBtn = document.getElementById('migrateBtn');
     const clearLogsBtn = document.getElementById('clearLogsBtn');
-    const logContainer = document.getElementById('logContainer');
-    const syncStatusSpan = document.getElementById('syncStatus');
-    const lastSyncBadge = document.getElementById('lastSyncBadge');
-    const statsPreview = document.getElementById('statsPreview');
+    const logArea = document.getElementById('logArea');
+    const statsPanel = document.getElementById('statsPanel');
+    const collectionsProcessedSpan = document.getElementById('collectionsProcessed');
+    const docsCopiedSpan = document.getElementById('docsCopied');
+    const lastSyncPreviewSpan = document.getElementById('lastSyncPreview');
+    const liveStatusSpan = document.getElementById('liveStatus');
 
-    // Internal state
-    let sourceApp = null;
-    let targetApp = null;
-    let sourceDb = null;
-    let targetDb = null;
     let isMigrating = false;
 
-    // Helper: add log message (info/error/success)
-    function addLog(message, type = 'info') {
-        const logDiv = document.createElement('div');
-        logDiv.className = 'log-entry';
-        if (type === 'error') logDiv.classList.add('log-error');
-        if (type === 'success') logDiv.classList.add('log-success');
+    function appendLog(msg, type = 'info') {
         const timestamp = new Date().toLocaleTimeString();
-        logDiv.innerHTML = `[${timestamp}] ${message}`;
-        logContainer.appendChild(logDiv);
-        logDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        // auto scroll to bottom
-        logContainer.scrollTop = logContainer.scrollHeight;
+        const prefix = `[${timestamp}]`;
+        let styledMsg = msg;
+        if (type === 'error') styledMsg = `❌ ${msg}`;
+        else if (type === 'success') styledMsg = `✅ ${msg}`;
+        else if (type === 'warn') styledMsg = `⚠️ ${msg}`;
+        else if (type === 'info') styledMsg = `ℹ️ ${msg}`;
+        logArea.innerText += `\n${prefix} ${styledMsg}`;
+        logArea.scrollTop = logArea.scrollHeight;
     }
 
     function clearLogs() {
-        logContainer.innerHTML = '';
-        addLog('Logs cleared. Ready for migration.');
+        logArea.innerText = '[logs cleared] Ready for new migration.';
+        statsPanel.style.display = 'none';
+        document.getElementById('docsCopied').innerText = '0';
+        document.getElementById('collectionsProcessed').innerText = '0';
+        lastSyncPreviewSpan.innerText = '—';
     }
 
-    function updateStatus(text, isBusy = false) {
-        syncStatusSpan.innerText = text;
-        if (isBusy) {
-            migrateBtn.disabled = true;
-            statsPreview.innerText = '⚡ Migration in progress...';
-        } else {
-            migrateBtn.disabled = false;
-            if (!isMigrating) statsPreview.innerText = 'Idle';
-        }
-    }
-
-    // Parse config object from pasted text (supports const firebaseConfig = {...} or just {...})
+    // Parse firebase config from pasted JS snippet
     function parseFirebaseConfig(rawText) {
         let trimmed = rawText.trim();
-        // remove possible export/const/let and semicolons
-        let match = trimmed.match(/\{[\s\S]*\}/);
-        if (!match) throw new Error('No valid JSON-like object found. Paste the firebaseConfig object.');
-        let objStr = match[0];
-        // basic safety: replace trailing commas (Firebase config usually valid)
-        try {
-            // Use Function constructor to safely evaluate object literal
-            const config = new Function('return (' + objStr + ')')();
-            if (!config.apiKey || !config.projectId) {
-                throw new Error('Missing apiKey or projectId in config');
+        if (!trimmed) throw new Error('Empty configuration');
+        // extract object part after "=" and before final ";"
+        let objectStr = trimmed;
+        if (trimmed.includes('const firebaseConfig')) {
+            const match = trimmed.match(/=\s*(\{[\s\S]*?\})\s*;?\s*$/);
+            if (match && match[1]) objectStr = match[1];
+            else throw new Error('Could not extract config object from const declaration');
+        } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            objectStr = trimmed;
+        } else if (trimmed.includes('=')) {
+            const parts = trimmed.split('=');
+            if (parts.length >= 2) {
+                let candidate = parts.slice(1).join('=').trim();
+                if (candidate.endsWith(';')) candidate = candidate.slice(0, -1);
+                objectStr = candidate;
             }
-            return config;
+        }
+        // safe evaluation using Function (user provides own config)
+        try {
+            const configObj = new Function('return (' + objectStr + ')')();
+            if (!configObj || typeof configObj !== 'object') throw new Error('Invalid object');
+            const required = ['apiKey', 'projectId'];
+            for (let req of required) if (!configObj[req]) throw new Error(`Missing ${req}`);
+            return configObj;
         } catch (e) {
-            throw new Error(`Invalid config format: ${e.message}`);
+            throw new Error(`Config parse error: ${e.message}`);
         }
     }
 
-    // Initialize both Firebase apps from textareas
-    async function initFirebaseApps() {
-        try {
-            if (sourceApp) {
-                await deleteApp(sourceApp).catch(e=>console.warn);
-                sourceApp = null;
+    // Helper to delete previous app if exists with same name
+    async function ensureAppDeleted(name) {
+        const existingApp = getApps().find(app => app.name === name);
+        if (existingApp) {
+            try {
+                await deleteApp(existingApp);
+                appendLog(`Cleaned up previous app "${name}"`, 'info');
+            } catch (err) {
+                console.warn(err);
             }
-            if (targetApp) {
-                await deleteApp(targetApp).catch(e=>console.warn);
-                targetApp = null;
-            }
-            const sourceRaw = sourceConfigTextarea.value;
-            const targetRaw = targetConfigTextarea.value;
-            if (!sourceRaw.trim()) throw new Error('Source Firebase configuration is empty');
-            if (!targetRaw.trim()) throw new Error('Target Firebase configuration is empty');
-            
-            const sourceConfig = parseFirebaseConfig(sourceRaw);
-            const targetConfig = parseFirebaseConfig(targetRaw);
-            
-            addLog(`✅ Source config parsed: project "${sourceConfig.projectId}"`, 'success');
-            addLog(`✅ Target config parsed: project "${targetConfig.projectId}"`, 'success');
-            
-            sourceApp = initializeApp(sourceConfig, 'sourceApp');
-            targetApp = initializeApp(targetConfig, 'targetApp');
-            sourceDb = getFirestore(sourceApp);
-            targetDb = getFirestore(targetApp);
-            
-            addLog(`🔥 Firebase apps initialized. Source: ${sourceConfig.projectId} | Target: ${targetConfig.projectId}`);
-            return true;
-        } catch (err) {
-            addLog(`❌ Config initialization error: ${err.message}`, 'error');
-            updateStatus('Config error');
-            return false;
         }
     }
 
-    // Read lastSyncTime from target: migration_meta/firestore_sync
-    async function getLastSyncTime() {
-        if (!targetDb) throw new Error('Target DB not initialized');
+    // fetch all documents from a query with pagination (handles large collections)
+    async function fetchAllDocsFromQuery(queryRef) {
+        const results = [];
+        let lastSnapshot = null;
+        let hasMore = true;
+        const pageSize = 1000;
+        while (hasMore) {
+            let q = queryRef;
+            if (lastSnapshot) {
+                q = query(queryRef, startAfter(lastSnapshot));
+            }
+            const snapshot = await getDocs(q);
+            snapshot.forEach(docSnap => results.push(docSnap));
+            lastSnapshot = snapshot.docs[snapshot.docs.length - 1];
+            hasMore = snapshot.docs.length === pageSize;
+            if (hasMore && snapshot.docs.length > 0) {
+                // continue pagination
+            } else {
+                hasMore = false;
+            }
+        }
+        return results;
+    }
+
+    // Helper to get numeric timestamp (milliseconds) from Firestore field (Timestamp or number)
+    function getTimestampMillis(value) {
+        if (value == null) return 0;
+        if (value instanceof Timestamp) return value.toMillis();
+        if (typeof value === 'number') return value;
+        if (value?.toMillis && typeof value.toMillis === 'function') return value.toMillis();
+        return 0;
+    }
+
+    // Determine doc timestamp priority: updatedAt || createdAt || 0
+    function getDocTimestamp(docData) {
+        const updated = docData.updatedAt !== undefined ? getTimestampMillis(docData.updatedAt) : null;
+        const created = docData.createdAt !== undefined ? getTimestampMillis(docData.createdAt) : null;
+        if (updated !== null) return updated;
+        if (created !== null) return created;
+        return 0;
+    }
+
+    // Main migration engine
+    async function runMigration(sourceDb, targetDb, lastSyncTime) {
+        let totalCopied = 0;
+        let processedCollections = 0;
+        let globalMaxTimestamp = lastSyncTime;
+        const collectionsRef = await listCollections(sourceDb);
+        appendLog(`📂 Found ${collectionsRef.length} root collections in source.`, 'info');
+        if (collectionsRef.length === 0) appendLog('⚠️ No collections to migrate.', 'warn');
+
+        for (const colRef of collectionsRef) {
+            const collectionId = colRef.id;
+            appendLog(`🔍 Processing collection: "${collectionId}"`, 'info');
+            let docsToCopyMap = new Map(); // docId -> { data, timestamp }
+
+            try {
+                if (lastSyncTime === 0) {
+                    // FIRST RUN: full copy (including docs without timestamps)
+                    appendLog(`   ↳ First sync → fetching ALL documents from "${collectionId}" (paginated)`, 'info');
+                    const allDocsQuery = query(collection(sourceDb, collectionId));
+                    const allDocs = await fetchAllDocsFromQuery(allDocsQuery);
+                    for (const docSnap of allDocs) {
+                        const data = docSnap.data();
+                        const docTimestamp = getDocTimestamp(data);
+                        docsToCopyMap.set(docSnap.id, { data, timestamp: docTimestamp });
+                    }
+                    appendLog(`   ↳ Full collection read: ${allDocs.length} total docs`, 'info');
+                } else {
+                    // INCREMENTAL: two queries (updatedAt > lastSyncTime) + (createdAt > lastSyncTime)
+                    const lastSyncDate = new Date(lastSyncTime);
+                    const colPath = collection(sourceDb, collectionId);
+                    let queryUpdated, queryCreated;
+                    try {
+                        queryUpdated = query(colPath, where('updatedAt', '>', lastSyncDate));
+                        queryCreated = query(colPath, where('createdAt', '>', lastSyncDate));
+                    } catch (err) {
+                        appendLog(`   ⚠️ Could not build timestamp query (missing index?) - ${err.message}`, 'warn');
+                        throw err;
+                    }
+                    const [snapUpdatedDocs, snapCreatedDocs] = await Promise.all([
+                        fetchAllDocsFromQuery(queryUpdated),
+                        fetchAllDocsFromQuery(queryCreated)
+                    ]);
+                    const map = new Map();
+                    for (const docSnap of snapUpdatedDocs) {
+                        const data = docSnap.data();
+                        const ts = getDocTimestamp(data);
+                        map.set(docSnap.id, { data, timestamp: ts });
+                    }
+                    for (const docSnap of snapCreatedDocs) {
+                        if (!map.has(docSnap.id)) {
+                            const data = docSnap.data();
+                            const ts = getDocTimestamp(data);
+                            map.set(docSnap.id, { data, timestamp: ts });
+                        } else {
+                            // merge timestamp (max) just for safety
+                            const existing = map.get(docSnap.id);
+                            const newTs = getDocTimestamp(docSnap.data());
+                            if (newTs > existing.timestamp) existing.timestamp = newTs;
+                            map.set(docSnap.id, existing);
+                        }
+                    }
+                    docsToCopyMap = map;
+                    appendLog(`   ↳ Incremental: found ${docsToCopyMap.size} doc(s) with updatedAt/createdAt > ${new Date(lastSyncTime).toISOString()}`, 'info');
+                }
+
+                if (docsToCopyMap.size === 0) {
+                    appendLog(`   ✔ No new/updated documents in "${collectionId}".`, 'info');
+                    processedCollections++;
+                    collectionsProcessedSpan.innerText = processedCollections;
+                    continue;
+                }
+
+                // Batch copy to target
+                let batch = writeBatch(targetDb);
+                let batchCount = 0;
+                let copiedInCollection = 0;
+                let collectionMaxTs = lastSyncTime;
+
+                for (const [docId, { data, timestamp }] of docsToCopyMap.entries()) {
+                    const targetDocRef = doc(targetDb, collectionId, docId);
+                    batch.set(targetDocRef, data);
+                    batchCount++;
+                    copiedInCollection++;
+                    totalCopied++;
+                    if (timestamp > collectionMaxTs) collectionMaxTs = timestamp;
+                    if (timestamp > globalMaxTimestamp) globalMaxTimestamp = timestamp;
+
+                    if (batchCount >= 500) {
+                        await batch.commit();
+                        appendLog(`   ✍️ Committed batch (500 writes) for "${collectionId}"`, 'info');
+                        batch = writeBatch(targetDb);
+                        batchCount = 0;
+                    }
+                }
+                if (batchCount > 0) {
+                    await batch.commit();
+                    appendLog(`   ✅ Committed final batch (${batchCount} writes) for "${collectionId}"`, 'success');
+                }
+                appendLog(`   📌 "${collectionId}" → copied ${copiedInCollection} docs, collection max timestamp: ${new Date(collectionMaxTs).toISOString()}`, 'success');
+                docsCopiedSpan.innerText = totalCopied;
+                processedCollections++;
+                collectionsProcessedSpan.innerText = processedCollections;
+            } catch (err) {
+                appendLog(`🔥 ERROR in collection "${collectionId}": ${err.message}`, 'error');
+                throw err; // abort migration
+            }
+        }
+
+        return { totalCopied, globalMaxTimestamp, processedCollections };
+    }
+
+    // read lastSyncTime from target meta
+    async function getLastSyncTime(targetDb) {
         const metaRef = doc(targetDb, 'migration_meta', 'firestore_sync');
-        const snap = await getDoc(metaRef);
-        if (snap.exists() && typeof snap.data().lastSyncTime === 'number') {
-            const lastSync = snap.data().lastSyncTime;
-            addLog(`📅 Last sync timestamp found: ${new Date(lastSync).toISOString()} (ms: ${lastSync})`);
-            return lastSync;
-        } else {
-            addLog(`🆕 No previous sync metadata. First-run mode: will copy all documents.`);
+        try {
+            const snap = await getDoc(metaRef);
+            if (snap.exists() && snap.data().lastSyncTime !== undefined) {
+                const stored = snap.data().lastSyncTime;
+                const numeric = typeof stored === 'number' ? stored : (stored?.toMillis ? stored.toMillis() : Number(stored));
+                return isNaN(numeric) ? 0 : numeric;
+            }
+            return 0;
+        } catch (e) {
+            appendLog(`Could not read meta doc: ${e.message}, assuming first run (lastSyncTime=0)`, 'warn');
             return 0;
         }
     }
 
-    // Update lastSyncTime in target after migration
-    async function updateLastSyncTime(newTimestampMs) {
-        if (!targetDb) throw new Error('Target DB not initialized');
+    async function updateLastSyncTime(targetDb, newTimestamp) {
+        if (newTimestamp === undefined || newTimestamp === null) return;
         const metaRef = doc(targetDb, 'migration_meta', 'firestore_sync');
-        await setDoc(metaRef, { lastSyncTime: newTimestampMs, updatedAt: Timestamp.now() }, { merge: true });
-        addLog(`💾 Updated lastSyncTime = ${newTimestampMs} (${new Date(newTimestampMs).toISOString()})`, 'success');
-        lastSyncBadge.innerText = `Last sync: ${new Date(newTimestampMs).toLocaleString()}`;
+        await setDoc(metaRef, { lastSyncTime: newTimestamp }, { merge: true });
+        appendLog(`💾 Updated migration_meta/firestore_sync lastSyncTime = ${new Date(newTimestamp).toISOString()} (${newTimestamp})`, 'success');
     }
 
-    // Generic paginated fetcher: gets ALL docs from a query or collection reference
-    async function fetchAllDocs(queryRef, pageSize = 1000) {
-        const docsList = [];
-        let lastDoc = null;
-        let hasMore = true;
-        while (hasMore) {
-            let q = queryRef;
-            if (lastDoc) {
-                q = query(queryRef, startAfter(lastDoc));
-            }
-            const qLimited = query(q, limit(pageSize));
-            const snapshot = await getDocs(qLimited);
-            if (snapshot.empty) break;
-            snapshot.forEach(docSnap => docsList.push(docSnap));
-            lastDoc = snapshot.docs[snapshot.docs.length - 1];
-            hasMore = snapshot.docs.length === pageSize;
-        }
-        return docsList;
-    }
-
-    // Process a single collection: get docs (full or incremental), batch write to target
-    async function processCollection(collectionRef, lastSyncTime, globalMaxTimestamp, totalCopiedCounter, batchCommitCounter) {
-        const collectionPath = collectionRef.id;
-        addLog(`📂 Processing collection: "${collectionPath}"`);
-        let docsToCopy = [];
-        
-        if (lastSyncTime === 0) {
-            // FIRST RUN: copy all documents from source collection
-            addLog(`   ➜ First-run: fetching ALL documents from "${collectionPath}" (no filters)`);
-            const allDocs = await fetchAllDocs(collectionRef);
-            docsToCopy = allDocs;
-            addLog(`   ➜ Retrieved ${docsToCopy.length} total documents from ${collectionPath}`);
-        } else {
-            // INCREMENTAL: updatedAt > lastSyncTime OR createdAt > lastSyncTime
-            const lastSyncTimestampObj = Timestamp.fromMillis(lastSyncTime);
-            const updatedQuery = query(collectionRef, where('updatedAt', '>', lastSyncTimestampObj));
-            const createdQuery = query(collectionRef, where('createdAt', '>', lastSyncTimestampObj));
-            
-            const [updatedDocs, createdDocs] = await Promise.all([
-                fetchAllDocs(updatedQuery),
-                fetchAllDocs(createdQuery)
-            ]);
-            
-            // Merge & deduplicate by document ID
-            const docMap = new Map();
-            updatedDocs.forEach(doc => docMap.set(doc.id, doc));
-            createdDocs.forEach(doc => docMap.set(doc.id, doc));
-            docsToCopy = Array.from(docMap.values());
-            addLog(`   🔁 Incremental: updated:${updatedDocs.length} + created:${createdDocs.length} → unique:${docsToCopy.length} docs in "${collectionPath}"`);
-        }
-        
-        if (docsToCopy.length === 0) {
-            addLog(`   ⏭️ No documents to migrate in "${collectionPath}"`);
-            return { maxDocTimestamp: globalMaxTimestamp, copied: 0 };
-        }
-        
-        // Batch write to target (same collection name, same doc ID)
-        let batch = writeBatch(targetDb);
-        let batchOpCount = 0;
-        let copiedCount = 0;
-        let collectionMaxTimestamp = globalMaxTimestamp;
-        
-        for (const docSnap of docsToCopy) {
-            const docId = docSnap.id;
-            const sourceData = docSnap.data();
-            // Compute document timestamp: updatedAt || createdAt || 0
-            let docTimestampMs = 0;
-            if (sourceData.updatedAt && sourceData.updatedAt instanceof Timestamp) {
-                docTimestampMs = sourceData.updatedAt.toMillis();
-            } else if (sourceData.createdAt && sourceData.createdAt instanceof Timestamp) {
-                docTimestampMs = sourceData.createdAt.toMillis();
-            } else {
-                // No timestamp fields, set to 0. Will not affect incremental max, but copied once safely.
-                docTimestampMs = 0;
-            }
-            
-            // Update global max timestamp
-            if (docTimestampMs > collectionMaxTimestamp) collectionMaxTimestamp = docTimestampMs;
-            
-            const targetDocRef = doc(targetDb, collectionPath, docId);
-            batch.set(targetDocRef, sourceData);
-            batchOpCount++;
-            copiedCount++;
-            
-            if (batchOpCount >= 500) {
-                await batch.commit();
-                batch = writeBatch(targetDb);
-                batchOpCount = 0;
-                // Update counters for UI feedback
-                totalCopiedCounter.value += copiedCount;
-                batchCommitCounter.value++;
-                addLog(`   ✍️ Committed batch (${copiedCount} docs so far in ${collectionPath})`);
-                copiedCount = 0;
-            }
-        }
-        
-        // Commit remaining
-        if (batchOpCount > 0) {
-            await batch.commit();
-            totalCopiedCounter.value += copiedCount;
-            batchCommitCounter.value++;
-            addLog(`   ✅ Final batch committed for "${collectionPath}" (last batch: ${copiedCount} docs)`);
-        } else if (copiedCount > 0) {
-            totalCopiedCounter.value += copiedCount;
-        }
-        
-        addLog(`   ✔️ Collection "${collectionPath}" completed. Copied ${docsToCopy.length} docs.`, 'success');
-        return { maxDocTimestamp: collectionMaxTimestamp, copied: docsToCopy.length };
-    }
-    
-    // Main migration orchestration
-    async function runMigration() {
-        if (isMigrating) {
-            addLog('⚠️ Migration already running, please wait.', 'error');
-            return;
-        }
-        
-        // Reset & init apps
-        if (!sourceApp || !targetApp) {
-            const initOk = await initFirebaseApps();
-            if (!initOk) return;
-        }
-        
-        isMigrating = true;
-        updateStatus('Migration running...', true);
-        const startTime = Date.now();
-        const totalCopied = { value: 0 };
-        const batchCommitsCount = { value: 0 };
-        
+    // initialize Firebase apps from configs, clean previous
+    async function initApps(sourceConfigObj, targetConfigObj) {
+        await ensureAppDeleted('sourceApp');
+        await ensureAppDeleted('targetApp');
+        const sourceApp = initializeApp(sourceConfigObj, 'sourceApp');
+        const targetApp = initializeApp(targetConfigObj, 'targetApp');
+        const sourceDb = getFirestore(sourceApp);
+        const targetDb = getFirestore(targetApp);
+        // quick connectivity test
         try {
-            // 1. Get lastSyncTime from target
-            const lastSyncTime = await getLastSyncTime();
-            lastSyncBadge.innerText = lastSyncTime === 0 ? 'Last sync: FIRST RUN' : `Last sync: ${new Date(lastSyncTime).toLocaleString()}`;
-            
-            // 2. Fetch all root collections from source
-            addLog(`🔍 Fetching root-level collections from source project...`);
-            const collectionsIterator = await listCollections(sourceDb);
-            const collectionsList = [];
-            for await (const colRef of collectionsIterator) {
-                collectionsList.push(colRef);
-            }
-            addLog(`📁 Found ${collectionsList.length} root collection(s): ${collectionsList.map(c => c.id).join(', ')}`);
-            
-            if (collectionsList.length === 0) {
-                addLog(`⚠️ No root collections found in source database. Nothing to migrate.`, 'error');
-                updateStatus('No collections found');
-                return;
-            }
-            
-            let overallMaxTimestamp = lastSyncTime;
-            let totalDocsProcessed = 0;
-            
-            // Process each collection sequentially to avoid overloading
-            for (const colRef of collectionsList) {
-                const result = await processCollection(colRef, lastSyncTime, overallMaxTimestamp, totalCopied, batchCommitsCount);
-                overallMaxTimestamp = Math.max(overallMaxTimestamp, result.maxDocTimestamp);
-                totalDocsProcessed += result.copied;
-            }
-            
-            // Edge case: if no documents were copied, don't update lastSyncTime (preserve previous)
-            if (totalDocsProcessed === 0) {
-                addLog(`📭 No new or updated documents found. Sync timestamp unchanged.`, 'info');
-                updateStatus(`Done: 0 docs copied`);
-                statsPreview.innerText = `✅ Done: 0 docs, no timestamp update`;
-                return;
-            }
-            
-            // After processing all collections, compute final lastSyncTime.
-            let newSyncTime = overallMaxTimestamp;
-            // If all copied documents had timestamp 0 (no updatedAt/createdAt fields at all) AND lastSyncTime was 0,
-            // we set lastSyncTime to current server time (to avoid re-copying on next run).
-            if (newSyncTime === 0 && lastSyncTime === 0 && totalDocsProcessed > 0) {
-                newSyncTime = Date.now();
-                addLog(`🕒 No timestamp fields found in any copied document. Setting lastSyncTime to current server time to prevent re-copy.`, 'info');
-            } else if (newSyncTime === lastSyncTime && totalDocsProcessed > 0) {
-                // If some docs had timestamps but max didn't advance (unlikely), advance minimally
-                if (newSyncTime === 0) newSyncTime = Date.now();
-                else newSyncTime = Math.max(newSyncTime, lastSyncTime + 1);
-                addLog(`⚠️ Adjusted sync timestamp to ensure future incremental queries.`);
-            }
-            
-            // Update target meta doc
-            await updateLastSyncTime(newSyncTime);
-            
-            const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-            addLog(`✨ MIGRATION COMPLETE ✨ Copied ${totalDocsProcessed} document(s) across ${collectionsList.length} collection(s) in ${duration}s. Batches committed: ${batchCommitsCount.value}`, 'success');
-            updateStatus(`Success: ${totalDocsProcessed} docs synced`);
-            statsPreview.innerText = `✅ Copied ${totalDocsProcessed} docs | Last sync: ${new Date(newSyncTime).toLocaleString()}`;
-            
-        } catch (err) {
-            console.error(err);
-            addLog(`❌ CRITICAL ERROR: ${err.message}`, 'error');
-            updateStatus('Migration failed');
-            statsPreview.innerText = `❌ Migration error`;
-        } finally {
-            isMigrating = false;
-            updateStatus(lastSyncTime => lastSyncTime ? 'Ready' : 'Idle', false);
-            // ensure button re-enabled
-            migrateBtn.disabled = false;
-        }
+            await getDocs(query(collection(sourceDb, '_dummy_'), limit(1))).catch(() => null);
+        } catch(e) { /* ignore */ }
+        return { sourceDb, targetDb, sourceApp, targetApp };
     }
-    
-    // Event binding with safety
+
     migrateBtn.addEventListener('click', async () => {
         if (isMigrating) {
-            addLog('⏳ Migration already in progress. Please wait.', 'error');
+            appendLog('Migration already running, please wait.', 'warn');
             return;
         }
-        await runMigration();
+        // Reset stats UI
+        statsPanel.style.display = 'flex';
+        document.getElementById('docsCopied').innerText = '0';
+        document.getElementById('collectionsProcessed').innerText = '0';
+        lastSyncPreviewSpan.innerText = '—';
+        
+        const sourceRaw = sourceTextarea.value.trim();
+        const targetRaw = targetTextarea.value.trim();
+        if (!sourceRaw || !targetRaw) {
+            appendLog('❌ Please fill both Source and Target Firebase configurations.', 'error');
+            return;
+        }
+        let sourceConfig, targetConfig;
+        try {
+            sourceConfig = parseFirebaseConfig(sourceRaw);
+            targetConfig = parseFirebaseConfig(targetRaw);
+            appendLog(`✓ Source config parsed: project "${sourceConfig.projectId}"`, 'success');
+            appendLog(`✓ Target config parsed: project "${targetConfig.projectId}"`, 'success');
+        } catch (err) {
+            appendLog(`Config parse error: ${err.message}`, 'error');
+            return;
+        }
+
+        isMigrating = true;
+        migrateBtn.disabled = true;
+        liveStatusSpan.innerText = '● migrating';
+        let sourceDb = null, targetDb = null, sourceApp = null, targetApp = null;
+        try {
+            // init apps
+            const apps = await initApps(sourceConfig, targetConfig);
+            sourceDb = apps.sourceDb;
+            targetDb = apps.targetDb;
+            sourceApp = apps.sourceApp;
+            targetApp = apps.targetApp;
+            appendLog(`🔥 Firebase initialized: Source = ${sourceConfig.projectId}, Target = ${targetConfig.projectId}`, 'info');
+
+            // read last sync
+            let lastSyncTime = await getLastSyncTime(targetDb);
+            appendLog(`📅 Last synchronization timestamp: ${lastSyncTime === 0 ? 'NEVER (first run)' : new Date(lastSyncTime).toISOString()}`, 'info');
+            if (lastSyncTime > 0) lastSyncPreviewSpan.innerText = new Date(lastSyncTime).toLocaleString();
+            else lastSyncPreviewSpan.innerText = 'First migration (full)';
+
+            // run migration
+            const { totalCopied, globalMaxTimestamp, processedCollections } = await runMigration(sourceDb, targetDb, lastSyncTime);
+            
+            if (totalCopied > 0) {
+                await updateLastSyncTime(targetDb, globalMaxTimestamp);
+                lastSyncPreviewSpan.innerText = new Date(globalMaxTimestamp).toLocaleString();
+                appendLog(`🎉 MIGRATION COMPLETE: ${totalCopied} documents copied across ${processedCollections} collections.`, 'success');
+                appendLog(`✨ New lastSyncTime = ${new Date(globalMaxTimestamp).toISOString()}`, 'success');
+            } else {
+                appendLog(`🏁 No new/updated documents found. lastSyncTime remains unchanged.`, 'info');
+                if (lastSyncTime === 0) appendLog(`   (No documents with timestamps? Ensure at least updatedAt/createdAt exist for future incremental sync)`, 'warn');
+            }
+            docsCopiedSpan.innerText = totalCopied;
+            collectionsProcessedSpan.innerText = processedCollections;
+        } catch (err) {
+            appendLog(`❌ Migration failed: ${err.message}`, 'error');
+            console.error(err);
+        } finally {
+            // cleanup apps optional (not mandatory but keep)
+            isMigrating = false;
+            migrateBtn.disabled = false;
+            liveStatusSpan.innerText = '● idle';
+            // keep apps alive but next migration will delete old ones anyway
+        }
     });
-    
+
     clearLogsBtn.addEventListener('click', () => {
         clearLogs();
+        statsPanel.style.display = 'none';
+        appendLog('Logs cleared. You can run new migration.', 'info');
     });
-    
-    // Optional: prefill demo instructions (no real keys)
-    const exampleSource = `const firebaseConfig = {
-  apiKey: "YOUR_SOURCE_API_KEY",
-  authDomain: "source.firebaseapp.com",
+
+    // Helper to display initial default examples (optional fill for demonstration)
+    function setExamplePlaceholders() {
+        // Not auto-filling but friendly placeholder example inside textareas
+        const exampleSource = `const firebaseConfig = {
+  apiKey: "AIzaSyDemo_Source_XXXX",
+  authDomain: "source-project.firebaseapp.com",
   projectId: "source-project-id",
-  storageBucket: "source.appspot.com",
+  storageBucket: "source-project.appspot.com",
   messagingSenderId: "123456789",
   appId: "1:123456789:web:abcdef"
 };`;
-    const exampleTarget = `const firebaseConfig = {
-  apiKey: "YOUR_TARGET_API_KEY",
-  authDomain: "target.firebaseapp.com",
+        const exampleTarget = `const firebaseConfig = {
+  apiKey: "AIzaSyDemo_Target_XXXX",
+  authDomain: "target-project.firebaseapp.com",
   projectId: "target-project-id",
-  storageBucket: "target.appspot.com",
+  storageBucket: "target-project.appspot.com",
   messagingSenderId: "987654321",
   appId: "1:987654321:web:fedcba"
 };`;
-    if (!sourceConfigTextarea.value.trim()) sourceConfigTextarea.value = exampleSource;
-    if (!targetConfigTextarea.value.trim()) targetConfigTextarea.value = exampleTarget;
-    
-    addLog('✅ UI ready. Provide valid Firebase configs (source & target) then click START.');
-    addLog('📘 Documents with updatedAt/createdAt (Firestore Timestamp) drive incremental sync. First run = full copy.');
+        if (!sourceTextarea.value) sourceTextarea.placeholder = exampleSource;
+        if (!targetTextarea.value) targetTextarea.placeholder = exampleTarget;
+    }
+    setExamplePlaceholders();
+    appendLog('🔧 Tool ready. Paste your actual Firebase configs (both source & target) and start incremental migration.', 'info');
 </script>
 </body>
 </html>
