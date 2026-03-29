@@ -55,7 +55,7 @@ function createQuestionHash(q) {
     return crypto.createHash('sha256').update(combined).digest('hex');
 }
 
-// ---- Metadata Counts Update (atomic increment with safety) ----
+// ---- Metadata Counts Update (atomic increment with safety and correct transaction order) ----
 async function safeUpdateMetadataCounts(className, subject, chapter, incrementBy) {
     if (!db) return;
     // Canonicalize metadata strings
@@ -71,10 +71,16 @@ async function safeUpdateMetadataCounts(className, subject, chapter, incrementBy
     const subjectRef = db.collection('subjects').doc(subjectId);
     const chapterRef = db.collection('chapters').doc(chapterId);
     
-    // Use transactions to prevent negative counts
+    // Use transaction to ensure atomicity and prevent negative counts
     await db.runTransaction(async (transaction) => {
-        // Courses
-        const courseDoc = await transaction.get(courseRef);
+        // 1. READ all documents first
+        const [courseDoc, subjectDoc, chapterDoc] = await Promise.all([
+            transaction.get(courseRef),
+            transaction.get(subjectRef),
+            transaction.get(chapterRef)
+        ]);
+        
+        // 2. Compute new counts
         let newCourseCount = incrementBy;
         if (courseDoc.exists) {
             const current = courseDoc.data().totalQuestions || 0;
@@ -83,14 +89,7 @@ async function safeUpdateMetadataCounts(className, subject, chapter, incrementBy
         } else if (incrementBy < 0) {
             newCourseCount = 0; // cannot go negative for non-existent
         }
-        transaction.set(courseRef, {
-            name: canonClass,
-            totalQuestions: newCourseCount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
         
-        // Subjects
-        const subjectDoc = await transaction.get(subjectRef);
         let newSubjectCount = incrementBy;
         if (subjectDoc.exists) {
             const current = subjectDoc.data().totalQuestions || 0;
@@ -99,15 +98,7 @@ async function safeUpdateMetadataCounts(className, subject, chapter, incrementBy
         } else if (incrementBy < 0) {
             newSubjectCount = 0;
         }
-        transaction.set(subjectRef, {
-            class: canonClass,
-            subject: canonSubject,
-            totalQuestions: newSubjectCount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
         
-        // Chapters
-        const chapterDoc = await transaction.get(chapterRef);
         let newChapterCount = incrementBy;
         if (chapterDoc.exists) {
             const current = chapterDoc.data().totalQuestions || 0;
@@ -116,6 +107,21 @@ async function safeUpdateMetadataCounts(className, subject, chapter, incrementBy
         } else if (incrementBy < 0) {
             newChapterCount = 0;
         }
+        
+        // 3. WRITE all updates
+        transaction.set(courseRef, {
+            name: canonClass,
+            totalQuestions: newCourseCount,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        
+        transaction.set(subjectRef, {
+            class: canonClass,
+            subject: canonSubject,
+            totalQuestions: newSubjectCount,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        
         transaction.set(chapterRef, {
             class: canonClass,
             subject: canonSubject,
