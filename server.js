@@ -44,84 +44,37 @@ function createQuestionHash(q) {
     return crypto.createHash('sha256').update(combined).digest('hex');
 }
 
-// Consistent ID generation for metadata documents (avoids duplicates)
-function canonicalizeForId(str) {
-    if (!str || typeof str !== 'string') return '';
-    return str.trim().replace(/[^a-zA-Z0-9]/g, '_');
-}
-
 function makeDocId(...parts) {
-    return parts.map(p => canonicalizeForId(p)).join('_');
+    return parts.map(p => p.replace(/[^a-zA-Z0-9]/g, '_')).join('_');
 }
 
-// ---- Metadata Counts Update (atomic increment & safe decrement) ----
+// ---- Metadata Counts Update (atomic increment) ----
 async function updateMetadataCounts(className, subject, chapter, incrementBy) {
     if (!db) return;
     const courseId = makeDocId('class', className);
     const subjectId = makeDocId('class', className, subject);
     const chapterId = makeDocId('class', className, subject, chapter);
 
-    if (incrementBy > 0) {
-        // Increment: create if not exists (merge true) and increment
-        await db.collection('courses').doc(courseId).set({
-            name: className,
-            totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+    await db.collection('courses').doc(courseId).set({
+        name: className,
+        totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 
-        await db.collection('subjects').doc(subjectId).set({
-            class: className,
-            subject: subject,
-            totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+    await db.collection('subjects').doc(subjectId).set({
+        class: className,
+        subject: subject,
+        totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 
-        await db.collection('chapters').doc(chapterId).set({
-            class: className,
-            subject: subject,
-            chapter: chapter,
-            totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-    } else if (incrementBy < 0) {
-        // Decrement: use transaction to ensure totalQuestions never goes negative
-        const decrementBy = -incrementBy;
-        await db.runTransaction(async (transaction) => {
-            // Courses
-            const courseRef = db.collection('courses').doc(courseId);
-            const courseDoc = await transaction.get(courseRef);
-            if (courseDoc.exists) {
-                let currentTotal = courseDoc.data().totalQuestions || 0;
-                let newTotal = Math.max(0, currentTotal - decrementBy);
-                transaction.update(courseRef, { totalQuestions: newTotal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            } else {
-                // Should not happen for decrement, but just in case create with 0
-                transaction.set(courseRef, { name: className, totalQuestions: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            }
-
-            // Subjects
-            const subjectRef = db.collection('subjects').doc(subjectId);
-            const subjectDoc = await transaction.get(subjectRef);
-            if (subjectDoc.exists) {
-                let currentTotal = subjectDoc.data().totalQuestions || 0;
-                let newTotal = Math.max(0, currentTotal - decrementBy);
-                transaction.update(subjectRef, { totalQuestions: newTotal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            } else {
-                transaction.set(subjectRef, { class: className, subject: subject, totalQuestions: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            }
-
-            // Chapters
-            const chapterRef = db.collection('chapters').doc(chapterId);
-            const chapterDoc = await transaction.get(chapterRef);
-            if (chapterDoc.exists) {
-                let currentTotal = chapterDoc.data().totalQuestions || 0;
-                let newTotal = Math.max(0, currentTotal - decrementBy);
-                transaction.update(chapterRef, { totalQuestions: newTotal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            } else {
-                transaction.set(chapterRef, { class: className, subject: subject, chapter: chapter, totalQuestions: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-            }
-        });
-    }
+    await db.collection('chapters').doc(chapterId).set({
+        class: className,
+        subject: subject,
+        chapter: chapter,
+        totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 }
 
 // ---- In-Memory Metadata Cache ----
@@ -178,9 +131,8 @@ if (db) {
     loadMetadataCache().catch(err => console.error('Failed to load metadata cache:', err));
 }
 
-// ---- Helper to update cache when a new mapping is added (no duplicates) ----
+// ---- Helper to update cache when a new mapping is added ----
 function updateCacheForNewMapping(className, subject, chapter) {
-    if (!className || !subject || !chapter) return;
     metadataCache.classes.add(className);
     if (!metadataCache.subjectsByClass.has(className)) {
         metadataCache.subjectsByClass.set(className, new Set());
