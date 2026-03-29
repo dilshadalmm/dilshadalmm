@@ -182,7 +182,7 @@
 <div class="card">
     <div class="header">
         <h1>📦 Firestore Manager</h1>
-        <p>Migration tool + Targeted deletion for CEE / CEE PAST QUESTIONS (YEAR WISE)</p>
+        <p>Migration tool + Targeted deletion for CEE / CEE PAST QUESTIONS [YEAR WISE]</p>
     </div>
     <div class="content">
         <!-- MIGRATION SECTION (original) -->
@@ -211,12 +211,12 @@
             </div>
         </div>
 
-        <!-- DELETION SECTION: CEE + CEE PAST QUESTIONS (YEAR WISE) -->
+        <!-- DELETION SECTION: CEE + CEE PAST QUESTIONS [YEAR WISE] -->
         <div class="delete-panel">
             <div style="font-weight:700; margin-bottom:8px; display: flex; align-items: center; gap: 8px;">
                 🗑️ DANGER ZONE: Delete Questions 
                 <span class="badge-cee">Course: "CEE"</span> 
-                <span class="badge-cee">Subject: "CEE PAST QUESTIONS (YEAR WISE)"</span>
+                <span class="badge-cee">Subject: "CEE PAST QUESTIONS [YEAR WISE]"</span>
             </div>
             <p style="font-size:0.75rem; margin-top:-4px; color:#7f1a1a;">⚠️ This will permanently delete ALL question documents that match the exact course and subject (top-level fields OR mappings array). Action is irreversible.</p>
             <div class="flex-btns">
@@ -224,7 +224,7 @@
                 <button id="previewCeeBtn" class="btn" style="background:#334155;">🔍 Preview Count Only</button>
             </div>
             <div id="deletePreviewArea" class="delete-stats" style="display: none;">
-                📋 <span id="deleteMatchCount">0</span> question(s) match <strong>"CEE"</strong> + <strong>"CEE PAST QUESTIONS (YEAR WISE)"</strong>. <span id="deleteHintSpan"></span>
+                📋 <span id="deleteMatchCount">0</span> question(s) match <strong>"CEE"</strong> + <strong>"CEE PAST QUESTIONS [YEAR WISE]"</strong>. <span id="deleteHintSpan"></span>
             </div>
             <div id="deleteProgressMsg" style="font-size:0.8rem; color:#4b5563; margin-top: 6px;"></div>
             <div class="danger-note" id="deletePermissionMsg" style="display: none;">
@@ -288,10 +288,13 @@
     
     let db = null;
     let migrationRunning = false;
-    let deletionRunning = false;      // prevent concurrent deletion/migration
+    let deletionRunning = false;
     let firebaseApp = null;
     
-    // Helper: add log message
+    // TARGET SUBJECT (corrected)
+    const TARGET_COURSE = "CEE";
+    const TARGET_SUBJECT = "CEE PAST QUESTIONS [YEAR WISE]";
+    
     function addLog(message, isError = false) {
         const logDiv = logPanel;
         const prefix = isError ? '❌ ' : '🔹 ';
@@ -323,7 +326,7 @@
         return str.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
     }
     
-    // ========== MIGRATION (unchanged logic but with safer concurrency) ==========
+    // ========== MIGRATION (unchanged but uses same TARGET_COURSE? No, migration is generic) ==========
     async function runMigration() {
         if (!db) {
             addLog('Firestore not initialized. Please refresh the page.', true);
@@ -523,8 +526,7 @@
         }
     }
     
-    // ========== DELETION LOGIC: CEE + "CEE PAST QUESTIONS (YEAR WISE)" ==========
-    // Returns array of document references that match condition (both top-level fields OR inside mappings)
+    // ========== DELETION LOGIC: CEE + "CEE PAST QUESTIONS [YEAR WISE]" ==========
     async function findMatchingCeeQuestions() {
         if (!db) throw new Error('Firestore not ready');
         const questionsRef = collection(db, 'questions');
@@ -534,7 +536,7 @@
         const matchingRefs = [];
         let scanned = 0;
         
-        addLog(`🔎 Scanning questions for course="CEE" + subject="CEE PAST QUESTIONS (YEAR WISE)"...`);
+        addLog(`🔎 Scanning questions for class="${TARGET_COURSE}" + subject="${TARGET_SUBJECT}"...`);
         deleteProgressMsg.innerText = 'Scanning questions...';
         
         while (hasMore) {
@@ -556,7 +558,7 @@
                 // 1) Check top-level fields class & subject
                 const topClass = data.class ? String(data.class).trim() : '';
                 const topSubject = data.subject ? String(data.subject).trim() : '';
-                if (topClass === 'CEE' && topSubject === 'CEE PAST QUESTIONS (YEAR WISE)') {
+                if (topClass === TARGET_COURSE && topSubject === TARGET_SUBJECT) {
                     matches = true;
                 }
                 
@@ -565,7 +567,7 @@
                     for (const m of data.mappings) {
                         const mClass = m.class ? String(m.class).trim() : '';
                         const mSubject = m.subject ? String(m.subject).trim() : '';
-                        if (mClass === 'CEE' && mSubject === 'CEE PAST QUESTIONS (YEAR WISE)') {
+                        if (mClass === TARGET_COURSE && mSubject === TARGET_SUBJECT) {
                             matches = true;
                             break;
                         }
@@ -576,7 +578,6 @@
                     matchingRefs.push(docSnap.ref);
                 }
                 
-                // optional progress display every 1000 docs
                 if (scanned % 1000 === 0) {
                     deleteProgressMsg.innerText = `Scanning... ${scanned} docs scanned, ${matchingRefs.length} matches found.`;
                 }
@@ -588,7 +589,7 @@
         }
         
         deleteProgressMsg.innerText = `✅ Scan complete: ${scanned} total questions, ${matchingRefs.length} match target.`;
-        addLog(`📊 Scan result: ${matchingRefs.length} question(s) match course "CEE" and subject "CEE PAST QUESTIONS (YEAR WISE)".`);
+        addLog(`📊 Scan result: ${matchingRefs.length} question(s) match class "${TARGET_COURSE}" and subject "${TARGET_SUBJECT}".`);
         return matchingRefs;
     }
     
@@ -634,12 +635,11 @@
         deleteProgressMsg.innerText = 'Preparing scan...';
         
         try {
-            // Step 1: Find matching documents
             const matchingRefs = await findMatchingCeeQuestions();
             const count = matchingRefs.length;
             
             if (count === 0) {
-                addLog('ℹ️ No questions found for CEE / CEE PAST QUESTIONS (YEAR WISE). Nothing to delete.');
+                addLog('ℹ️ No questions found for CEE / CEE PAST QUESTIONS [YEAR WISE]. Nothing to delete.');
                 deleteProgressMsg.innerText = 'No matching questions.';
                 deletePreviewArea.style.display = 'block';
                 deleteMatchCountSpan.innerText = '0';
@@ -647,7 +647,6 @@
                 return;
             }
             
-            // Show preview data
             deletePreviewArea.style.display = 'block';
             deleteMatchCountSpan.innerText = count;
             deleteHintSpan.innerHTML = `Are you sure? Type <strong style="background:#f1f1f1;">DELETE_CEE</strong> in the confirm dialog.`;
@@ -665,14 +664,11 @@
             addLog(`⚠️ Starting deletion of ${count} questions...`);
             deleteProgressMsg.innerText = `Deleting ${count} questions in batches...`;
             
-            // Step 2: Delete batches
             const deletedTotal = await deleteQuestionRefsInBatches(matchingRefs);
-            addLog(`✅ Successfully deleted ${deletedTotal} questions matching CEE / CEE PAST QUESTIONS (YEAR WISE).`);
+            addLog(`✅ Successfully deleted ${deletedTotal} questions matching class="${TARGET_COURSE}" / subject="${TARGET_SUBJECT}".`);
             deleteProgressMsg.innerText = `✔️ Completed: ${deletedTotal} questions deleted.`;
             deleteMatchCountSpan.innerText = deletedTotal;
             deleteHintSpan.innerHTML = 'Deletion finished.';
-            
-            // optional: small note that metadata counts are not updated (as per spec only delete questions)
             addLog(`📌 Note: metadata documents (courses/subjects/chapters) still exist but question counts are no longer accurate.`, false);
             
         } catch (err) {
@@ -708,7 +704,7 @@
             deletePreviewArea.style.display = 'block';
             deleteMatchCountSpan.innerText = count;
             deleteHintSpan.innerHTML = count === 0 ? 'No matching questions.' : 'Use "DELETE MATCHING QUESTIONS" to remove them.';
-            addLog(`🔍 Preview: ${count} question(s) match course="CEE" + subject="CEE PAST QUESTIONS (YEAR WISE)".`);
+            addLog(`🔍 Preview: ${count} question(s) match class="${TARGET_COURSE}" + subject="${TARGET_SUBJECT}".`);
             deleteProgressMsg.innerText = `Preview done: ${count} matches found.`;
         } catch (err) {
             addLog(`Preview error: ${err.message}`, true);
@@ -748,7 +744,6 @@
             resetBtn.disabled = false;
             deleteCeeBtn.disabled = false;
             previewCeeBtn.disabled = false;
-            // permission test
             try {
                 const testQuery = query(collection(db, 'questions'), limit(1));
                 await getDocs(testQuery);
@@ -771,7 +766,6 @@
         }
     }
     
-    // Event listeners
     startBtn.addEventListener('click', () => {
         if (!db) { addLog('Firebase not connected.', true); return; }
         if (migrationRunning || deletionRunning) return;
