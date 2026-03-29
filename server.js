@@ -27,18 +27,7 @@ try {
 }
 const db = firebaseInitialized ? admin.firestore() : null;
 
-// ---- Canonicalization for Metadata (prevents duplicates due to case/spacing) ----
-function canonicalizeMetadata(str) {
-    if (!str || typeof str !== 'string') return '';
-    // Trim, lowercase, replace multiple spaces with single underscore
-    return str.trim().toLowerCase().replace(/\s+/g, '_');
-}
-
-function makeDocId(...parts) {
-    return parts.map(p => p.replace(/[^a-zA-Z0-9]/g, '_')).join('_');
-}
-
-// ---- Hashing & Normalization Functions (for question content) ----
+// ---- Hashing & Normalization Functions ----
 function normalizeText(text) {
     if (!text || typeof text !== 'string') return '';
     let normalized = text.toLowerCase();
@@ -55,84 +44,87 @@ function createQuestionHash(q) {
     return crypto.createHash('sha256').update(combined).digest('hex');
 }
 
-// ---- Metadata Counts Update (atomic increment with safety and correct transaction order) ----
-async function safeUpdateMetadataCounts(className, subject, chapter, incrementBy) {
-    if (!db) return;
-    // Canonicalize metadata strings
-    const canonClass = canonicalizeMetadata(className);
-    const canonSubject = canonicalizeMetadata(subject);
-    const canonChapter = canonicalizeMetadata(chapter);
-    
-    const courseId = makeDocId('class', canonClass);
-    const subjectId = makeDocId('class', canonClass, canonSubject);
-    const chapterId = makeDocId('class', canonClass, canonSubject, canonChapter);
-    
-    const courseRef = db.collection('courses').doc(courseId);
-    const subjectRef = db.collection('subjects').doc(subjectId);
-    const chapterRef = db.collection('chapters').doc(chapterId);
-    
-    // Use transaction to ensure atomicity and prevent negative counts
-    await db.runTransaction(async (transaction) => {
-        // 1. READ all documents first
-        const [courseDoc, subjectDoc, chapterDoc] = await Promise.all([
-            transaction.get(courseRef),
-            transaction.get(subjectRef),
-            transaction.get(chapterRef)
-        ]);
-        
-        // 2. Compute new counts
-        let newCourseCount = incrementBy;
-        if (courseDoc.exists) {
-            const current = courseDoc.data().totalQuestions || 0;
-            newCourseCount = current + incrementBy;
-            if (newCourseCount < 0) newCourseCount = 0;
-        } else if (incrementBy < 0) {
-            newCourseCount = 0; // cannot go negative for non-existent
-        }
-        
-        let newSubjectCount = incrementBy;
-        if (subjectDoc.exists) {
-            const current = subjectDoc.data().totalQuestions || 0;
-            newSubjectCount = current + incrementBy;
-            if (newSubjectCount < 0) newSubjectCount = 0;
-        } else if (incrementBy < 0) {
-            newSubjectCount = 0;
-        }
-        
-        let newChapterCount = incrementBy;
-        if (chapterDoc.exists) {
-            const current = chapterDoc.data().totalQuestions || 0;
-            newChapterCount = current + incrementBy;
-            if (newChapterCount < 0) newChapterCount = 0;
-        } else if (incrementBy < 0) {
-            newChapterCount = 0;
-        }
-        
-        // 3. WRITE all updates
-        transaction.set(courseRef, {
-            name: canonClass,
-            totalQuestions: newCourseCount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-        
-        transaction.set(subjectRef, {
-            class: canonClass,
-            subject: canonSubject,
-            totalQuestions: newSubjectCount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-        
-        transaction.set(chapterRef, {
-            class: canonClass,
-            subject: canonSubject,
-            chapter: canonChapter,
-            totalQuestions: newChapterCount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
-    });
+// Consistent ID generation for metadata documents (avoids duplicates)
+function canonicalizeForId(str) {
+    if (!str || typeof str !== 'string') return '';
+    return str.trim().replace(/[^a-zA-Z0-9]/g, '_');
 }
 
-// ---- In-Memory Metadata Cache (stores canonicalized names) ----
+function makeDocId(...parts) {
+    return parts.map(p => canonicalizeForId(p)).join('_');
+}
+
+// ---- Metadata Counts Update (atomic increment & safe decrement) ----
+async function updateMetadataCounts(className, subject, chapter, incrementBy) {
+    if (!db) return;
+    const courseId = makeDocId('class', className);
+    const subjectId = makeDocId('class', className, subject);
+    const chapterId = makeDocId('class', className, subject, chapter);
+
+    if (incrementBy > 0) {
+        // Increment: create if not exists (merge true) and increment
+        await db.collection('courses').doc(courseId).set({
+            name: className,
+            totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        await db.collection('subjects').doc(subjectId).set({
+            class: className,
+            subject: subject,
+            totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        await db.collection('chapters').doc(chapterId).set({
+            class: className,
+            subject: subject,
+            chapter: chapter,
+            totalQuestions: admin.firestore.FieldValue.increment(incrementBy),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+    } else if (incrementBy < 0) {
+        // Decrement: use transaction to ensure totalQuestions never goes negative
+        const decrementBy = -incrementBy;
+        await db.runTransaction(async (transaction) => {
+            // Courses
+            const courseRef = db.collection('courses').doc(courseId);
+            const courseDoc = await transaction.get(courseRef);
+            if (courseDoc.exists) {
+                let currentTotal = courseDoc.data().totalQuestions || 0;
+                let newTotal = Math.max(0, currentTotal - decrementBy);
+                transaction.update(courseRef, { totalQuestions: newTotal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            } else {
+                // Should not happen for decrement, but just in case create with 0
+                transaction.set(courseRef, { name: className, totalQuestions: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            }
+
+            // Subjects
+            const subjectRef = db.collection('subjects').doc(subjectId);
+            const subjectDoc = await transaction.get(subjectRef);
+            if (subjectDoc.exists) {
+                let currentTotal = subjectDoc.data().totalQuestions || 0;
+                let newTotal = Math.max(0, currentTotal - decrementBy);
+                transaction.update(subjectRef, { totalQuestions: newTotal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            } else {
+                transaction.set(subjectRef, { class: className, subject: subject, totalQuestions: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            }
+
+            // Chapters
+            const chapterRef = db.collection('chapters').doc(chapterId);
+            const chapterDoc = await transaction.get(chapterRef);
+            if (chapterDoc.exists) {
+                let currentTotal = chapterDoc.data().totalQuestions || 0;
+                let newTotal = Math.max(0, currentTotal - decrementBy);
+                transaction.update(chapterRef, { totalQuestions: newTotal, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            } else {
+                transaction.set(chapterRef, { class: className, subject: subject, chapter: chapter, totalQuestions: 0, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+            }
+        });
+    }
+}
+
+// ---- In-Memory Metadata Cache ----
 let metadataCache = {
     classes: new Set(),
     subjectsByClass: new Map(),      // className -> Set(subject)
@@ -186,22 +178,19 @@ if (db) {
     loadMetadataCache().catch(err => console.error('Failed to load metadata cache:', err));
 }
 
-// ---- Helper to update cache when a new mapping is added (canonicalized) ----
+// ---- Helper to update cache when a new mapping is added (no duplicates) ----
 function updateCacheForNewMapping(className, subject, chapter) {
-    const canonClass = canonicalizeMetadata(className);
-    const canonSubject = canonicalizeMetadata(subject);
-    const canonChapter = canonicalizeMetadata(chapter);
-    
-    metadataCache.classes.add(canonClass);
-    if (!metadataCache.subjectsByClass.has(canonClass)) {
-        metadataCache.subjectsByClass.set(canonClass, new Set());
+    if (!className || !subject || !chapter) return;
+    metadataCache.classes.add(className);
+    if (!metadataCache.subjectsByClass.has(className)) {
+        metadataCache.subjectsByClass.set(className, new Set());
     }
-    metadataCache.subjectsByClass.get(canonClass).add(canonSubject);
-    const key = `${canonClass}|${canonSubject}`;
+    metadataCache.subjectsByClass.get(className).add(subject);
+    const key = `${className}|${subject}`;
     if (!metadataCache.chaptersByClassSubject.has(key)) {
         metadataCache.chaptersByClassSubject.set(key, new Set());
     }
-    metadataCache.chaptersByClassSubject.get(key).add(canonChapter);
+    metadataCache.chaptersByClassSubject.get(key).add(chapter);
 }
 
 // ---- Configuration Constants ----
@@ -375,11 +364,10 @@ async function processBatch(batch) {
     }
 
     for (const { item, question, hash } of allQuestions) {
-        // Canonicalize metadata before storing
         const mapping = {
-            class: canonicalizeMetadata(item.class),
-            subject: canonicalizeMetadata(item.subject),
-            chapter: canonicalizeMetadata(item.chapter)
+            class: item.class,
+            subject: item.subject,
+            chapter: item.chapter
         };
         const counts = getItemCounts(item);
 
@@ -399,9 +387,9 @@ async function processBatch(batch) {
         let currentMappings = docData.mappings;
         if (!currentMappings) {
             currentMappings = [{
-                class: canonicalizeMetadata(docData.class),
-                subject: canonicalizeMetadata(docData.subject),
-                chapter: canonicalizeMetadata(docData.chapter)
+                class: docData.class,
+                subject: docData.subject,
+                chapter: docData.chapter
             }];
         }
 
@@ -485,7 +473,7 @@ async function processBatch(batch) {
     for (const key of mappingAdditions) {
         const [className, subject, chapter] = key.split('|');
         const incrementCount = metadataIncrements.get(key) || 1; // for updates, increment by 1
-        await safeUpdateMetadataCounts(className, subject, chapter, incrementCount);
+        await updateMetadataCounts(className, subject, chapter, incrementCount);
         updateCacheForNewMapping(className, subject, chapter);
     }
 
@@ -531,7 +519,7 @@ function scheduleProcessing() {
 // ---- API Endpoint: Ingestion ----
 app.post('/api/ingest', async (req, res) => {
     try {
-        let { questions, class: className, subject, chapter } = req.body;
+        const { questions, class: className, subject, chapter } = req.body;
 
         if (!questions || !Array.isArray(questions)) {
             return res.status(400).json({
@@ -545,11 +533,6 @@ app.post('/api/ingest', async (req, res) => {
                 message: 'class, subject, and chapter are required'
             });
         }
-
-        // Canonicalize metadata for ingestion
-        className = canonicalizeMetadata(className);
-        subject = canonicalizeMetadata(subject);
-        chapter = canonicalizeMetadata(chapter);
 
         const item = {
             res,
@@ -580,7 +563,7 @@ app.post('/api/ingest', async (req, res) => {
 // ---- API Endpoint: Quiz ----
 app.get('/api/quiz', async (req, res) => {
     try {
-        let { className, subject, chapter, limit: limitParam } = req.query;
+        const { className, subject, chapter, limit: limitParam } = req.query;
 
         if (!className || !subject || !chapter) {
             return res.status(400).json({
@@ -588,11 +571,6 @@ app.get('/api/quiz', async (req, res) => {
                 error: 'Missing required query parameters: className, subject, chapter'
             });
         }
-
-        // Canonicalize query parameters
-        className = canonicalizeMetadata(className);
-        subject = canonicalizeMetadata(subject);
-        chapter = canonicalizeMetadata(chapter);
 
         let limit = 10;
         if (limitParam) {
@@ -688,9 +666,9 @@ function extractMappingsFromDoc(docData) {
         return docData.mappings;
     } else if (docData.class && docData.subject && docData.chapter) {
         return [{
-            class: canonicalizeMetadata(docData.class),
-            subject: canonicalizeMetadata(docData.subject),
-            chapter: canonicalizeMetadata(docData.chapter)
+            class: docData.class,
+            subject: docData.subject,
+            chapter: docData.chapter
         }];
     }
     return [];
@@ -740,8 +718,9 @@ app.delete('/api/question', async (req, res) => {
         }
         for (const [key, count] of decrementMap.entries()) {
             const [className, subject, chapter] = key.split('|');
-            await safeUpdateMetadataCounts(className, subject, chapter, -count);
-            // Note: cache is not updated for deletions; empty metadata docs remain but counts become zero.
+            await updateMetadataCounts(className, subject, chapter, -count);
+            // Note: we do NOT remove from cache even if count becomes zero.
+            // Stale entries will be cleared on next server restart.
         }
 
         console.log(`🗑️ Deleted question: ${questionId}`);
@@ -761,7 +740,7 @@ app.delete('/api/question', async (req, res) => {
 // DELETE /api/questions/bulk
 app.delete('/api/questions/bulk', async (req, res) => {
     try {
-        let { questionIds, class: className, subject, chapter } = req.body;
+        const { questionIds, class: className, subject, chapter } = req.body;
 
         if (!db) {
             console.error('Firestore not initialized');
@@ -770,11 +749,6 @@ app.delete('/api/questions/bulk', async (req, res) => {
                 error: 'Database service unavailable'
             });
         }
-
-        // Canonicalize if provided
-        if (className) className = canonicalizeMetadata(className);
-        if (subject) subject = canonicalizeMetadata(subject);
-        if (chapter) chapter = canonicalizeMetadata(chapter);
 
         const docRefsSet = new Set();
 
@@ -845,7 +819,7 @@ app.delete('/api/questions/bulk', async (req, res) => {
         }
         for (const [key, count] of decrementMap.entries()) {
             const [className, subject, chapter] = key.split('|');
-            await safeUpdateMetadataCounts(className, subject, chapter, -count);
+            await updateMetadataCounts(className, subject, chapter, -count);
         }
 
         console.log(`🗑️ Bulk deleted ${docRefs.length} questions`);
@@ -922,9 +896,9 @@ app.put('/api/question', async (req, res) => {
                 existingMappings = currentData.mappings;
             } else if (currentData.class && currentData.subject && currentData.chapter) {
                 existingMappings = [{
-                    class: canonicalizeMetadata(currentData.class),
-                    subject: canonicalizeMetadata(currentData.subject),
-                    chapter: canonicalizeMetadata(currentData.chapter)
+                    class: currentData.class,
+                    subject: currentData.subject,
+                    chapter: currentData.chapter
                 }];
             }
 
@@ -934,17 +908,11 @@ app.put('/api/question', async (req, res) => {
                 mergedMap.set(key, m);
             }
             for (const m of mappings) {
-                // Canonicalize incoming mapping
-                const canonMapping = {
-                    class: canonicalizeMetadata(m.class),
-                    subject: canonicalizeMetadata(m.subject),
-                    chapter: canonicalizeMetadata(m.chapter)
-                };
-                const key = `${canonMapping.class}|${canonMapping.subject}|${canonMapping.chapter}`;
+                const key = `${m.class}|${m.subject}|${m.chapter}`;
                 if (!mergedMap.has(key)) {
-                    newlyAddedMappings.push(canonMapping);
+                    newlyAddedMappings.push(m);
                 }
-                mergedMap.set(key, canonMapping);
+                mergedMap.set(key, m);
             }
             updateData.mappings = Array.from(mergedMap.values());
         }
@@ -962,7 +930,7 @@ app.put('/api/question', async (req, res) => {
 
         // Update metadata counts and cache for newly added mappings
         for (const m of newlyAddedMappings) {
-            await safeUpdateMetadataCounts(m.class, m.subject, m.chapter, 1);
+            await updateMetadataCounts(m.class, m.subject, m.chapter, 1);
             updateCacheForNewMapping(m.class, m.subject, m.chapter);
         }
 
@@ -983,7 +951,7 @@ app.put('/api/question', async (req, res) => {
 // GET /api/questions (admin)
 app.get('/api/questions', async (req, res) => {
     try {
-        let { class: className, subject, chapter, limit: limitParam } = req.query;
+        const { class: className, subject, chapter, limit: limitParam } = req.query;
 
         if (!db) {
             console.error('Firestore not initialized');
@@ -1005,11 +973,6 @@ app.get('/api/questions', async (req, res) => {
                 });
             }
         }
-
-        // Canonicalize filters if provided
-        if (className) className = canonicalizeMetadata(className);
-        if (subject) subject = canonicalizeMetadata(subject);
-        if (chapter) chapter = canonicalizeMetadata(chapter);
 
         const questionsMap = new Map();
 
@@ -1095,8 +1058,7 @@ app.get('/api/subjects', async (req, res) => {
         if (!className) {
             return res.status(400).json({ success: false, error: 'class parameter is required' });
         }
-        const canonClass = canonicalizeMetadata(className);
-        const subjectsSet = metadataCache.subjectsByClass.get(canonClass) || new Set();
+        const subjectsSet = metadataCache.subjectsByClass.get(className) || new Set();
         const subjects = Array.from(subjectsSet).sort();
         res.json({ success: true, subjects });
     } catch (error) {
@@ -1111,9 +1073,7 @@ app.get('/api/chapters', async (req, res) => {
         if (!className || !subject) {
             return res.status(400).json({ success: false, error: 'class and subject parameters are required' });
         }
-        const canonClass = canonicalizeMetadata(className);
-        const canonSubject = canonicalizeMetadata(subject);
-        const key = `${canonClass}|${canonSubject}`;
+        const key = `${className}|${subject}`;
         const chaptersSet = metadataCache.chaptersByClassSubject.get(key) || new Set();
         const chapters = Array.from(chaptersSet).sort();
         res.json({ success: true, chapters });
