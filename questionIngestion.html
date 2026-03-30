@@ -3,61 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Studentplus - Smart Question Ingestion</title>
-    <!-- Creepster Font for Brand Name -->
+    <title>Studentplus - Smart Question Ingestion & Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
     <style>
-        /* ----- GLOBAL RESET & SCROLLBAR HIDE (keep vertical scroll) ----- */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            /* Disable text selection & copy globally (except form fields) */
             user-select: none;
             -webkit-tap-highlight-color: transparent;
             -webkit-touch-callout: none;
         }
-
-        /* Allow text selection ONLY inside input, textarea, and file-name span (usability) */
-        input, textarea, #file-name, .result-meta, .file-label {
+        input, textarea, #file-name, .result-meta, .file-label, .question-card, .modal-content input, .modal-content textarea, .modal-content select {
             user-select: text;
             -webkit-user-select: text;
         }
-
-        /* Hide scrollbar lines but keep scroll functionality (vertical only) */
         html {
-            overflow-y: scroll;    /* ensures scrollbar always takes space but hides visually */
-            scrollbar-width: none; /* Firefox */
-            -ms-overflow-style: none; /* IE/Edge */
+            overflow-y: scroll;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
         }
         html::-webkit-scrollbar {
-            display: none;  /* Chrome/Safari/Opera - no visible scrollbar */
+            display: none;
         }
-
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: #f5f7fb;
             margin: 0;
             padding: 2rem 1rem;
             color: #1e293b;
-            overflow-x: hidden;   /* NO horizontal scrollbar ever */
-            overflow-y: visible;  /* vertical scrolling works naturally */
+            overflow-x: hidden;
             min-height: 100vh;
         }
-
-        /* main container - no overflow-x */
         .container {
-            max-width: 700px;
+            max-width: 1000px;
             margin: 0 auto;
             background: white;
             border-radius: 28px;
             box-shadow: 0 20px 35px -12px rgba(0,0,0,0.1);
             padding: 1.8rem 2rem 2.2rem;
-            transition: all 0.2s;
             overflow-x: hidden;
         }
-
-        /* ----- BRANDING: Logo + Creepster Text ----- */
         .brand-header {
             display: flex;
             align-items: center;
@@ -92,8 +78,6 @@
             font-size: 0.9rem;
             margin-top: 0.25rem;
         }
-
-        /* form styles */
         .form-group {
             margin-bottom: 1.3rem;
         }
@@ -103,7 +87,7 @@
             margin-bottom: 0.4rem;
             color: #0f172a;
         }
-        input, textarea, .file-label {
+        input, textarea, .file-label, select {
             width: 100%;
             padding: 0.7rem 1rem;
             border: 1px solid #cbd5e1;
@@ -113,45 +97,15 @@
             background: #fff;
             font-family: inherit;
         }
-        input:focus, .file-label:focus-within {
+        textarea {
+            min-height: 200px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        input:focus, textarea:focus, select:focus {
             outline: none;
             border-color: #3b82f6;
             box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
-        }
-        .file-input-wrapper {
-            position: relative;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        .file-label {
-            background: #f1f5f9;
-            cursor: pointer;
-            text-align: center;
-            font-weight: 500;
-            color: #1e40af;
-            display: inline-block;
-            width: auto;
-            padding: 0.6rem 1.2rem;
-            margin-bottom: 0;
-        }
-        #file-name {
-            color: #334155;
-            font-size: 0.9rem;
-            word-break: break-all;
-        }
-        input[type="file"] {
-            display: none;
-        }
-        .preview-img {
-            margin-top: 12px;
-            max-width: 100%;
-            max-height: 180px;
-            border-radius: 16px;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            object-fit: contain;
         }
         button {
             background: #0f2b3d;
@@ -177,16 +131,12 @@
             cursor: not-allowed;
         }
         .result-card {
-            margin-top: 2rem;
+            margin-top: 1rem;
             background: #f8fafc;
             border-radius: 24px;
             padding: 1.2rem 1.5rem;
             border-left: 5px solid #3b82f6;
             transition: 0.2s;
-        }
-        .result-card h3 {
-            margin: 0 0 0.5rem 0;
-            font-size: 1.2rem;
         }
         .result-success {
             border-left-color: #10b981;
@@ -230,27 +180,157 @@
             height: 1px;
             background: #e2e8f0;
         }
-        /* ensure no horizontal overflow on any element */
-        img, svg, iframe, video {
-            max-width: 100%;
-            height: auto;
+        .json-hint {
+            font-size: 0.75rem;
+            color: #5b6e8c;
+            margin-top: 4px;
+        }
+        .section-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin: 1.5rem 0 1rem 0;
+            color: #0f172a;
+            border-left: 4px solid #3b82f6;
+            padding-left: 0.75rem;
+        }
+        .questions-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+            margin-top: 1rem;
+        }
+        .question-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            padding: 1rem 1.2rem;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+            transition: all 0.2s;
+        }
+        .question-card:hover {
+            border-color: #cbd5e1;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .question-id {
+            font-family: monospace;
+            background: #eef2ff;
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            margin-bottom: 0.6rem;
+            color: #1e40af;
+        }
+        .question-text {
+            font-weight: 600;
+            margin-bottom: 0.8rem;
+            font-size: 1rem;
+        }
+        .options-list {
+            margin: 0.5rem 0;
+            padding-left: 1rem;
+            font-size: 0.9rem;
+            color: #334155;
+        }
+        .correct-answer {
+            margin-top: 0.5rem;
+            background: #f1f5f9;
+            padding: 0.3rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: inline-block;
+        }
+        .card-buttons {
+            margin-top: 0.8rem;
+            display: flex;
+            gap: 0.8rem;
+            justify-content: flex-end;
+        }
+        .card-buttons button {
+            width: auto;
+            padding: 0.4rem 1rem;
+            margin-top: 0;
+            font-size: 0.85rem;
+            background: #e2e8f0;
+            color: #1e293b;
+        }
+        .card-buttons button.edit-btn:hover {
+            background: #3b82f6;
+            color: white;
+        }
+        .card-buttons button.delete-btn:hover {
+            background: #ef4444;
+            color: white;
+        }
+        .inline-form-row {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .inline-form-row .form-group {
+            flex: 1;
+            margin-bottom: 0;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            max-width: 90%;
+            width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+            border-radius: 28px;
+            padding: 1.8rem;
+            box-shadow: 0 20px 35px rgba(0,0,0,0.2);
+        }
+        .modal-content h3 {
+            margin-bottom: 1rem;
+        }
+        .modal-content .form-group {
+            margin-bottom: 1rem;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+        .modal-buttons button {
+            width: auto;
+            padding: 0.6rem 1.4rem;
+        }
+        .close-modal {
+            background: #94a3b8;
         }
         @media (max-width: 550px) {
             .container { padding: 1.2rem; }
             .brand-name { font-size: 1.8rem; }
             .brand-logo { height: 44px; }
+            .inline-form-row { flex-direction: column; }
+            .inline-form-row .form-group { margin-bottom: 0.8rem; }
         }
     </style>
 </head>
-<body oncontextmenu="return false;">
+<body>
 <div class="container">
-    <!-- Updated Branding: Logo + Creepster Text -->
     <div class="brand-header">
         <img class="brand-logo" src="https://i.postimg.cc/y88hFhh3/20260311_205800_0000.png" alt="Studentplus logo" draggable="false">
         <span class="brand-name">Studentplus</span>
     </div>
-    <div class="sub">AI‑powered question ingestion from textbook images</div>
+    <div class="sub">Direct question ingestion from JSON (with optional questionNo)</div>
 
+    <!-- INGESTION SECTION (updated to accept questionNo) -->
     <form id="ingestForm">
         <div class="form-group">
             <label>📘 Class</label>
@@ -265,70 +345,499 @@
             <input type="text" id="chapter" placeholder="e.g., Matter in Our Surroundings" required>
         </div>
         <div class="form-group">
-            <label>🖼️ Upload image (page with MCQs)</label>
-            <div class="file-input-wrapper">
-                <label for="imageFile" class="file-label">📁 Choose image</label>
-                <input type="file" id="imageFile" accept="image/*" capture="environment">
-                <span id="file-name">No file chosen</span>
-            </div>
-            <img id="preview" class="preview-img" style="display: none;" alt="Preview" draggable="false">
+            <label>📝 Questions (JSON array)</label>
+            <textarea id="questionsJson" placeholder='[
+  {
+    "questionNo": 5,
+    "questionText": "The dimensions of self-inductance are",
+    "options": ["MLT-2A-1", "MLT-1A-2", "ML2 T-2A-2", "MLT-2A-2"],
+    "correctIndex": 2,
+    "solutionText": "Energy E = 1/2 L I^2. Therefore, L = 2E/I^2 =[ML^2T^-2A^-2].",
+    "questionImageUrl": null,
+    "solutionVideoUrl": null,
+    "solutionImageUrl": null
+  }
+]' required></textarea>
+            <div class="json-hint">Each question must have: questionText, options (array of 4), correctIndex (0‑based), solutionText. <strong>Optional:</strong> questionNo (positive integer), questionImageUrl, solutionVideoUrl, solutionImageUrl.</div>
         </div>
-
-        <button type="submit" id="submitBtn">🚀 Process & Ingest Questions</button>
+        <button type="submit" id="submitBtn">🚀 Ingest Questions</button>
     </form>
 
     <div id="resultArea" style="display: none;"></div>
+
+    <hr>
+
+    <!-- SECTION 1: FETCH SINGLE QUESTION BY NUMBER -->
+    <div class="section-title">🔍 Fetch Single Question by Number</div>
+    <div class="inline-form-row">
+        <div class="form-group">
+            <label>Class</label>
+            <input type="text" id="fetchClass" placeholder="e.g., Class 10" required>
+        </div>
+        <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="fetchSubject" placeholder="e.g., Zoology" required>
+        </div>
+        <div class="form-group">
+            <label>Chapter</label>
+            <input type="text" id="fetchChapter" placeholder="e.g., Cell" required>
+        </div>
+        <div class="form-group">
+            <label>Question No.</label>
+            <input type="number" id="fetchQuestionNo" placeholder="e.g., 7" min="1" required>
+        </div>
+        <div style="flex: 0.3;">
+            <button id="fetchBtn" style="margin-top: 1.7rem;">Fetch Question</button>
+        </div>
+    </div>
+    <div id="questionsContainer" style="margin-top: 1rem;"></div>
+    <div id="adminResultArea" style="display: none;"></div>
+
+    <!-- SECTION 2: BULK DELETE -->
+    <div class="section-title">🗑 Bulk Delete by Chapter</div>
+    <div class="inline-form-row">
+        <div class="form-group">
+            <label>Class</label>
+            <input type="text" id="bulkClass" placeholder="Class">
+        </div>
+        <div class="form-group">
+            <label>Subject</label>
+            <input type="text" id="bulkSubject" placeholder="Subject">
+        </div>
+        <div class="form-group">
+            <label>Chapter</label>
+            <input type="text" id="bulkChapter" placeholder="Chapter">
+        </div>
+        <div style="flex: 0.3;">
+            <button id="bulkDeleteBtn" style="margin-top: 1.7rem; background: #b91c1c;">Delete All Questions</button>
+        </div>
+    </div>
+
     <footer>
-        ⚡ The server extracts multiple‑choice questions, saves them with auto‑incremented IDs.<br>
-        📌 Ensure the image is clear and contains at least one MCQ.
+        ⚡ The server stores questions with questionNo for ordering.<br>
+        📌 Admin tools: fetch a single question (by class+subject+chapter+number), edit, delete, or bulk delete.
     </footer>
 </div>
 
+<!-- Modal for editing -->
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <h3>✏️ Edit Question</h3>
+        <form id="editForm">
+            <input type="hidden" id="editQuestionId">
+            <div class="form-group">
+                <label>Question Text</label>
+                <textarea id="editQuestionText" rows="3" required></textarea>
+            </div>
+            <div class="form-group">
+                <label>Option A</label>
+                <input type="text" id="editOpt0" required>
+            </div>
+            <div class="form-group">
+                <label>Option B</label>
+                <input type="text" id="editOpt1" required>
+            </div>
+            <div class="form-group">
+                <label>Option C</label>
+                <input type="text" id="editOpt2" required>
+            </div>
+            <div class="form-group">
+                <label>Option D</label>
+                <input type="text" id="editOpt3" required>
+            </div>
+            <div class="form-group">
+                <label>Correct Index (0-3)</label>
+                <select id="editCorrectIndex">
+                    <option value="0">0 - A</option>
+                    <option value="1">1 - B</option>
+                    <option value="2">2 - C</option>
+                    <option value="3">3 - D</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Solution Text</label>
+                <textarea id="editSolutionText" rows="3" required></textarea>
+            </div>
+            <div class="form-group">
+                <label>Question Image URL</label>
+                <input type="text" id="editQuestionImageUrl">
+            </div>
+            <div class="form-group">
+                <label>Solution Video URL</label>
+                <input type="text" id="editSolutionVideoUrl">
+            </div>
+            <div class="form-group">
+                <label>Solution Image URL</label>
+                <input type="text" id="editSolutionImageUrl">
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="close-modal" id="closeModalBtn">Cancel</button>
+                <button type="submit" id="updateQuestionBtn">Update Question</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
-    const API_ENDPOINT = "https://dilshadalmm.onrender.com/api/ingest";
+    // ========== CONFIGURATION ==========
+    const API_BASE = "https://dilshadalmm.onrender.com";
+    // ===================================
+
+    // API endpoints
+    const INGEST_API = `${API_BASE}/api/ingest`;
+    const SINGLE_QUESTION_API = `${API_BASE}/api/question`;
+    const DELETE_API = `${API_BASE}/api/question`;
+    const BULK_DELETE_API = `${API_BASE}/api/questions/bulk`;
+    const EDIT_API = `${API_BASE}/api/question`;
 
     // DOM elements
-    const form = document.getElementById('ingestForm');
+    const ingestForm = document.getElementById('ingestForm');
     const classInput = document.getElementById('class');
     const subjectInput = document.getElementById('subject');
     const chapterInput = document.getElementById('chapter');
-    const fileInput = document.getElementById('imageFile');
-    const fileNameSpan = document.getElementById('file-name');
-    const previewImg = document.getElementById('preview');
+    const questionsJson = document.getElementById('questionsJson');
     const submitBtn = document.getElementById('submitBtn');
     const resultArea = document.getElementById('resultArea');
 
-    // Helper: show preview
-    fileInput.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            fileNameSpan.textContent = file.name;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                previewImg.src = e.target.result;
-                previewImg.style.display = 'block';
-            };
-            reader.readAsDataURL(file);
-        } else {
-            fileNameSpan.textContent = 'No file chosen';
-            previewImg.style.display = 'none';
-            previewImg.src = '';
-        }
-    });
+    const fetchBtn = document.getElementById('fetchBtn');
+    const fetchClass = document.getElementById('fetchClass');
+    const fetchSubject = document.getElementById('fetchSubject');
+    const fetchChapter = document.getElementById('fetchChapter');
+    const fetchQuestionNo = document.getElementById('fetchQuestionNo');
+    const questionsContainer = document.getElementById('questionsContainer');
+    const adminResultArea = document.getElementById('adminResultArea');
+    const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+    const bulkClass = document.getElementById('bulkClass');
+    const bulkSubject = document.getElementById('bulkSubject');
+    const bulkChapter = document.getElementById('bulkChapter');
+    const editModal = document.getElementById('editModal');
+    const editForm = document.getElementById('editForm');
+    const closeModalBtn = document.getElementById('closeModalBtn');
 
-    // Convert file to base64 string (full data URL)
-    function fileToBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                resolve(reader.result); // includes data:image/...;base64,
-            };
-            reader.onerror = error => reject(error);
-            reader.readAsDataURL(file);
+    // Store currently displayed question data (for edit/delete)
+    let currentQuestion = null;
+    let currentFetchParams = null;
+
+    // Helper: safe fetch with JSON parsing
+    async function safeFetchJSON(url, options = {}) {
+        const response = await fetch(url, options);
+        let responseText = null;
+        try {
+            responseText = await response.text();
+            const data = JSON.parse(responseText);
+            return { response, data };
+        } catch (parseError) {
+            throw new Error(`Invalid JSON response (status ${response.status}): ${responseText.substring(0, 200)}${responseText.length > 200 ? '...' : ''}`);
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
         });
     }
 
-    // Show result with status
+    function showAdminResult(success, message, details = null) {
+        adminResultArea.style.display = 'block';
+        const resultClass = success ? 'result-success' : 'result-error';
+        let html = `<div class="result-card ${resultClass}">
+                        <h3>${success ? '✅ Success' : '❌ Failed'}</h3>
+                        <p>${escapeHtml(message)}</p>`;
+        if (details) {
+            html += `<div class="result-meta">${escapeHtml(JSON.stringify(details, null, 2))}</div>`;
+        }
+        html += `</div>`;
+        adminResultArea.innerHTML = html;
+        adminResultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        setTimeout(() => {
+            if (adminResultArea) adminResultArea.style.display = 'none';
+        }, 5000);
+    }
+
+    function showLoading(btn, loadingText = 'Processing...') {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner"></span> ${loadingText}`;
+    }
+    function hideLoading(btn, originalText) {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+
+    // Fetch single question by class, subject, chapter, questionNo
+    async function fetchSingleQuestion() {
+        const className = fetchClass.value.trim();
+        const subject = fetchSubject.value.trim();
+        const chapter = fetchChapter.value.trim();
+        const qNo = parseInt(fetchQuestionNo.value);
+        if (!className || !subject || !chapter || isNaN(qNo) || qNo < 1) {
+            showAdminResult(false, 'Please provide valid Class, Subject, Chapter, and Question Number (≥1).');
+            return;
+        }
+        currentFetchParams = { className, subject, chapter, questionNo: qNo };
+        const params = new URLSearchParams({
+            class: className,
+            subject: subject,
+            chapter: chapter,
+            questionNo: qNo
+        });
+        const url = `${SINGLE_QUESTION_API}?${params.toString()}`;
+        questionsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="spinner"></span> Loading question...</div>';
+        try {
+            const { response, data } = await safeFetchJSON(url);
+            if (response.ok && data.success && data.question) {
+                currentQuestion = data.question;
+                renderSingleQuestion(currentQuestion);
+                showAdminResult(true, `Question #${qNo} loaded.`);
+            } else if (response.status === 404) {
+                questionsContainer.innerHTML = `<div class="result-card result-error"><p>Question #${qNo} not found for the given class/subject/chapter.</p></div>`;
+                currentQuestion = null;
+                showAdminResult(false, 'Question not found.');
+            } else {
+                questionsContainer.innerHTML = `<div class="result-card result-error"><p>${escapeHtml(data.error || 'Failed to fetch question.')}</p></div>`;
+                currentQuestion = null;
+                showAdminResult(false, data.error || 'Unknown error.');
+            }
+        } catch (err) {
+            console.error('Fetch error:', err);
+            questionsContainer.innerHTML = `<div class="result-card result-error"><p>Network error: ${escapeHtml(err.message)}</p></div>`;
+            showAdminResult(false, 'Error fetching question: ' + err.message);
+        }
+    }
+
+    function renderSingleQuestion(q) {
+        if (!q) return;
+        const options = q.options || [];
+        const correctLetter = ['A', 'B', 'C', 'D'][q.correctIndex] || '?';
+        const html = `
+            <div class="questions-grid">
+                <div class="question-card" data-id="${escapeHtml(q.questionId)}">
+                    <div class="question-id">ID: ${escapeHtml(q.questionId)} &nbsp;|&nbsp; No: ${q.questionNo ?? '—'}</div>
+                    <div class="question-text">${escapeHtml(q.questionText)}</div>
+                    <div class="options-list">
+                        ${options.map((opt, idx) => `<div><strong>${String.fromCharCode(65+idx)}.</strong> ${escapeHtml(opt)}</div>`).join('')}
+                    </div>
+                    <div class="correct-answer">✅ Correct answer: ${correctLetter}</div>
+                    <div class="card-buttons">
+                        <button class="edit-btn" data-id="${escapeHtml(q.questionId)}">✏️ Edit</button>
+                        <button class="delete-btn" data-id="${escapeHtml(q.questionId)}">🗑 Delete</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        questionsContainer.innerHTML = html;
+        // attach event handlers
+        document.querySelector('.edit-btn')?.addEventListener('click', () => openEditModalWithCurrent());
+        document.querySelector('.delete-btn')?.addEventListener('click', async () => {
+            if (confirm(`Delete question #${q.questionNo} (${q.questionId})?`)) {
+                await deleteQuestionById(q.questionId);
+            }
+        });
+    }
+
+    async function deleteQuestionById(questionId) {
+        try {
+            const { response, data } = await safeFetchJSON(DELETE_API, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ questionId })
+            });
+            if (response.ok && data.success) {
+                showAdminResult(true, `Question ${questionId} deleted successfully.`);
+                questionsContainer.innerHTML = '<div class="result-card"><p>Question deleted. Use fetch to load another.</p></div>';
+                currentQuestion = null;
+            } else {
+                showAdminResult(false, data.error || 'Delete failed.');
+            }
+        } catch (err) {
+            showAdminResult(false, `Error: ${err.message}`);
+        }
+    }
+
+    function openEditModalWithCurrent() {
+        if (!currentQuestion) {
+            showAdminResult(false, 'No question loaded to edit.');
+            return;
+        }
+        const q = currentQuestion;
+        document.getElementById('editQuestionId').value = q.questionId;
+        document.getElementById('editQuestionText').value = q.questionText || '';
+        const opts = q.options || ['', '', '', ''];
+        document.getElementById('editOpt0').value = opts[0] || '';
+        document.getElementById('editOpt1').value = opts[1] || '';
+        document.getElementById('editOpt2').value = opts[2] || '';
+        document.getElementById('editOpt3').value = opts[3] || '';
+        document.getElementById('editCorrectIndex').value = q.correctIndex ?? 0;
+        document.getElementById('editSolutionText').value = q.solutionText || '';
+        document.getElementById('editQuestionImageUrl').value = q.questionImageUrl || '';
+        document.getElementById('editSolutionVideoUrl').value = q.solutionVideoUrl || '';
+        document.getElementById('editSolutionImageUrl').value = q.solutionImageUrl || '';
+        editModal.style.display = 'flex';
+    }
+
+    async function updateQuestion(event) {
+        event.preventDefault();
+        const questionId = document.getElementById('editQuestionId').value;
+        const payload = {
+            questionId,
+            questionText: document.getElementById('editQuestionText').value,
+            options: [
+                document.getElementById('editOpt0').value,
+                document.getElementById('editOpt1').value,
+                document.getElementById('editOpt2').value,
+                document.getElementById('editOpt3').value
+            ],
+            correctIndex: parseInt(document.getElementById('editCorrectIndex').value),
+            solutionText: document.getElementById('editSolutionText').value,
+            questionImageUrl: document.getElementById('editQuestionImageUrl').value || null,
+            solutionVideoUrl: document.getElementById('editSolutionVideoUrl').value || null,
+            solutionImageUrl: document.getElementById('editSolutionImageUrl').value || null
+        };
+        const updateBtn = document.getElementById('updateQuestionBtn');
+        const originalText = updateBtn.innerHTML;
+        showLoading(updateBtn, 'Updating...');
+        try {
+            const { response, data } = await safeFetchJSON(EDIT_API, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (response.ok && data.success) {
+                showAdminResult(true, 'Question updated successfully.');
+                editModal.style.display = 'none';
+                // Re-fetch the updated question using current parameters
+                if (currentFetchParams) {
+                    await fetchSingleQuestion();
+                } else {
+                    questionsContainer.innerHTML = '<div class="result-card"><p>Update successful. Please refetch to see changes.</p></div>';
+                }
+            } else {
+                showAdminResult(false, data.error || 'Update failed.');
+            }
+        } catch (err) {
+            showAdminResult(false, `Error: ${err.message}`);
+        } finally {
+            hideLoading(updateBtn, originalText);
+        }
+    }
+
+    async function bulkDelete() {
+        const className = bulkClass.value.trim();
+        const subject = bulkSubject.value.trim();
+        const chapter = bulkChapter.value.trim();
+        if (!className || !subject || !chapter) {
+            showAdminResult(false, 'Class, Subject, and Chapter are required for bulk delete.');
+            return;
+        }
+        if (!confirm(`⚠️ Are you sure you want to delete ALL questions in chapter "${chapter}" (${className}, ${subject})? This cannot be undone.`)) return;
+        const btn = bulkDeleteBtn;
+        const originalText = btn.innerHTML;
+        showLoading(btn, 'Deleting...');
+        try {
+            const { response, data } = await safeFetchJSON(BULK_DELETE_API, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ class: className, subject, chapter })
+            });
+            if (response.ok && data.success) {
+                showAdminResult(true, `Successfully deleted ${data.deletedCount} questions.`);
+                questionsContainer.innerHTML = '';
+                currentQuestion = null;
+                bulkClass.value = '';
+                bulkSubject.value = '';
+                bulkChapter.value = '';
+            } else {
+                showAdminResult(false, data.error || 'Bulk delete failed.');
+            }
+        } catch (err) {
+            showAdminResult(false, `Error: ${err.message}`);
+        } finally {
+            hideLoading(btn, originalText);
+        }
+    }
+
+    // INGESTION with optional questionNo
+    function validateQuestion(q, index) {
+        if (!q.questionText || typeof q.questionText !== 'string') return `Question ${index}: missing or invalid questionText`;
+        if (!Array.isArray(q.options) || q.options.length !== 4) return `Question ${index}: options must be an array of exactly 4 strings`;
+        if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex > 3) return `Question ${index}: correctIndex must be 0-3`;
+        if (!q.solutionText || typeof q.solutionText !== 'string') return `Question ${index}: missing or invalid solutionText`;
+        if (q.questionNo !== undefined && (typeof q.questionNo !== 'number' || !Number.isInteger(q.questionNo) || q.questionNo < 1)) {
+            return `Question ${index}: questionNo must be a positive integer (or omitted)`;
+        }
+        return null;
+    }
+
+    ingestForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const classValue = classInput.value.trim();
+        const subjectValue = subjectInput.value.trim();
+        const chapterValue = chapterInput.value.trim();
+        const jsonStr = questionsJson.value.trim();
+        if (!classValue || !subjectValue || !chapterValue) {
+            displayResult(false, 'Please fill in Class, Subject, and Chapter.', null);
+            return;
+        }
+        if (!jsonStr) {
+            displayResult(false, 'Please provide questions JSON.', null);
+            return;
+        }
+        let questionsArray;
+        try {
+            questionsArray = JSON.parse(jsonStr);
+        } catch (err) {
+            displayResult(false, `Invalid JSON: ${err.message}`, null);
+            return;
+        }
+        if (!Array.isArray(questionsArray)) {
+            displayResult(false, 'JSON must be an array of question objects.', null);
+            return;
+        }
+        if (questionsArray.length === 0) {
+            displayResult(false, 'The questions array is empty.', null);
+            return;
+        }
+        for (let i = 0; i < questionsArray.length; i++) {
+            const error = validateQuestion(questionsArray[i], i);
+            if (error) {
+                displayResult(false, `Validation error: ${error}`, { questionIndex: i, invalidObject: questionsArray[i] });
+                return;
+            }
+        }
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span> Sending to server...';
+        resultArea.style.display = 'none';
+        const payload = { questions: questionsArray, class: classValue, subject: subjectValue, chapter: chapterValue };
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000);
+            const { response, data } = await safeFetchJSON(INGEST_API, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (response.ok && data.status === 'success') {
+                displayResult(true, data.message || `Successfully processed ${data.questionsProcessed} questions.`, { questionsProcessed: data.questionsProcessed });
+            } else {
+                displayResult(false, data.message || 'Server reported an error.', data);
+            }
+        } catch (error) {
+            let errorMsg = 'Network or CORS error. Make sure the server is reachable.';
+            if (error.name === 'AbortError') errorMsg = 'Request timed out.';
+            else if (error.message.includes('Failed to fetch')) errorMsg = 'Cannot connect to the server.';
+            else errorMsg = error.message;
+            displayResult(false, errorMsg, { error: error.message });
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '🚀 Ingest Questions';
+        }
+    });
+
     function displayResult(success, message, details = null) {
         resultArea.style.display = 'block';
         const resultClass = success ? 'result-success' : 'result-error';
@@ -340,124 +849,21 @@
         }
         html += `</div>`;
         resultArea.innerHTML = html;
-        // Scroll to result smoothly for better UX
         resultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // basic escape to avoid XSS
-    function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-            return c;
-        });
-    }
+    // Event listeners
+    fetchBtn.addEventListener('click', fetchSingleQuestion);
+    bulkDeleteBtn.addEventListener('click', bulkDelete);
+    editForm.addEventListener('submit', updateQuestion);
+    closeModalBtn.addEventListener('click', () => { editModal.style.display = 'none'; });
+    window.addEventListener('click', (e) => { if (e.target === editModal) editModal.style.display = 'none'; });
 
-    // Submit handler
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        // validate fields
-        const classValue = classInput.value.trim();
-        const subjectValue = subjectInput.value.trim();
-        const chapterValue = chapterInput.value.trim();
-        const imageFile = fileInput.files[0];
-
-        if (!classValue || !subjectValue || !chapterValue) {
-            displayResult(false, 'Please fill in Class, Subject, and Chapter.', null);
-            return;
-        }
-        if (!imageFile) {
-            displayResult(false, 'Please select an image.', null);
-            return;
-        }
-
-        // UI loading state
-        submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="spinner"></span> Sending to server...';
-        resultArea.style.display = 'none';
-
-        try {
-            // Convert image to base64 (full data URL)
-            const base64Image = await fileToBase64(imageFile);
-
-            // Build payload
-            const payload = {
-                imageBase64: base64Image,
-                class: classValue,
-                subject: subjectValue,
-                chapter: chapterValue
-            };
-
-            // Send request with timeout fallback
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
-
-            const response = await fetch(API_ENDPOINT, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-
-            const data = await response.json();
-
-            if (response.ok) {
-                if (data.status === 'success') {
-                    displayResult(true, data.message || `Successfully processed ${data.questionsProcessed} questions.`, {
-                        questionsProcessed: data.questionsProcessed
-                    });
-                } else {
-                    displayResult(false, data.message || 'Server reported an error.', data);
-                }
-            } else {
-                displayResult(false, `Server error (${response.status}): ${data.message || 'Please try again later.'}`, data);
-            }
-        } catch (error) {
-            console.error('Request failed:', error);
-            let errorMsg = 'Network or CORS error. Make sure the server is reachable.';
-            if (error.name === 'AbortError') {
-                errorMsg = 'Request timed out. The server took too long to respond.';
-            } else if (error.message.includes('Failed to fetch')) {
-                errorMsg = 'Cannot connect to the server. The backend might be down (503) or unreachable. Please verify the server status.';
-            }
-            displayResult(false, errorMsg, { error: error.message });
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '🚀 Process & Ingest Questions';
-        }
-    });
-
-    // Additional safeguard: Disable pinch zoom via CSS + touch events (double-tap zoom prevention)
-    document.addEventListener('touchstart', (e) => {
-        if (e.touches.length > 1) {
-            e.preventDefault();  // prevent pinch zoom on most modern browsers
-        }
-    }, { passive: false });
-    
-    // Also prevent double-tap zoom on iOS (optional)
+    // Disable pinch zoom & double-tap zoom
+    document.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
     let lastTouchEnd = 0;
-    document.addEventListener('touchend', (e) => {
-        const now = Date.now();
-        if (now - lastTouchEnd <= 300) {
-            e.preventDefault();
-        }
-        lastTouchEnd = now;
-    }, false);
-    
-    // Disable keyboard shortcuts for zoom (Ctrl + / Cmd +) - not fully reliable but adds extra layer
-    window.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
-            e.preventDefault();
-        }
-    });
+    document.addEventListener('touchend', (e) => { const now = Date.now(); if (now - lastTouchEnd <= 300) e.preventDefault(); lastTouchEnd = now; }, false);
+    window.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) e.preventDefault(); });
 </script>
 </body>
 </html>
