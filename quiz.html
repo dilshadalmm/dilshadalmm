@@ -895,7 +895,7 @@
                 
                 const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
                 if (!response.ok) {
-                    if (response.status === 404) throw new Error('No more questions found.');
+                    if (response.status === 404) throw new Error('–––');
                     throw new Error(`Server error: ${response.status}`);
                 }
                 const data = await response.json();
