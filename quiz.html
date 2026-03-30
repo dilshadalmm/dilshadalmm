@@ -365,7 +365,7 @@
         <div id="setupSection" class="setup-form">
             <div class="logo-img-container">
                 <div class="logo-img-wrapper">
-                    <img src="https://i.postimg.cc/y88hFhh3/20260311_205800_0000.png" alt="StudentPlus Logo">
+                    <img src="https://i.postimg.cc/y88hFhh3/20260311-205800-0000.png" alt="StudentPlus Logo">
                 </div>
             </div>
             <h1 class="logo-text">StudentPlus</h1>
@@ -400,7 +400,10 @@
                 </div>
                 <div id="displayChapter" class="header-line"></div>
             </div>
-            <div id="questionsContainer"></div>
+            
+            <div id="questionsContainer">
+                <!-- Questions will be dynamically inserted here -->
+            </div>
             <div id="infiniteLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
         </div>
     </div>
@@ -460,67 +463,74 @@
         const API_BASE = 'https://dilshadalmm.onrender.com';
         const PAGE_LIMIT = 10;
         
-        let currentCursor = null;
+        // Global state for infinite scroll
+        let currentCursor = null;      // Always stored as number (or null)
         let hasMore = true;
         let isLoading = false;
         let currentCourse = '';
         let currentSubject = '';
         let currentChapter = '';
         
-        // Helper: fetch JSON with timeout
-        async function fetchJSON(url, timeoutMs = 10000) {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        // Helper: Convert newlines to <br> tags
+        function replaceNewlinesWithBr(text) {
+            if (!text) return text;
+            return text.replace(/\r?\n/g, '<br>');
+        }
+        
+        const courseSelect = document.getElementById('courseSelect');
+        const subjectSelect = document.getElementById('subjectSelect');
+        const chapterSelect = document.getElementById('chapterSelect');
+        
+        async function fetchData(endpoint) {
             try {
-                const response = await fetch(url, { signal: controller.signal });
-                clearTimeout(timeoutId);
+                const response = await fetch(`${API_BASE}${endpoint}`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Unknown error');
                 return data;
-            } catch (err) {
-                clearTimeout(timeoutId);
-                throw err;
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                throw error;
             }
         }
         
-        // Load courses (classes)
+        // FIX #1: Reset subject & chapter dropdowns to default disabled states after courses load.
+        // No automatic loadSubjects based on courseSelect.value.
         async function loadClasses() {
-            const select = document.getElementById('courseSelect');
-            select.innerHTML = '<option value="">Loading courses...</option>';
+            courseSelect.innerHTML = '<option value="">Loading courses...</option>';
             try {
-                const data = await fetchJSON(`${API_BASE}/api/classes`);
+                const data = await fetchData('/api/classes');
                 const classes = data.classes || [];
-                select.innerHTML = '<option value="">Select a course</option>';
+                courseSelect.innerHTML = '<option value="">Select a course</option>';
                 if (classes.length === 0) {
-                    select.innerHTML = '<option value="">No courses available</option>';
-                    return;
+                    courseSelect.innerHTML = '<option value="">No courses available</option>';
+                } else {
+                    classes.forEach(cls => {
+                        const option = document.createElement('option');
+                        option.value = cls;
+                        option.textContent = cls;
+                        courseSelect.appendChild(option);
+                    });
                 }
-                classes.forEach(cls => {
-                    const option = document.createElement('option');
-                    option.value = cls;
-                    option.textContent = cls;
-                    select.appendChild(option);
-                });
-                // If there's a previously selected value (e.g., from a reload), trigger change
-                if (select.value) {
-                    loadSubjects(select.value);
-                }
-            } catch (err) {
-                console.error('Error loading classes:', err);
-                select.innerHTML = '<option value="">Error loading courses</option>';
+                // Explicitly reset subject and chapter dropdowns to pristine disabled state
+                subjectSelect.disabled = true;
+                subjectSelect.innerHTML = '<option value="">Select a course first</option>';
+                chapterSelect.disabled = true;
+                chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+                // Ensure no automatic loading of subjects — only user selection triggers it
+            } catch (error) {
+                courseSelect.innerHTML = '<option value="">Error loading courses</option>';
+                console.error(error);
             }
         }
         
         async function loadSubjects(className) {
-            const subjectSelect = document.getElementById('subjectSelect');
-            const chapterSelect = document.getElementById('chapterSelect');
             subjectSelect.disabled = true;
             subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             try {
-                const data = await fetchJSON(`${API_BASE}/api/subjects?class=${encodeURIComponent(className)}`);
+                const data = await fetchData(`/api/subjects?class=${encodeURIComponent(className)}`);
                 const subjects = data.subjects || [];
                 subjectSelect.innerHTML = '<option value="">Select a subject</option>';
                 if (subjects.length === 0) {
@@ -534,21 +544,17 @@
                     subjectSelect.appendChild(option);
                 });
                 subjectSelect.disabled = false;
-                if (subjectSelect.value) {
-                    loadChapters(className, subjectSelect.value);
-                }
-            } catch (err) {
-                console.error('Error loading subjects:', err);
+            } catch (error) {
                 subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+                console.error(error);
             }
         }
         
         async function loadChapters(className, subjectName) {
-            const chapterSelect = document.getElementById('chapterSelect');
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
             try {
-                const data = await fetchJSON(`${API_BASE}/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
+                const data = await fetchData(`/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
                 const chapters = data.chapters || [];
                 chapterSelect.innerHTML = '<option value="">Select a chapter</option>';
                 if (chapters.length === 0) {
@@ -562,20 +568,17 @@
                     chapterSelect.appendChild(option);
                 });
                 chapterSelect.disabled = false;
-            } catch (err) {
-                console.error('Error loading chapters:', err);
+            } catch (error) {
                 chapterSelect.innerHTML = '<option value="">Error loading chapters</option>';
+                console.error(error);
             }
         }
         
-        // Event listeners
-        document.getElementById('courseSelect').addEventListener('change', (e) => {
+        courseSelect.addEventListener('change', (e) => {
             const selectedClass = e.target.value;
             if (selectedClass) {
                 loadSubjects(selectedClass);
             } else {
-                const subjectSelect = document.getElementById('subjectSelect');
-                const chapterSelect = document.getElementById('chapterSelect');
                 subjectSelect.disabled = true;
                 subjectSelect.innerHTML = '<option value="">Select a course first</option>';
                 chapterSelect.disabled = true;
@@ -583,19 +586,17 @@
             }
         });
         
-        document.getElementById('subjectSelect').addEventListener('change', (e) => {
-            const selectedClass = document.getElementById('courseSelect').value;
+        subjectSelect.addEventListener('change', (e) => {
+            const selectedClass = courseSelect.value;
             const selectedSubject = e.target.value;
             if (selectedClass && selectedSubject) {
                 loadChapters(selectedClass, selectedSubject);
             } else {
-                const chapterSelect = document.getElementById('chapterSelect');
                 chapterSelect.disabled = true;
                 chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             }
         });
         
-        // ---------- Quiz and rendering helpers ----------
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
             const patterns = [
@@ -604,7 +605,9 @@
             ];
             for (let pattern of patterns) {
                 const match = url.match(pattern);
-                if (match && match[1]) return `https://www.youtube.com/embed/${match[1]}`;
+                if (match && match[1]) {
+                    return `https://www.youtube.com/embed/${match[1]}`;
+                }
             }
             return null;
         }
@@ -645,11 +648,7 @@
             return container;
         }
         
-        function replaceNewlinesWithBr(text) {
-            if (!text) return text;
-            return text.replace(/\r?\n/g, '<br>');
-        }
-        
+        // FIX #4: Render math only on the passed DOM element (no global re-render)
         function renderMathInElementWithDelay(element) {
             if (typeof renderMathInElement === 'function') {
                 try {
@@ -663,13 +662,15 @@
                         throwOnError: false,
                         errorColor: '#cc0000'
                     });
-                } catch (e) { console.warn(e); }
+                } catch (e) {
+                    console.warn('KaTeX rendering error:', e);
+                }
             } else {
                 setTimeout(() => renderMathInElementWithDelay(element), 200);
             }
         }
         
-        function createQuestionElement(q, globalIndex) {
+        function createQuestionElement(q, idx, globalIndex) {
             const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
             const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
             const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
@@ -770,10 +771,13 @@
             }
             
             let submitted = false;
-            submitBtn.onclick = () => {
+            submitBtn.onclick = async () => {
                 if (submitted) return;
                 const selectedRadio = document.querySelector(`input[name="q_${globalIndex}"]:checked`);
-                if (!selectedRadio) { alert('Please select an answer'); return; }
+                if (!selectedRadio) {
+                    alert('Please select an answer');
+                    return;
+                }
                 const selectedIndex = parseInt(selectedRadio.value);
                 const isCorrect = (selectedIndex === q.correctIndex);
                 optionContainers.forEach((container, i) => {
@@ -787,7 +791,6 @@
                 submitted = true;
                 submitBtn.disabled = true;
             };
-            
             textSolutionBtn.onclick = () => {
                 if (!submitted) return;
                 const wasVisible = textSolutionContainer.classList.contains('visible');
@@ -799,7 +802,6 @@
                     textSolutionContainer.classList.remove('visible');
                 }
             };
-            
             videoSolutionBtn.onclick = () => {
                 if (!submitted) return;
                 const wasVisible = videoSolutionContainer.classList.contains('visible');
@@ -828,18 +830,57 @@
             const fragment = document.createDocumentFragment();
             questions.forEach((q, idx) => {
                 const globalIdx = startIndex + idx + 1;
-                fragment.appendChild(createQuestionElement(q, globalIdx));
+                const questionDiv = createQuestionElement(q, idx, globalIdx);
+                fragment.appendChild(questionDiv);
             });
             container.appendChild(fragment);
+            // Render math only on the newly added fragment
             renderMathInElementWithDelay(fragment);
+        }
+        
+        // FIX #2 & #5: clear loading placeholder explicitly; handle empty questions gracefully
+        async function startQuiz() {
+            const course = courseSelect.value;
+            const subject = subjectSelect.value;
+            const chapter = chapterSelect.value;
+            if (!course || !subject || !chapter) {
+                alert('Please select a course, subject, and chapter.');
+                return;
+            }
+            currentCursor = null;
+            hasMore = true;
+            isLoading = false;
+            currentCourse = course;
+            currentSubject = subject;
+            currentChapter = chapter;
+            
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '<div class="loader">Loading questions...</div>';
+            const loaderDiv = document.getElementById('infiniteLoader');
+            loaderDiv.style.display = 'none';
+            
+            const quizSection = document.getElementById('quizSection');
+            quizSection.style.display = 'block';
+            document.getElementById('displayCourse').textContent = course;
+            document.getElementById('displaySubject').textContent = subject;
+            document.getElementById('displayChapter').textContent = chapter;
+            setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
+            
+            try {
+                await fetchNextPage(true);
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">${error.message}</div>`;
+            }
         }
         
         async function fetchNextPage(reset = false) {
             if (!hasMore || isLoading) return;
             if (!currentCourse || !currentSubject || !currentChapter) return;
+            
             isLoading = true;
             const loaderDiv = document.getElementById('infiniteLoader');
-            loaderDiv.style.display = 'block';
+            if (!reset) loaderDiv.style.display = 'block';
+            
             try {
                 const params = new URLSearchParams({
                     className: currentCourse,
@@ -847,14 +888,27 @@
                     chapter: currentChapter,
                     limit: PAGE_LIMIT
                 });
-                if (currentCursor) params.append('cursor', currentCursor);
-                const data = await fetchJSON(`${API_BASE}/api/quiz?${params.toString()}`);
+                // FIX #3: ensure cursor is sent as number (or omitted if null)
+                if (currentCursor !== null && currentCursor !== undefined) {
+                    params.append('cursor', currentCursor.toString());
+                }
+                
+                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
+                if (!response.ok) {
+                    if (response.status === 404) throw new Error('No more questions found.');
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load questions');
+                
                 const questions = data.questions || [];
+                // FIX #5: handle empty array with proper message
                 if (reset) {
                     const container = document.getElementById('questionsContainer');
-                    container.innerHTML = '';
+                    container.innerHTML = '';   // clear loading placeholder explicitly
                     if (questions.length === 0) {
                         container.innerHTML = '<div class="error-message">No questions found for the selected criteria.</div>';
+                        hasMore = false;
                     } else {
                         appendQuestions(questions, 0);
                     }
@@ -862,29 +916,40 @@
                     if (questions.length > 0) {
                         const currentCount = document.querySelectorAll('.question-item').length;
                         appendQuestions(questions, currentCount);
+                    } else {
+                        // If no questions returned but hasMore might be true (edge case), stop further loads
+                        hasMore = false;
                     }
                 }
-                currentCursor = data.nextCursor || null;
+                
+                // Update cursor: backend returns nextCursor as number (questionNo) or null/undefined
+                if (data.nextCursor !== undefined && data.nextCursor !== null) {
+                    currentCursor = typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10);
+                } else {
+                    currentCursor = null;
+                }
                 hasMore = data.hasMore === true;
+                
                 if (!hasMore) {
                     loaderDiv.style.display = 'none';
                     const container = document.getElementById('questionsContainer');
-                    if (!container.querySelector('.no-more-questions')) {
+                    if (!reset && questions.length > 0 && !container.querySelector('.no-more-questions')) {
                         const endMsg = document.createElement('div');
                         endMsg.className = 'infinite-loader no-more-questions';
                         endMsg.textContent = 'No more questions.';
                         container.appendChild(endMsg);
                     }
                 }
-            } catch (err) {
-                console.error('Error fetching questions:', err);
+            } catch (error) {
+                console.error('Error fetching questions:', error);
                 if (reset) {
-                    document.getElementById('questionsContainer').innerHTML = `<div class="error-message">${err.message}</div>`;
+                    const container = document.getElementById('questionsContainer');
+                    container.innerHTML = `<div class="error-message">${error.message}</div>`;
                 } else {
                     const container = document.getElementById('questionsContainer');
                     const errorDiv = document.createElement('div');
                     errorDiv.className = 'error-message';
-                    errorDiv.textContent = err.message;
+                    errorDiv.textContent = error.message;
                     container.appendChild(errorDiv);
                 }
             } finally {
@@ -893,39 +958,16 @@
             }
         }
         
-        async function startQuiz() {
-            const course = document.getElementById('courseSelect').value;
-            const subject = document.getElementById('subjectSelect').value;
-            const chapter = document.getElementById('chapterSelect').value;
-            if (!course || !subject || !chapter) {
-                alert('Please select a course, subject, and chapter.');
-                return;
-            }
-            currentCourse = course;
-            currentSubject = subject;
-            currentChapter = chapter;
-            currentCursor = null;
-            hasMore = true;
-            isLoading = false;
-            
-            const quizSection = document.getElementById('quizSection');
-            quizSection.style.display = 'block';
-            document.getElementById('displayCourse').textContent = course;
-            document.getElementById('displaySubject').textContent = subject;
-            document.getElementById('displayChapter').textContent = chapter;
-            const container = document.getElementById('questionsContainer');
-            container.innerHTML = '<div class="loader">Loading questions...</div>';
-            setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
-            await fetchNextPage(true);
-        }
-        
         function setupScrollListener() {
             window.addEventListener('scroll', () => {
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
                 const windowHeight = window.innerHeight;
                 const documentHeight = document.documentElement.scrollHeight;
-                if (scrollTop + windowHeight >= documentHeight - 200) {
-                    if (hasMore && !isLoading) fetchNextPage();
+                const threshold = 200;
+                if (scrollTop + windowHeight >= documentHeight - threshold) {
+                    if (hasMore && !isLoading) {
+                        fetchNextPage(false);
+                    }
                 }
             });
         }
