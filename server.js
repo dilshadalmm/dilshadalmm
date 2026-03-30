@@ -370,6 +370,79 @@ async function processBatch(batch) {
         }
     }
 
+    // --- Assign questionNo to new questions (ordered per mapping group) ---
+    // Group newDocs by mapping
+    const newDocsByMapping = new Map(); // key -> array of newDocs
+    for (const nd of newDocs) {
+        const key = `${nd.mapping.class}|${nd.mapping.subject}|${nd.mapping.chapter}`;
+        if (!newDocsByMapping.has(key)) newDocsByMapping.set(key, []);
+        newDocsByMapping.get(key).push(nd);
+    }
+
+    for (const [key, ndList] of newDocsByMapping.entries()) {
+        const mapping = ndList[0].mapping;
+        // Query highest questionNo for this mapping
+        let maxQuestionNo = 0;
+        const maxQuery = await db.collection('questions')
+            .where('mappings', 'array-contains', mapping)
+            .orderBy('questionNo', 'desc')
+            .limit(1)
+            .get();
+        if (!maxQuery.empty) {
+            maxQuestionNo = maxQuery.docs[0].data().questionNo || 0;
+        }
+
+        let nextNo = maxQuestionNo + 1;
+        const usedInBatch = new Set(); // numbers already assigned within this batch for this mapping
+        const existsCache = new Map(); // questionNo -> exists (to avoid repeated queries)
+
+        for (const nd of ndList) {
+            const incomingNo = nd.question.questionNo;
+            let assignedNo = null;
+
+            if (incomingNo !== undefined && typeof incomingNo === 'number' && Number.isInteger(incomingNo) && incomingNo > 0) {
+                // Determine if incomingNo is a duplicate
+                let isDuplicate = false;
+                if (incomingNo <= maxQuestionNo) {
+                    // Might be duplicate with existing document
+                    if (existsCache.has(incomingNo)) {
+                        isDuplicate = existsCache.get(incomingNo);
+                    } else {
+                        const existQuery = await db.collection('questions')
+                            .where('mappings', 'array-contains', mapping)
+                            .where('questionNo', '==', incomingNo)
+                            .limit(1)
+                            .get();
+                        const exists = !existQuery.empty;
+                        existsCache.set(incomingNo, exists);
+                        isDuplicate = exists;
+                    }
+                } else {
+                    // incomingNo > maxQuestionNo, only possible duplicate is within this batch
+                    isDuplicate = usedInBatch.has(incomingNo);
+                }
+
+                if (isDuplicate) {
+                    assignedNo = nextNo;
+                    nextNo++;
+                } else {
+                    assignedNo = incomingNo;
+                    usedInBatch.add(assignedNo);
+                    if (assignedNo > maxQuestionNo) {
+                        maxQuestionNo = assignedNo;
+                        nextNo = maxQuestionNo + 1;
+                    }
+                }
+            } else {
+                // No incoming questionNo → auto assign
+                assignedNo = nextNo;
+                nextNo++;
+            }
+
+            nd.question.questionNo = assignedNo;
+        }
+    }
+
     // Prepare create writes
     const createWrites = [];
     for (const { item, question, hash, mapping } of newDocs) {
@@ -386,12 +459,13 @@ async function processBatch(batch) {
             mappings: [mapping],
             questionHash: hash,
             embedded: false,
+            questionNo: question.questionNo,   // added
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         };
         createWrites.push({ docRef: db.collection('questions').doc(questionId), data: questionDoc });
     }
 
-    // Prepare update writes
+    // Prepare update writes (no change to questionNo)
     const updateWrites = [];
     for (const { docRef, currentMappings, newMappingsSet } of updatesMap.values()) {
         const newMappingsArray = [...currentMappings];
@@ -512,10 +586,10 @@ app.post('/api/ingest', async (req, res) => {
     }
 });
 
-// ---- API Endpoint: Quiz ----
+// ---- API Endpoint: Quiz (Ordered Pagination) ----
 app.get('/api/quiz', async (req, res) => {
     try {
-        const { className, subject, chapter, limit: limitParam } = req.query;
+        const { className, subject, chapter, cursor, limit: limitParam } = req.query;
 
         if (!className || !subject || !chapter) {
             return res.status(400).json({
@@ -545,62 +619,55 @@ app.get('/api/quiz', async (req, res) => {
             });
         }
 
-        const questionsRef = db.collection('questions');
-        const mappedQuery = questionsRef.where('mappings', 'array-contains', {
-            class: className,
-            subject: subject,
-            chapter: chapter
+        // Build query with mapping and order by questionNo
+        let query = db.collection('questions')
+            .where('mappings', 'array-contains', { class: className, subject: subject, chapter: chapter })
+            .orderBy('questionNo');
+
+        if (cursor) {
+            const cursorNum = parseInt(cursor, 10);
+            if (isNaN(cursorNum)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'cursor must be a number'
+                });
+            }
+            query = query.startAfter(cursorNum);
+        }
+
+        query = query.limit(limit);
+
+        const snapshot = await query.get();
+        const questions = [];
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            questions.push({
+                questionText: data.questionText,
+                options: data.options,
+                solutionText: data.solutionText,
+                correctIndex: data.correctIndex,
+                solutionVideoUrl: data.solutionVideoUrl || null,
+                questionImageUrl: data.questionImageUrl || null,
+                solutionImageUrl: data.solutionImageUrl || null
+            });
         });
-        const legacyQuery = questionsRef
-            .where('class', '==', className)
-            .where('subject', '==', subject)
-            .where('chapter', '==', chapter);
 
-        const [mappedSnapshot, legacySnapshot] = await Promise.all([
-            mappedQuery.get(),
-            legacyQuery.get()
-        ]);
-
-        const questionsMap = new Map();
-        const addDocs = (snapshot) => {
-            snapshot.forEach(doc => {
-                const data = doc.data();
-                if (!questionsMap.has(data.questionId)) {
-                    questionsMap.set(data.questionId, data);
-                }
-            });
-        };
-        addDocs(mappedSnapshot);
-        addDocs(legacySnapshot);
-
-        let questions = Array.from(questionsMap.values());
-
-        if (questions.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: 'No questions found for the given criteria'
-            });
+        let nextCursor = null;
+        let hasMore = false;
+        if (questions.length > 0) {
+            // To get nextCursor, we need the last document's questionNo.
+            // Since we only have the data, we can re-fetch the last document's questionNo from snapshot.
+            // But snapshot.docs gives us the documents, so we can get it from the last doc.
+            const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+            nextCursor = lastDoc.data().questionNo;
+            hasMore = snapshot.size === limit;
         }
-
-        for (let i = questions.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [questions[i], questions[j]] = [questions[j], questions[i]];
-        }
-
-        const limitedQuestions = questions.slice(0, limit);
-        const formattedQuestions = limitedQuestions.map(q => ({
-            questionText: q.questionText,
-            options: q.options,
-            solutionText: q.solutionText,
-            correctIndex: q.correctIndex,
-            solutionVideoUrl: q.solutionVideoUrl || null,
-            questionImageUrl: q.questionImageUrl || null,
-            solutionImageUrl: q.solutionImageUrl || null
-        }));
 
         return res.json({
             success: true,
-            questions: formattedQuestions
+            questions,
+            nextCursor,
+            hasMore
         });
 
     } catch (error) {
@@ -608,6 +675,55 @@ app.get('/api/quiz', async (req, res) => {
         return res.status(500).json({
             success: false,
             error: 'An internal server error occurred'
+        });
+    }
+});
+
+// ---- API Endpoint: Fetch single question by questionNo ----
+app.get('/api/question', async (req, res) => {
+    try {
+        const { class: className, subject, chapter, questionNo } = req.query;
+        if (!className || !subject || !chapter || !questionNo) {
+            return res.status(400).json({
+                success: false,
+                error: 'class, subject, chapter, and questionNo are required'
+            });
+        }
+        const num = parseInt(questionNo, 10);
+        if (isNaN(num)) {
+            return res.status(400).json({
+                success: false,
+                error: 'questionNo must be a number'
+            });
+        }
+        if (!db) {
+            console.error('Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Database service unavailable'
+            });
+        }
+
+        const snapshot = await db.collection('questions')
+            .where('mappings', 'array-contains', { class: className, subject: subject, chapter: chapter })
+            .where('questionNo', '==', num)
+            .limit(1)
+            .get();
+
+        if (snapshot.empty) {
+            return res.status(404).json({
+                success: false,
+                error: 'Question not found'
+            });
+        }
+
+        const data = snapshot.docs[0].data();
+        res.json({ success: true, question: data });
+    } catch (error) {
+        console.error('Error fetching single question:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error'
         });
     }
 });
@@ -900,10 +1016,10 @@ app.put('/api/question', async (req, res) => {
     }
 });
 
-// GET /api/questions (admin)
+// GET /api/questions (admin) with optional cursor/limit pagination
 app.get('/api/questions', async (req, res) => {
     try {
-        const { class: className, subject, chapter, limit: limitParam } = req.query;
+        const { class: className, subject, chapter, cursor, limit: limitParam } = req.query;
 
         if (!db) {
             console.error('Firestore not initialized');
@@ -926,6 +1042,63 @@ app.get('/api/questions', async (req, res) => {
             }
         }
 
+        // If class, subject, chapter are provided, use mapping query with cursor pagination
+        if (className && subject && chapter) {
+            let query = db.collection('questions')
+                .where('mappings', 'array-contains', { class: className, subject: subject, chapter: chapter })
+                .orderBy('questionNo');
+
+            if (cursor) {
+                const cursorNum = parseInt(cursor, 10);
+                if (isNaN(cursorNum)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'cursor must be a number'
+                    });
+                }
+                query = query.startAfter(cursorNum);
+            }
+
+            query = query.limit(limit);
+            const snapshot = await query.get();
+
+            const questions = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                questions.push({
+                    questionId: data.questionId,
+                    questionText: data.questionText,
+                    options: data.options,
+                    correctIndex: data.correctIndex,
+                    solutionText: data.solutionText,
+                    questionImageUrl: data.questionImageUrl || null,
+                    solutionVideoUrl: data.solutionVideoUrl || null,
+                    solutionImageUrl: data.solutionImageUrl || null,
+                    mappings: data.mappings,
+                    questionNo: data.questionNo,
+                    createdAt: data.createdAt,
+                    updatedAt: data.updatedAt
+                });
+            });
+
+            let nextCursor = null;
+            let hasMore = false;
+            if (questions.length > 0) {
+                const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+                nextCursor = lastDoc.data().questionNo;
+                hasMore = snapshot.size === limit;
+            }
+
+            return res.json({
+                success: true,
+                questions,
+                nextCursor,
+                hasMore
+            });
+        }
+
+        // Fallback: old behavior without pagination (legacy query merging)
+        // This part remains for backward compatibility when no class/subject/chapter is provided
         const questionsMap = new Map();
 
         let legacyQuery = db.collection('questions');
@@ -971,7 +1144,8 @@ app.get('/api/questions', async (req, res) => {
                 solutionText: q.solutionText,
                 questionImageUrl: q.questionImageUrl || null,
                 solutionVideoUrl: q.solutionVideoUrl || null,
-                solutionImageUrl: q.solutionImageUrl || null
+                solutionImageUrl: q.solutionImageUrl || null,
+                questionNo: q.questionNo || null
             };
             if (q.mappings) result.mappings = q.mappings;
             if (q.class) result.class = q.class;
