@@ -15,7 +15,6 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
     
     <style>
-        /* Global styles (unchanged) */
         *,
         *::before,
         *::after {
@@ -65,7 +64,6 @@
             max-width: 100%;
             overflow-x: visible;
         }
-        /* Logo container - square with 4px rounded corners */
         .logo-img-container {
             display: flex;
             justify-content: center;
@@ -88,7 +86,6 @@
             object-fit: cover;
             display: block;
         }
-        /* Brand name styling: reduced font size, dark black */
         .logo-text {
             font-family: 'Creepster', system-ui;
             font-size: 2rem;
@@ -109,7 +106,6 @@
         .form-group {
             margin-bottom: 20px;
         }
-        /* Centered label with horizontal lines (capsule separator style) */
         .form-label {
             display: flex;
             align-items: center;
@@ -134,7 +130,6 @@
         .form-label::after {
             margin-left: 8px;
         }
-        /* Input fields: capsule appearance (full circular corners) */
         .form-input {
             width: 100%;
             padding: 10px 18px;
@@ -152,7 +147,6 @@
             border-color: #000000;
             box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
         }
-        /* Keep start button style but also improve appearance (optional, not required by spec but visually consistent) */
         .start-btn {
             width: 100%;
             background-color: #000000;
@@ -240,7 +234,6 @@
             accent-color: #000000;
             pointer-events: auto;
         }
-        /* Correct/Wrong backgrounds */
         .option-container.correct-bg {
             background-color: #d1fae5;
             border-color: #10b981;
@@ -347,11 +340,9 @@
         img, svg, iframe, video {
             max-width: 100%;
         }
-        /* KaTeX rendering spacing */
         .katex {
             font-size: 1.05em;
         }
-        /* Ensure select arrow doesn't break capsule */
         select.form-input {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
             background-position: right 12px center;
@@ -360,7 +351,6 @@
             appearance: none;
             padding-right: 38px;
         }
-        /* Loader for pagination */
         .infinite-loader {
             text-align: center;
             padding: 20px;
@@ -372,9 +362,7 @@
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
 
     <div class="main-container">
-        <!-- Form Section -->
         <div id="setupSection" class="setup-form">
-            <!-- Square logo container with 4px circular corners (above brand name) -->
             <div class="logo-img-container">
                 <div class="logo-img-wrapper">
                     <img src="https://i.postimg.cc/y88hFhh3/20260311_205800_0000.png" alt="StudentPlus Logo">
@@ -403,7 +391,6 @@
             <button class="start-btn" onclick="startQuiz()">Proceed</button>
         </div>
 
-        <!-- Quiz Section -->
         <div id="quizSection">
             <div class="quiz-header" id="quizHeader">
                 <div class="header-line">
@@ -413,10 +400,7 @@
                 </div>
                 <div id="displayChapter" class="header-line"></div>
             </div>
-            
-            <div id="questionsContainer">
-                <!-- Questions will be dynamically inserted here -->
-            </div>
+            <div id="questionsContainer"></div>
             <div id="infiniteLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
         </div>
     </div>
@@ -474,9 +458,8 @@
         
         // ---------- BACKEND API URL ----------
         const API_BASE = 'https://dilshadalmm.onrender.com';
-        const PAGE_LIMIT = 10;   // Fixed number of questions per request (infinite scroll)
+        const PAGE_LIMIT = 10;
         
-        // Global state for infinite scroll
         let currentCursor = null;
         let hasMore = true;
         let isLoading = false;
@@ -484,65 +467,60 @@
         let currentSubject = '';
         let currentChapter = '';
         
-        // ---------- HELPER: Convert newlines to <br> tags (preserves LaTeX) ----------
-        function replaceNewlinesWithBr(text) {
-            if (!text) return text;
-            return text.replace(/\r?\n/g, '<br>');
-        }
-        
-        // DOM elements
-        const courseSelect = document.getElementById('courseSelect');
-        const subjectSelect = document.getElementById('subjectSelect');
-        const chapterSelect = document.getElementById('chapterSelect');
-        
-        // Helper to fetch data with error handling
-        async function fetchData(endpoint) {
+        // Helper: fetch JSON with timeout
+        async function fetchJSON(url, timeoutMs = 10000) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
             try {
-                const response = await fetch(`${API_BASE}${endpoint}`);
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timeoutId);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Unknown error');
                 return data;
-            } catch (error) {
-                console.error(`Error fetching ${endpoint}:`, error);
-                throw error;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                throw err;
             }
         }
         
-        // Load classes on page load
+        // Load courses (classes)
         async function loadClasses() {
-            courseSelect.innerHTML = '<option value="">Loading...</option>';
+            const select = document.getElementById('courseSelect');
+            select.innerHTML = '<option value="">Loading courses...</option>';
             try {
-                const data = await fetchData('/api/classes');
+                const data = await fetchJSON(`${API_BASE}/api/classes`);
                 const classes = data.classes || [];
-                courseSelect.innerHTML = '<option value="">Select a course</option>';
+                select.innerHTML = '<option value="">Select a course</option>';
                 if (classes.length === 0) {
-                    courseSelect.innerHTML = '<option value="">No courses available</option>';
+                    select.innerHTML = '<option value="">No courses available</option>';
                     return;
                 }
                 classes.forEach(cls => {
                     const option = document.createElement('option');
                     option.value = cls;
                     option.textContent = cls;
-                    courseSelect.appendChild(option);
+                    select.appendChild(option);
                 });
-                if (courseSelect.value) {
-                    loadSubjects(courseSelect.value);
+                // If there's a previously selected value (e.g., from a reload), trigger change
+                if (select.value) {
+                    loadSubjects(select.value);
                 }
-            } catch (error) {
-                courseSelect.innerHTML = '<option value="">Error loading courses</option>';
-                console.error(error);
+            } catch (err) {
+                console.error('Error loading classes:', err);
+                select.innerHTML = '<option value="">Error loading courses</option>';
             }
         }
         
-        // Load subjects for a given class
         async function loadSubjects(className) {
+            const subjectSelect = document.getElementById('subjectSelect');
+            const chapterSelect = document.getElementById('chapterSelect');
             subjectSelect.disabled = true;
             subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             try {
-                const data = await fetchData(`/api/subjects?class=${encodeURIComponent(className)}`);
+                const data = await fetchJSON(`${API_BASE}/api/subjects?class=${encodeURIComponent(className)}`);
                 const subjects = data.subjects || [];
                 subjectSelect.innerHTML = '<option value="">Select a subject</option>';
                 if (subjects.length === 0) {
@@ -559,18 +537,18 @@
                 if (subjectSelect.value) {
                     loadChapters(className, subjectSelect.value);
                 }
-            } catch (error) {
+            } catch (err) {
+                console.error('Error loading subjects:', err);
                 subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
-                console.error(error);
             }
         }
         
-        // Load chapters for a given class and subject
         async function loadChapters(className, subjectName) {
+            const chapterSelect = document.getElementById('chapterSelect');
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
             try {
-                const data = await fetchData(`/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
+                const data = await fetchJSON(`${API_BASE}/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
                 const chapters = data.chapters || [];
                 chapterSelect.innerHTML = '<option value="">Select a chapter</option>';
                 if (chapters.length === 0) {
@@ -584,18 +562,20 @@
                     chapterSelect.appendChild(option);
                 });
                 chapterSelect.disabled = false;
-            } catch (error) {
+            } catch (err) {
+                console.error('Error loading chapters:', err);
                 chapterSelect.innerHTML = '<option value="">Error loading chapters</option>';
-                console.error(error);
             }
         }
         
         // Event listeners
-        courseSelect.addEventListener('change', (e) => {
+        document.getElementById('courseSelect').addEventListener('change', (e) => {
             const selectedClass = e.target.value;
             if (selectedClass) {
                 loadSubjects(selectedClass);
             } else {
+                const subjectSelect = document.getElementById('subjectSelect');
+                const chapterSelect = document.getElementById('chapterSelect');
                 subjectSelect.disabled = true;
                 subjectSelect.innerHTML = '<option value="">Select a course first</option>';
                 chapterSelect.disabled = true;
@@ -603,18 +583,19 @@
             }
         });
         
-        subjectSelect.addEventListener('change', (e) => {
-            const selectedClass = courseSelect.value;
+        document.getElementById('subjectSelect').addEventListener('change', (e) => {
+            const selectedClass = document.getElementById('courseSelect').value;
             const selectedSubject = e.target.value;
             if (selectedClass && selectedSubject) {
                 loadChapters(selectedClass, selectedSubject);
             } else {
+                const chapterSelect = document.getElementById('chapterSelect');
                 chapterSelect.disabled = true;
                 chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             }
         });
         
-        // Helper to convert YouTube URL to embed URL
+        // ---------- Quiz and rendering helpers ----------
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
             const patterns = [
@@ -623,19 +604,15 @@
             ];
             for (let pattern of patterns) {
                 const match = url.match(pattern);
-                if (match && match[1]) {
-                    return `https://www.youtube.com/embed/${match[1]}`;
-                }
+                if (match && match[1]) return `https://www.youtube.com/embed/${match[1]}`;
             }
             return null;
         }
         
-        // Create video element based on URL
         function createVideoElement(url) {
             if (!url) return null;
             const container = document.createElement('div');
             container.className = 'video-container';
-            
             const youtubeEmbed = getYouTubeEmbedUrl(url);
             if (youtubeEmbed) {
                 const iframe = document.createElement('iframe');
@@ -668,7 +645,11 @@
             return container;
         }
         
-        // KaTeX rendering function for any DOM element (robust retry if auto-render not ready)
+        function replaceNewlinesWithBr(text) {
+            if (!text) return text;
+            return text.replace(/\r?\n/g, '<br>');
+        }
+        
         function renderMathInElementWithDelay(element) {
             if (typeof renderMathInElement === 'function') {
                 try {
@@ -682,17 +663,13 @@
                         throwOnError: false,
                         errorColor: '#cc0000'
                     });
-                } catch (e) {
-                    console.warn('KaTeX rendering error:', e);
-                }
+                } catch (e) { console.warn(e); }
             } else {
-                // Fallback: if KaTeX auto-render not loaded yet, wait and retry
                 setTimeout(() => renderMathInElementWithDelay(element), 200);
             }
         }
         
-        // Create a single question DOM element (used for appending)
-        function createQuestionElement(q, idx, globalIndex) {
+        function createQuestionElement(q, globalIndex) {
             const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
             const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
             const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
@@ -700,7 +677,6 @@
             const questionDiv = document.createElement('div');
             questionDiv.className = 'question-item';
             
-            // Question tag and text
             const qTag = document.createElement('div');
             qTag.className = 'q-tag';
             qTag.textContent = `Question ${globalIndex}`;
@@ -709,7 +685,6 @@
             qText.className = 'question-text';
             qText.innerHTML = formattedQuestionText;
             
-            // Options
             const optionsDiv = document.createElement('div');
             optionsDiv.className = 'options-list';
             if (q.questionImageUrl) {
@@ -728,9 +703,6 @@
                 label.className = 'option-container';
                 const radio = document.createElement('input');
                 radio.type = 'radio';
-                radio.name = `q_${idx}`;   // using the local index (0-based within current batch) but we need unique names across all questions
-                // To avoid naming conflicts across multiple pages, we use a unique id based on a global counter.
-                // We'll set the name to a unique identifier: question_globalIndex.
                 radio.name = `q_${globalIndex}`;
                 radio.value = optIdx;
                 const span = document.createElement('span');
@@ -741,29 +713,23 @@
                 optionContainers.push(label);
             });
             
-            // Action buttons row
             const actionRow = document.createElement('div');
             actionRow.className = 'action-buttons';
-            
             const submitBtn = document.createElement('button');
             submitBtn.textContent = 'Submit';
             submitBtn.className = 'action-btn submit-btn';
-            
             const textSolutionBtn = document.createElement('button');
             textSolutionBtn.textContent = 'Text Solution';
             textSolutionBtn.className = 'action-btn text-solution-btn';
             textSolutionBtn.disabled = true;
-            
             const videoSolutionBtn = document.createElement('button');
             videoSolutionBtn.textContent = 'Video Solution';
             videoSolutionBtn.className = 'action-btn video-solution-btn';
             videoSolutionBtn.disabled = true;
-            
             actionRow.appendChild(submitBtn);
             actionRow.appendChild(textSolutionBtn);
             actionRow.appendChild(videoSolutionBtn);
             
-            // Correct answer box
             const correctAnswerBox = document.createElement('div');
             correctAnswerBox.className = 'correct-answer-box';
             const correctLabel = document.createElement('span');
@@ -774,7 +740,6 @@
             correctAnswerBox.appendChild(correctLabel);
             correctAnswerBox.appendChild(correctAnswerSpan);
             
-            // Text solution container
             const textSolutionContainer = document.createElement('div');
             textSolutionContainer.id = `text-solution-${globalIndex}`;
             textSolutionContainer.className = 'solution-container';
@@ -796,7 +761,6 @@
                 textSolutionContainer.appendChild(textBox);
             }
             
-            // Video solution container
             const videoSolutionContainer = document.createElement('div');
             videoSolutionContainer.id = `video-solution-${globalIndex}`;
             videoSolutionContainer.className = 'solution-container';
@@ -805,36 +769,21 @@
                 if (videoElem) videoSolutionContainer.appendChild(videoElem);
             }
             
-            // Submit logic with KaTeX rendering after showing elements
             let submitted = false;
-            
-            submitBtn.onclick = async () => {
+            submitBtn.onclick = () => {
                 if (submitted) return;
                 const selectedRadio = document.querySelector(`input[name="q_${globalIndex}"]:checked`);
-                if (!selectedRadio) {
-                    alert('Please select an answer');
-                    return;
-                }
+                if (!selectedRadio) { alert('Please select an answer'); return; }
                 const selectedIndex = parseInt(selectedRadio.value);
                 const isCorrect = (selectedIndex === q.correctIndex);
-                
-                // Apply background colors
                 optionContainers.forEach((container, i) => {
-                    if (i === q.correctIndex) {
-                        container.classList.add('correct-bg');
-                    } else if (i === selectedIndex && !isCorrect) {
-                        container.classList.add('wrong-bg');
-                    }
+                    if (i === q.correctIndex) container.classList.add('correct-bg');
+                    else if (i === selectedIndex && !isCorrect) container.classList.add('wrong-bg');
                 });
-                
-                // Show correct answer box and render KaTeX inside it
                 correctAnswerBox.classList.add('visible');
                 renderMathInElementWithDelay(correctAnswerBox);
-                
-                // Enable solution buttons if content exists
                 if (formattedSolutionText) textSolutionBtn.disabled = false;
                 if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
-                
                 submitted = true;
                 submitBtn.disabled = true;
             };
@@ -844,9 +793,7 @@
                 const wasVisible = textSolutionContainer.classList.contains('visible');
                 if (!wasVisible) {
                     textSolutionContainer.classList.add('visible');
-                    if (videoSolutionContainer.classList.contains('visible')) {
-                        videoSolutionContainer.classList.remove('visible');
-                    }
+                    if (videoSolutionContainer.classList.contains('visible')) videoSolutionContainer.classList.remove('visible');
                     renderMathInElementWithDelay(textSolutionContainer);
                 } else {
                     textSolutionContainer.classList.remove('visible');
@@ -858,16 +805,13 @@
                 const wasVisible = videoSolutionContainer.classList.contains('visible');
                 if (!wasVisible) {
                     videoSolutionContainer.classList.add('visible');
-                    if (textSolutionContainer.classList.contains('visible')) {
-                        textSolutionContainer.classList.remove('visible');
-                    }
+                    if (textSolutionContainer.classList.contains('visible')) textSolutionContainer.classList.remove('visible');
                     renderMathInElementWithDelay(videoSolutionContainer);
                 } else {
                     videoSolutionContainer.classList.remove('visible');
                 }
             };
             
-            // Assemble question
             questionDiv.appendChild(qTag);
             questionDiv.appendChild(qText);
             questionDiv.appendChild(optionsDiv);
@@ -875,79 +819,27 @@
             questionDiv.appendChild(correctAnswerBox);
             questionDiv.appendChild(textSolutionContainer);
             questionDiv.appendChild(videoSolutionContainer);
-            
             return questionDiv;
         }
         
-        // Append new questions to the container (preserving existing ones)
         function appendQuestions(questions, startIndex) {
             const container = document.getElementById('questionsContainer');
             if (!questions || questions.length === 0) return;
-            
             const fragment = document.createDocumentFragment();
             questions.forEach((q, idx) => {
-                const globalIdx = startIndex + idx + 1;   // 1-based global question number
-                const questionDiv = createQuestionElement(q, idx, globalIdx);
-                fragment.appendChild(questionDiv);
+                const globalIdx = startIndex + idx + 1;
+                fragment.appendChild(createQuestionElement(q, globalIdx));
             });
             container.appendChild(fragment);
-            
-            // Render math in newly added elements
             renderMathInElementWithDelay(fragment);
         }
         
-        // Reset quiz state and fetch first page
-        async function startQuiz() {
-            const course = courseSelect.value;
-            const subject = subjectSelect.value;
-            const chapter = chapterSelect.value;
-            
-            if (!course || !subject || !chapter) {
-                alert('Please select a course, subject, and chapter.');
-                return;
-            }
-            
-            // Reset state
-            currentCursor = null;
-            hasMore = true;
-            isLoading = false;
-            currentCourse = course;
-            currentSubject = subject;
-            currentChapter = chapter;
-            
-            // Clear existing questions
-            const container = document.getElementById('questionsContainer');
-            container.innerHTML = '';
-            const loaderDiv = document.getElementById('infiniteLoader');
-            loaderDiv.style.display = 'none';
-            
-            // Show quiz section and header
-            const quizSection = document.getElementById('quizSection');
-            quizSection.style.display = 'block';
-            document.getElementById('displayCourse').textContent = course;
-            document.getElementById('displaySubject').textContent = subject;
-            document.getElementById('displayChapter').textContent = chapter;
-            
-            // Show loading indicator in container
-            container.innerHTML = '<div class="loader">Loading questions...</div>';
-            setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
-            
-            try {
-                await fetchNextPage(true);
-            } catch (error) {
-                container.innerHTML = `<div class="error-message">${error.message}</div>`;
-            }
-        }
-        
-        // Fetch next page of questions (if hasMore)
         async function fetchNextPage(reset = false) {
             if (!hasMore || isLoading) return;
             if (!currentCourse || !currentSubject || !currentChapter) return;
-            
             isLoading = true;
             const loaderDiv = document.getElementById('infiniteLoader');
             loaderDiv.style.display = 'block';
-            
             try {
                 const params = new URLSearchParams({
                     className: currentCourse,
@@ -955,21 +847,10 @@
                     chapter: currentChapter,
                     limit: PAGE_LIMIT
                 });
-                if (currentCursor) {
-                    params.append('cursor', currentCursor);
-                }
-                
-                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
-                if (!response.ok) {
-                    if (response.status === 404) throw new Error('No more questions found.');
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                const data = await response.json();
-                if (!data.success) throw new Error(data.error || 'Failed to load questions');
-                
+                if (currentCursor) params.append('cursor', currentCursor);
+                const data = await fetchJSON(`${API_BASE}/api/quiz?${params.toString()}`);
                 const questions = data.questions || [];
                 if (reset) {
-                    // Replace container content
                     const container = document.getElementById('questionsContainer');
                     container.innerHTML = '';
                     if (questions.length === 0) {
@@ -983,67 +864,72 @@
                         appendQuestions(questions, currentCount);
                     }
                 }
-                
-                // Update cursor and hasMore
-                if (data.nextCursor !== undefined && data.nextCursor !== null) {
-                    currentCursor = data.nextCursor;
-                } else {
-                    currentCursor = null;
-                }
+                currentCursor = data.nextCursor || null;
                 hasMore = data.hasMore === true;
-                
                 if (!hasMore) {
                     loaderDiv.style.display = 'none';
-                    // Optionally show a "no more questions" message at the bottom
-                    const endMessage = document.createElement('div');
-                    endMessage.className = 'infinite-loader';
-                    endMessage.textContent = 'No more questions.';
-                    endMessage.style.padding = '20px';
-                    endMessage.style.color = '#6b7280';
                     const container = document.getElementById('questionsContainer');
                     if (!container.querySelector('.no-more-questions')) {
-                        const existing = container.querySelector('.no-more-questions');
-                        if (existing) existing.remove();
-                        endMessage.classList.add('no-more-questions');
-                        container.appendChild(endMessage);
+                        const endMsg = document.createElement('div');
+                        endMsg.className = 'infinite-loader no-more-questions';
+                        endMsg.textContent = 'No more questions.';
+                        container.appendChild(endMsg);
                     }
                 }
-            } catch (error) {
-                console.error('Error fetching questions:', error);
+            } catch (err) {
+                console.error('Error fetching questions:', err);
                 if (reset) {
-                    const container = document.getElementById('questionsContainer');
-                    container.innerHTML = `<div class="error-message">${error.message}</div>`;
+                    document.getElementById('questionsContainer').innerHTML = `<div class="error-message">${err.message}</div>`;
                 } else {
-                    // Show error inline
                     const container = document.getElementById('questionsContainer');
                     const errorDiv = document.createElement('div');
                     errorDiv.className = 'error-message';
-                    errorDiv.textContent = error.message;
+                    errorDiv.textContent = err.message;
                     container.appendChild(errorDiv);
                 }
             } finally {
                 isLoading = false;
-                loaderDiv.style.display = hasMore ? 'none' : 'none'; // hide loader after fetch
-                // Re-enable scroll listener after loading
+                loaderDiv.style.display = 'none';
             }
         }
         
-        // Infinite scroll: detect when user is near bottom
+        async function startQuiz() {
+            const course = document.getElementById('courseSelect').value;
+            const subject = document.getElementById('subjectSelect').value;
+            const chapter = document.getElementById('chapterSelect').value;
+            if (!course || !subject || !chapter) {
+                alert('Please select a course, subject, and chapter.');
+                return;
+            }
+            currentCourse = course;
+            currentSubject = subject;
+            currentChapter = chapter;
+            currentCursor = null;
+            hasMore = true;
+            isLoading = false;
+            
+            const quizSection = document.getElementById('quizSection');
+            quizSection.style.display = 'block';
+            document.getElementById('displayCourse').textContent = course;
+            document.getElementById('displaySubject').textContent = subject;
+            document.getElementById('displayChapter').textContent = chapter;
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '<div class="loader">Loading questions...</div>';
+            setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
+            await fetchNextPage(true);
+        }
+        
         function setupScrollListener() {
             window.addEventListener('scroll', () => {
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
                 const windowHeight = window.innerHeight;
                 const documentHeight = document.documentElement.scrollHeight;
-                const threshold = 200; // pixels from bottom
-                if (scrollTop + windowHeight >= documentHeight - threshold) {
-                    if (hasMore && !isLoading) {
-                        fetchNextPage();
-                    }
+                if (scrollTop + windowHeight >= documentHeight - 200) {
+                    if (hasMore && !isLoading) fetchNextPage();
                 }
             });
         }
         
-        // Initialization
         window.addEventListener('load', () => {
             loadClasses();
             document.getElementById('quizSection').style.display = 'none';
