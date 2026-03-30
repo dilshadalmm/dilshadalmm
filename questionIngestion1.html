@@ -6,7 +6,6 @@
     <title>Studentplus - Smart Question Ingestion & Admin</title>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&display=swap" rel="stylesheet">
     <style>
-        /* ... existing styles unchanged ... */
         * {
             margin: 0;
             padding: 0;
@@ -329,9 +328,9 @@
         <img class="brand-logo" src="https://i.postimg.cc/y88hFhh3/20260311_205800_0000.png" alt="Studentplus logo" draggable="false">
         <span class="brand-name">Studentplus</span>
     </div>
-    <div class="sub">Direct question ingestion from JSON</div>
+    <div class="sub">Direct question ingestion from JSON (with optional questionNo)</div>
 
-    <!-- INGESTION SECTION (unchanged) -->
+    <!-- INGESTION SECTION (updated to accept questionNo) -->
     <form id="ingestForm">
         <div class="form-group">
             <label>📘 Class</label>
@@ -349,6 +348,7 @@
             <label>📝 Questions (JSON array)</label>
             <textarea id="questionsJson" placeholder='[
   {
+    "questionNo": 5,
     "questionText": "The dimensions of self-inductance are",
     "options": ["MLT-2A-1", "MLT-1A-2", "ML2 T-2A-2", "MLT-2A-2"],
     "correctIndex": 2,
@@ -358,7 +358,7 @@
     "solutionImageUrl": null
   }
 ]' required></textarea>
-            <div class="json-hint">Each question must have: questionText, options (array of 4), correctIndex (0‑based), solutionText. Optional fields: questionImageUrl, solutionVideoUrl, solutionImageUrl.</div>
+            <div class="json-hint">Each question must have: questionText, options (array of 4), correctIndex (0‑based), solutionText. <strong>Optional:</strong> questionNo (positive integer), questionImageUrl, solutionVideoUrl, solutionImageUrl.</div>
         </div>
         <button type="submit" id="submitBtn">🚀 Ingest Questions</button>
     </form>
@@ -367,27 +367,27 @@
 
     <hr>
 
-    <!-- SECTION 1: FETCH QUESTIONS -->
-    <div class="section-title">🔍 Fetch Stored Questions</div>
+    <!-- SECTION 1: FETCH SINGLE QUESTION BY NUMBER -->
+    <div class="section-title">🔍 Fetch Single Question by Number</div>
     <div class="inline-form-row">
         <div class="form-group">
             <label>Class</label>
-            <input type="text" id="fetchClass" placeholder="e.g., Class 10">
+            <input type="text" id="fetchClass" placeholder="e.g., Class 10" required>
         </div>
         <div class="form-group">
             <label>Subject</label>
-            <input type="text" id="fetchSubject" placeholder="e.g., Zoology">
+            <input type="text" id="fetchSubject" placeholder="e.g., Zoology" required>
         </div>
         <div class="form-group">
             <label>Chapter</label>
-            <input type="text" id="fetchChapter" placeholder="e.g., Cell">
+            <input type="text" id="fetchChapter" placeholder="e.g., Cell" required>
         </div>
         <div class="form-group">
-            <label>Limit</label>
-            <input type="number" id="fetchLimit" value="20" min="1" max="200">
+            <label>Question No.</label>
+            <input type="number" id="fetchQuestionNo" placeholder="e.g., 7" min="1" required>
         </div>
         <div style="flex: 0.3;">
-            <button id="fetchBtn" style="margin-top: 1.7rem;">Fetch Questions</button>
+            <button id="fetchBtn" style="margin-top: 1.7rem;">Fetch Question</button>
         </div>
     </div>
     <div id="questionsContainer" style="margin-top: 1rem;"></div>
@@ -414,8 +414,8 @@
     </div>
 
     <footer>
-        ⚡ The server saves questions with auto‑incremented IDs.<br>
-        📌 Admin tools: fetch, edit, delete questions.
+        ⚡ The server stores questions with questionNo for ordering.<br>
+        📌 Admin tools: fetch a single question (by class+subject+chapter+number), edit, delete, or bulk delete.
     </footer>
 </div>
 
@@ -480,13 +480,12 @@
 
 <script>
     // ========== CONFIGURATION ==========
-    // Set this to your actual backend base URL
-    const API_BASE = "https://dilshadalmm.onrender.com";
+    const API_BASE = "https://dilshadalmm-yosv.onrender.com";
     // ===================================
 
-    // API Endpoints (absolute)
+    // API endpoints
     const INGEST_API = `${API_BASE}/api/ingest`;
-    const FETCH_API = `${API_BASE}/api/questions`;
+    const SINGLE_QUESTION_API = `${API_BASE}/api/question`;
     const DELETE_API = `${API_BASE}/api/question`;
     const BULK_DELETE_API = `${API_BASE}/api/questions/bulk`;
     const EDIT_API = `${API_BASE}/api/question`;
@@ -500,12 +499,11 @@
     const submitBtn = document.getElementById('submitBtn');
     const resultArea = document.getElementById('resultArea');
 
-    // Admin elements
     const fetchBtn = document.getElementById('fetchBtn');
     const fetchClass = document.getElementById('fetchClass');
     const fetchSubject = document.getElementById('fetchSubject');
     const fetchChapter = document.getElementById('fetchChapter');
-    const fetchLimit = document.getElementById('fetchLimit');
+    const fetchQuestionNo = document.getElementById('fetchQuestionNo');
     const questionsContainer = document.getElementById('questionsContainer');
     const adminResultArea = document.getElementById('adminResultArea');
     const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
@@ -516,19 +514,19 @@
     const editForm = document.getElementById('editForm');
     const closeModalBtn = document.getElementById('closeModalBtn');
 
-    let lastFetchParams = null;
+    // Store currently displayed question data (for edit/delete)
+    let currentQuestion = null;
+    let currentFetchParams = null;
 
-    // Helper: safe fetch with JSON parsing and error handling
+    // Helper: safe fetch with JSON parsing
     async function safeFetchJSON(url, options = {}) {
         const response = await fetch(url, options);
         let responseText = null;
         try {
             responseText = await response.text();
-            // Attempt to parse as JSON
             const data = JSON.parse(responseText);
             return { response, data };
         } catch (parseError) {
-            // JSON parse failed – return the raw text for error reporting
             throw new Error(`Invalid JSON response (status ${response.status}): ${responseText.substring(0, 200)}${responseText.length > 200 ? '...' : ''}`);
         }
     }
@@ -540,7 +538,7 @@
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
             return m;
-        }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) { return c; });
+        });
     }
 
     function showAdminResult(success, message, details = null) {
@@ -569,51 +567,55 @@
         btn.innerHTML = originalText;
     }
 
-    // Fetch questions with improved error handling
-    async function fetchQuestions() {
+    // Fetch single question by class, subject, chapter, questionNo
+    async function fetchSingleQuestion() {
         const className = fetchClass.value.trim();
         const subject = fetchSubject.value.trim();
         const chapter = fetchChapter.value.trim();
-        const limit = parseInt(fetchLimit.value) || 20;
-        if (!className && !subject && !chapter) {
-            showAdminResult(false, 'Please provide at least one filter (Class, Subject, or Chapter).');
+        const qNo = parseInt(fetchQuestionNo.value);
+        if (!className || !subject || !chapter || isNaN(qNo) || qNo < 1) {
+            showAdminResult(false, 'Please provide valid Class, Subject, Chapter, and Question Number (≥1).');
             return;
         }
-        const params = new URLSearchParams();
-        if (className) params.append('class', className);
-        if (subject) params.append('subject', subject);
-        if (chapter) params.append('chapter', chapter);
-        params.append('limit', limit);
-        const url = `${FETCH_API}?${params.toString()}`;
-        lastFetchParams = { className, subject, chapter, limit };
-
-        questionsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="spinner"></span> Loading questions...</div>';
+        currentFetchParams = { className, subject, chapter, questionNo: qNo };
+        const params = new URLSearchParams({
+            class: className,
+            subject: subject,
+            chapter: chapter,
+            questionNo: qNo
+        });
+        const url = `${SINGLE_QUESTION_API}?${params.toString()}`;
+        questionsContainer.innerHTML = '<div style="text-align:center; padding:2rem;"><span class="spinner"></span> Loading question...</div>';
         try {
             const { response, data } = await safeFetchJSON(url);
-            if (response.ok && data.success) {
-                renderQuestions(data.questions);
+            if (response.ok && data.success && data.question) {
+                currentQuestion = data.question;
+                renderSingleQuestion(currentQuestion);
+                showAdminResult(true, `Question #${qNo} loaded.`);
+            } else if (response.status === 404) {
+                questionsContainer.innerHTML = `<div class="result-card result-error"><p>Question #${qNo} not found for the given class/subject/chapter.</p></div>`;
+                currentQuestion = null;
+                showAdminResult(false, 'Question not found.');
             } else {
-                questionsContainer.innerHTML = `<div class="result-card result-error"><p>${escapeHtml(data.error || 'Failed to fetch questions.')}</p></div>`;
+                questionsContainer.innerHTML = `<div class="result-card result-error"><p>${escapeHtml(data.error || 'Failed to fetch question.')}</p></div>`;
+                currentQuestion = null;
+                showAdminResult(false, data.error || 'Unknown error.');
             }
         } catch (err) {
             console.error('Fetch error:', err);
             questionsContainer.innerHTML = `<div class="result-card result-error"><p>Network error: ${escapeHtml(err.message)}</p></div>`;
-            showAdminResult(false, 'Error fetching questions: ' + err.message);
+            showAdminResult(false, 'Error fetching question: ' + err.message);
         }
     }
 
-    function renderQuestions(questions) {
-        if (!questions || questions.length === 0) {
-            questionsContainer.innerHTML = '<div class="result-card"><p>No questions found with the given criteria.</p></div>';
-            return;
-        }
-        let html = '<div class="questions-grid">';
-        for (const q of questions) {
-            const options = q.options || [];
-            const correctLetter = ['A', 'B', 'C', 'D'][q.correctIndex] || '?';
-            html += `
+    function renderSingleQuestion(q) {
+        if (!q) return;
+        const options = q.options || [];
+        const correctLetter = ['A', 'B', 'C', 'D'][q.correctIndex] || '?';
+        const html = `
+            <div class="questions-grid">
                 <div class="question-card" data-id="${escapeHtml(q.questionId)}">
-                    <div class="question-id">ID: ${escapeHtml(q.questionId)}</div>
+                    <div class="question-id">ID: ${escapeHtml(q.questionId)} &nbsp;|&nbsp; No: ${q.questionNo ?? '—'}</div>
                     <div class="question-text">${escapeHtml(q.questionText)}</div>
                     <div class="options-list">
                         ${options.map((opt, idx) => `<div><strong>${String.fromCharCode(65+idx)}.</strong> ${escapeHtml(opt)}</div>`).join('')}
@@ -624,29 +626,19 @@
                         <button class="delete-btn" data-id="${escapeHtml(q.questionId)}">🗑 Delete</button>
                     </div>
                 </div>
-            `;
-        }
-        html += '</div>';
+            </div>
+        `;
         questionsContainer.innerHTML = html;
-
-        // Attach event listeners
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                const id = btn.getAttribute('data-id');
-                openEditModal(id);
-            });
-        });
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const id = btn.getAttribute('data-id');
-                if (confirm(`Are you sure you want to delete question "${id}"?`)) {
-                    await deleteQuestion(id);
-                }
-            });
+        // attach event handlers
+        document.querySelector('.edit-btn')?.addEventListener('click', () => openEditModalWithCurrent());
+        document.querySelector('.delete-btn')?.addEventListener('click', async () => {
+            if (confirm(`Delete question #${q.questionNo} (${q.questionId})?`)) {
+                await deleteQuestionById(q.questionId);
+            }
         });
     }
 
-    async function deleteQuestion(questionId) {
+    async function deleteQuestionById(questionId) {
         try {
             const { response, data } = await safeFetchJSON(DELETE_API, {
                 method: 'DELETE',
@@ -655,8 +647,8 @@
             });
             if (response.ok && data.success) {
                 showAdminResult(true, `Question ${questionId} deleted successfully.`);
-                if (lastFetchParams) fetchQuestions();
-                else questionsContainer.innerHTML = '';
+                questionsContainer.innerHTML = '<div class="result-card"><p>Question deleted. Use fetch to load another.</p></div>';
+                currentQuestion = null;
             } else {
                 showAdminResult(false, data.error || 'Delete failed.');
             }
@@ -665,42 +657,25 @@
         }
     }
 
-    async function openEditModal(questionId) {
-        // Fetch all questions to find the specific one
-        try {
-            const params = new URLSearchParams();
-            params.append('class', '');
-            params.append('subject', '');
-            params.append('chapter', '');
-            params.append('limit', 1000);
-            const fetchUrl = `${FETCH_API}?${params.toString()}`;
-            const { response, data } = await safeFetchJSON(fetchUrl);
-            if (response.ok && data.success) {
-                const question = data.questions.find(q => q.questionId === questionId);
-                if (!question) {
-                    showAdminResult(false, 'Question not found.');
-                    return;
-                }
-                // Populate modal
-                document.getElementById('editQuestionId').value = question.questionId;
-                document.getElementById('editQuestionText').value = question.questionText || '';
-                const opts = question.options || ['', '', '', ''];
-                document.getElementById('editOpt0').value = opts[0] || '';
-                document.getElementById('editOpt1').value = opts[1] || '';
-                document.getElementById('editOpt2').value = opts[2] || '';
-                document.getElementById('editOpt3').value = opts[3] || '';
-                document.getElementById('editCorrectIndex').value = question.correctIndex ?? 0;
-                document.getElementById('editSolutionText').value = question.solutionText || '';
-                document.getElementById('editQuestionImageUrl').value = question.questionImageUrl || '';
-                document.getElementById('editSolutionVideoUrl').value = question.solutionVideoUrl || '';
-                document.getElementById('editSolutionImageUrl').value = question.solutionImageUrl || '';
-                editModal.style.display = 'flex';
-            } else {
-                showAdminResult(false, data.error || 'Could not fetch question details.');
-            }
-        } catch (err) {
-            showAdminResult(false, `Error: ${err.message}`);
+    function openEditModalWithCurrent() {
+        if (!currentQuestion) {
+            showAdminResult(false, 'No question loaded to edit.');
+            return;
         }
+        const q = currentQuestion;
+        document.getElementById('editQuestionId').value = q.questionId;
+        document.getElementById('editQuestionText').value = q.questionText || '';
+        const opts = q.options || ['', '', '', ''];
+        document.getElementById('editOpt0').value = opts[0] || '';
+        document.getElementById('editOpt1').value = opts[1] || '';
+        document.getElementById('editOpt2').value = opts[2] || '';
+        document.getElementById('editOpt3').value = opts[3] || '';
+        document.getElementById('editCorrectIndex').value = q.correctIndex ?? 0;
+        document.getElementById('editSolutionText').value = q.solutionText || '';
+        document.getElementById('editQuestionImageUrl').value = q.questionImageUrl || '';
+        document.getElementById('editSolutionVideoUrl').value = q.solutionVideoUrl || '';
+        document.getElementById('editSolutionImageUrl').value = q.solutionImageUrl || '';
+        editModal.style.display = 'flex';
     }
 
     async function updateQuestion(event) {
@@ -733,7 +708,12 @@
             if (response.ok && data.success) {
                 showAdminResult(true, 'Question updated successfully.');
                 editModal.style.display = 'none';
-                if (lastFetchParams) fetchQuestions();
+                // Re-fetch the updated question using current parameters
+                if (currentFetchParams) {
+                    await fetchSingleQuestion();
+                } else {
+                    questionsContainer.innerHTML = '<div class="result-card"><p>Update successful. Please refetch to see changes.</p></div>';
+                }
             } else {
                 showAdminResult(false, data.error || 'Update failed.');
             }
@@ -764,8 +744,8 @@
             });
             if (response.ok && data.success) {
                 showAdminResult(true, `Successfully deleted ${data.deletedCount} questions.`);
-                if (lastFetchParams) fetchQuestions();
-                else questionsContainer.innerHTML = '';
+                questionsContainer.innerHTML = '';
+                currentQuestion = null;
                 bulkClass.value = '';
                 bulkSubject.value = '';
                 bulkChapter.value = '';
@@ -779,26 +759,15 @@
         }
     }
 
-    // INGESTION LOGIC (unchanged)
-    function displayResult(success, message, details = null) {
-        resultArea.style.display = 'block';
-        const resultClass = success ? 'result-success' : 'result-error';
-        let html = `<div class="result-card ${resultClass}">
-                        <h3>${success ? '✅ Ingestion completed' : '❌ Processing failed'}</h3>
-                        <p>${escapeHtml(message)}</p>`;
-        if (details) {
-            html += `<div class="result-meta">${escapeHtml(JSON.stringify(details, null, 2))}</div>`;
-        }
-        html += `</div>`;
-        resultArea.innerHTML = html;
-        resultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
+    // INGESTION with optional questionNo
     function validateQuestion(q, index) {
         if (!q.questionText || typeof q.questionText !== 'string') return `Question ${index}: missing or invalid questionText`;
         if (!Array.isArray(q.options) || q.options.length !== 4) return `Question ${index}: options must be an array of exactly 4 strings`;
-        if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex > 3) return `Question ${index}: correctIndex must be a number between 0 and 3`;
+        if (typeof q.correctIndex !== 'number' || q.correctIndex < 0 || q.correctIndex > 3) return `Question ${index}: correctIndex must be 0-3`;
         if (!q.solutionText || typeof q.solutionText !== 'string') return `Question ${index}: missing or invalid solutionText`;
+        if (q.questionNo !== undefined && (typeof q.questionNo !== 'number' || !Number.isInteger(q.questionNo) || q.questionNo < 1)) {
+            return `Question ${index}: questionNo must be a positive integer (or omitted)`;
+        }
         return null;
     }
 
@@ -859,8 +828,8 @@
             }
         } catch (error) {
             let errorMsg = 'Network or CORS error. Make sure the server is reachable.';
-            if (error.name === 'AbortError') errorMsg = 'Request timed out. The server took too long to respond.';
-            else if (error.message.includes('Failed to fetch')) errorMsg = 'Cannot connect to the server. The backend might be down (503) or unreachable. Please verify the server status.';
+            if (error.name === 'AbortError') errorMsg = 'Request timed out.';
+            else if (error.message.includes('Failed to fetch')) errorMsg = 'Cannot connect to the server.';
             else errorMsg = error.message;
             displayResult(false, errorMsg, { error: error.message });
         } finally {
@@ -869,14 +838,28 @@
         }
     });
 
-    // Admin event listeners
-    fetchBtn.addEventListener('click', fetchQuestions);
+    function displayResult(success, message, details = null) {
+        resultArea.style.display = 'block';
+        const resultClass = success ? 'result-success' : 'result-error';
+        let html = `<div class="result-card ${resultClass}">
+                        <h3>${success ? '✅ Ingestion completed' : '❌ Processing failed'}</h3>
+                        <p>${escapeHtml(message)}</p>`;
+        if (details) {
+            html += `<div class="result-meta">${escapeHtml(JSON.stringify(details, null, 2))}</div>`;
+        }
+        html += `</div>`;
+        resultArea.innerHTML = html;
+        resultArea.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Event listeners
+    fetchBtn.addEventListener('click', fetchSingleQuestion);
     bulkDeleteBtn.addEventListener('click', bulkDelete);
     editForm.addEventListener('submit', updateQuestion);
     closeModalBtn.addEventListener('click', () => { editModal.style.display = 'none'; });
     window.addEventListener('click', (e) => { if (e.target === editModal) editModal.style.display = 'none'; });
 
-    // Disable pinch zoom & double-tap zoom (same as original)
+    // Disable pinch zoom & double-tap zoom
     document.addEventListener('touchstart', (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
     let lastTouchEnd = 0;
     document.addEventListener('touchend', (e) => { const now = Date.now(); if (now - lastTouchEnd <= 300) e.preventDefault(); lastTouchEnd = now; }, false);
