@@ -360,6 +360,13 @@
             appearance: none;
             padding-right: 38px;
         }
+        /* Loader for pagination */
+        .infinite-loader {
+            text-align: center;
+            padding: 20px;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
     </style>
 </head>
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
@@ -393,10 +400,6 @@
                     <option value="">Select a subject first</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label class="form-label">No. of questions</label>
-                <input type="number" id="qCount" class="form-input" value="14" min="1" max="100">
-            </div>
             <button class="start-btn" onclick="startQuiz()">Proceed</button>
         </div>
 
@@ -409,12 +412,12 @@
                     <span id="displaySubject"></span>
                 </div>
                 <div id="displayChapter" class="header-line"></div>
-                <div id="displayTotal" class="header-line"></div>
             </div>
             
             <div id="questionsContainer">
                 <!-- Questions will be dynamically inserted here -->
             </div>
+            <div id="infiniteLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
         </div>
     </div>
 
@@ -471,11 +474,19 @@
         
         // ---------- BACKEND API URL ----------
         const API_BASE = 'https://dilshadalmm.onrender.com';
+        const PAGE_LIMIT = 10;   // Fixed number of questions per request (infinite scroll)
+        
+        // Global state for infinite scroll
+        let currentCursor = null;
+        let hasMore = true;
+        let isLoading = false;
+        let currentCourse = '';
+        let currentSubject = '';
+        let currentChapter = '';
         
         // ---------- HELPER: Convert newlines to <br> tags (preserves LaTeX) ----------
         function replaceNewlinesWithBr(text) {
             if (!text) return text;
-            // Replace \r\n or \n with <br> (double newline becomes <br><br> automatically)
             return text.replace(/\r?\n/g, '<br>');
         }
         
@@ -483,7 +494,6 @@
         const courseSelect = document.getElementById('courseSelect');
         const subjectSelect = document.getElementById('subjectSelect');
         const chapterSelect = document.getElementById('chapterSelect');
-        const qCountInput = document.getElementById('qCount');
         
         // Helper to fetch data with error handling
         async function fetchData(endpoint) {
@@ -681,231 +691,235 @@
             }
         }
         
-        // Global math render helper for entire document (on load)
-        function renderMathInDocument() {
-            const container = document.getElementById('questionsContainer');
-            if (container) renderMathInElementWithDelay(container);
-        }
-        
-        // Render questions with interactive buttons and KaTeX support — with newline-to-<br> conversion
-        function renderQuestions(questions) {
-            const container = document.getElementById('questionsContainer');
-            container.innerHTML = '';
+        // Create a single question DOM element (used for appending)
+        function createQuestionElement(q, idx, globalIndex) {
+            const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
+            const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
+            const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
             
-            if (!questions || questions.length === 0) {
-                container.innerHTML = '<div class="error-message">No questions found for the selected criteria. Please try different options.</div>';
-                return;
+            const questionDiv = document.createElement('div');
+            questionDiv.className = 'question-item';
+            
+            // Question tag and text
+            const qTag = document.createElement('div');
+            qTag.className = 'q-tag';
+            qTag.textContent = `Question ${globalIndex}`;
+            
+            const qText = document.createElement('div');
+            qText.className = 'question-text';
+            qText.innerHTML = formattedQuestionText;
+            
+            // Options
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options-list';
+            if (q.questionImageUrl) {
+                const img = document.createElement('img');
+                img.src = q.questionImageUrl;
+                img.alt = 'Question illustration';
+                img.style.maxWidth = '100%';
+                img.style.marginBottom = '12px';
+                img.style.borderRadius = '4px';
+                optionsDiv.appendChild(img);
             }
             
-            questions.forEach((q, idx) => {
-                // ----- APPLY NEWLINE-TO-<br> CONVERSION TO ALL TEXT FIELDS -----
-                const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
-                const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
-                const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
-                
-                const questionDiv = document.createElement('div');
-                questionDiv.className = 'question-item';
-                
-                // Question tag and text
-                const qTag = document.createElement('div');
-                qTag.className = 'q-tag';
-                qTag.textContent = `Question ${idx + 1}`;
-                
-                const qText = document.createElement('div');
-                qText.className = 'question-text';
-                qText.innerHTML = formattedQuestionText;  // preserves LaTeX + <br> tags
-                
-                // Options
-                const optionsDiv = document.createElement('div');
-                optionsDiv.className = 'options-list';
-                if (q.questionImageUrl) {
-                    const img = document.createElement('img');
-                    img.src = q.questionImageUrl;
-                    img.alt = 'Question illustration';
-                    img.style.maxWidth = '100%';
-                    img.style.marginBottom = '12px';
-                    img.style.borderRadius = '4px';
-                    optionsDiv.appendChild(img);
-                }
-                
-                const options = formattedOptions; // already converted
-                const optionContainers = [];
-                options.forEach((opt, optIdx) => {
-                    const label = document.createElement('label');
-                    label.className = 'option-container';
-                    const radio = document.createElement('input');
-                    radio.type = 'radio';
-                    radio.name = `q_${idx}`;
-                    radio.value = optIdx;
-                    const span = document.createElement('span');
-                    span.innerHTML = opt;  // contains <br> for line breaks
-                    label.appendChild(radio);
-                    label.appendChild(span);
-                    optionsDiv.appendChild(label);
-                    optionContainers.push(label);
-                });
-                
-                // Action buttons row
-                const actionRow = document.createElement('div');
-                actionRow.className = 'action-buttons';
-                
-                const submitBtn = document.createElement('button');
-                submitBtn.textContent = 'Submit';
-                submitBtn.className = 'action-btn submit-btn';
-                
-                const textSolutionBtn = document.createElement('button');
-                textSolutionBtn.textContent = 'Text Solution';
-                textSolutionBtn.className = 'action-btn text-solution-btn';
-                textSolutionBtn.disabled = true;
-                
-                const videoSolutionBtn = document.createElement('button');
-                videoSolutionBtn.textContent = 'Video Solution';
-                videoSolutionBtn.className = 'action-btn video-solution-btn';
-                videoSolutionBtn.disabled = true;
-                
-                actionRow.appendChild(submitBtn);
-                actionRow.appendChild(textSolutionBtn);
-                actionRow.appendChild(videoSolutionBtn);
-                
-                // Correct answer box (uses formatted option text)
-                const correctAnswerBox = document.createElement('div');
-                correctAnswerBox.className = 'correct-answer-box';
-                const correctLabel = document.createElement('span');
-                correctLabel.className = 'correct-answer-label';
-                correctLabel.textContent = 'Correct Answer:';
-                const correctAnswerSpan = document.createElement('span');
-                // Use formatted option for correct answer (preserves LaTeX and <br>)
-                correctAnswerSpan.innerHTML = options[q.correctIndex] || 'N/A';
-                correctAnswerBox.appendChild(correctLabel);
-                correctAnswerBox.appendChild(correctAnswerSpan);
-                
-                // Text solution container (formatted solution)
-                const textSolutionContainer = document.createElement('div');
-                textSolutionContainer.id = `text-solution-${idx}`;
-                textSolutionContainer.className = 'solution-container';
-                if (formattedSolutionText) {
-                    const textBox = document.createElement('div');
-                    textBox.className = 'solution-box';
-                    const solutionPara = document.createElement('p');
-                    solutionPara.innerHTML = formattedSolutionText;  // <br> applied
-                    textBox.appendChild(solutionPara);
-                    if (q.solutionImageUrl) {
-                        const img = document.createElement('img');
-                        img.src = q.solutionImageUrl;
-                        img.alt = 'Solution illustration';
-                        img.style.maxWidth = '100%';
-                        img.style.marginTop = '10px';
-                        img.style.borderRadius = '4px';
-                        textBox.appendChild(img);
-                    }
-                    textSolutionContainer.appendChild(textBox);
-                }
-                
-                // Video solution container
-                const videoSolutionContainer = document.createElement('div');
-                videoSolutionContainer.id = `video-solution-${idx}`;
-                videoSolutionContainer.className = 'solution-container';
-                if (q.solutionVideoUrl) {
-                    const videoElem = createVideoElement(q.solutionVideoUrl);
-                    if (videoElem) videoSolutionContainer.appendChild(videoElem);
-                }
-                
-                // Submit logic with KaTeX rendering after showing elements
-                let submitted = false;
-                
-                submitBtn.onclick = async () => {
-                    if (submitted) return;
-                    const selectedRadio = document.querySelector(`input[name="q_${idx}"]:checked`);
-                    if (!selectedRadio) {
-                        alert('Please select an answer');
-                        return;
-                    }
-                    const selectedIndex = parseInt(selectedRadio.value);
-                    const isCorrect = (selectedIndex === q.correctIndex);
-                    
-                    // Apply background colors
-                    optionContainers.forEach((container, i) => {
-                        if (i === q.correctIndex) {
-                            container.classList.add('correct-bg');
-                        } else if (i === selectedIndex && !isCorrect) {
-                            container.classList.add('wrong-bg');
-                        }
-                    });
-                    
-                    // Show correct answer box and render KaTeX inside it (answer may have math)
-                    correctAnswerBox.classList.add('visible');
-                    renderMathInElementWithDelay(correctAnswerBox);
-                    
-                    // Enable solution buttons if content exists
-                    if (formattedSolutionText) textSolutionBtn.disabled = false;
-                    if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
-                    
-                    submitted = true;
-                    submitBtn.disabled = true;
-                };
-                
-                textSolutionBtn.onclick = () => {
-                    if (!submitted) return;
-                    const wasVisible = textSolutionContainer.classList.contains('visible');
-                    if (!wasVisible) {
-                        textSolutionContainer.classList.add('visible');
-                        if (videoSolutionContainer.classList.contains('visible')) {
-                            videoSolutionContainer.classList.remove('visible');
-                        }
-                        // render KaTeX inside text solution (may contain math)
-                        renderMathInElementWithDelay(textSolutionContainer);
-                    } else {
-                        textSolutionContainer.classList.remove('visible');
-                    }
-                };
-                
-                videoSolutionBtn.onclick = () => {
-                    if (!submitted) return;
-                    const wasVisible = videoSolutionContainer.classList.contains('visible');
-                    if (!wasVisible) {
-                        videoSolutionContainer.classList.add('visible');
-                        if (textSolutionContainer.classList.contains('visible')) {
-                            textSolutionContainer.classList.remove('visible');
-                        }
-                        // render KaTeX inside video container if any textual description exists
-                        renderMathInElementWithDelay(videoSolutionContainer);
-                    } else {
-                        videoSolutionContainer.classList.remove('visible');
-                    }
-                };
-                
-                // Assemble question
-                questionDiv.appendChild(qTag);
-                questionDiv.appendChild(qText);
-                questionDiv.appendChild(optionsDiv);
-                questionDiv.appendChild(actionRow);
-                questionDiv.appendChild(correctAnswerBox);
-                questionDiv.appendChild(textSolutionContainer);
-                questionDiv.appendChild(videoSolutionContainer);
-                
-                container.appendChild(questionDiv);
+            const optionContainers = [];
+            formattedOptions.forEach((opt, optIdx) => {
+                const label = document.createElement('label');
+                label.className = 'option-container';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = `q_${idx}`;   // using the local index (0-based within current batch) but we need unique names across all questions
+                // To avoid naming conflicts across multiple pages, we use a unique id based on a global counter.
+                // We'll set the name to a unique identifier: question_globalIndex.
+                radio.name = `q_${globalIndex}`;
+                radio.value = optIdx;
+                const span = document.createElement('span');
+                span.innerHTML = opt;
+                label.appendChild(radio);
+                label.appendChild(span);
+                optionsDiv.appendChild(label);
+                optionContainers.push(label);
             });
             
-            // After all questions are added, render KaTeX in the whole container to catch any remaining math
-            renderMathInElementWithDelay(container);
+            // Action buttons row
+            const actionRow = document.createElement('div');
+            actionRow.className = 'action-buttons';
+            
+            const submitBtn = document.createElement('button');
+            submitBtn.textContent = 'Submit';
+            submitBtn.className = 'action-btn submit-btn';
+            
+            const textSolutionBtn = document.createElement('button');
+            textSolutionBtn.textContent = 'Text Solution';
+            textSolutionBtn.className = 'action-btn text-solution-btn';
+            textSolutionBtn.disabled = true;
+            
+            const videoSolutionBtn = document.createElement('button');
+            videoSolutionBtn.textContent = 'Video Solution';
+            videoSolutionBtn.className = 'action-btn video-solution-btn';
+            videoSolutionBtn.disabled = true;
+            
+            actionRow.appendChild(submitBtn);
+            actionRow.appendChild(textSolutionBtn);
+            actionRow.appendChild(videoSolutionBtn);
+            
+            // Correct answer box
+            const correctAnswerBox = document.createElement('div');
+            correctAnswerBox.className = 'correct-answer-box';
+            const correctLabel = document.createElement('span');
+            correctLabel.className = 'correct-answer-label';
+            correctLabel.textContent = 'Correct Answer:';
+            const correctAnswerSpan = document.createElement('span');
+            correctAnswerSpan.innerHTML = formattedOptions[q.correctIndex] || 'N/A';
+            correctAnswerBox.appendChild(correctLabel);
+            correctAnswerBox.appendChild(correctAnswerSpan);
+            
+            // Text solution container
+            const textSolutionContainer = document.createElement('div');
+            textSolutionContainer.id = `text-solution-${globalIndex}`;
+            textSolutionContainer.className = 'solution-container';
+            if (formattedSolutionText) {
+                const textBox = document.createElement('div');
+                textBox.className = 'solution-box';
+                const solutionPara = document.createElement('p');
+                solutionPara.innerHTML = formattedSolutionText;
+                textBox.appendChild(solutionPara);
+                if (q.solutionImageUrl) {
+                    const img = document.createElement('img');
+                    img.src = q.solutionImageUrl;
+                    img.alt = 'Solution illustration';
+                    img.style.maxWidth = '100%';
+                    img.style.marginTop = '10px';
+                    img.style.borderRadius = '4px';
+                    textBox.appendChild(img);
+                }
+                textSolutionContainer.appendChild(textBox);
+            }
+            
+            // Video solution container
+            const videoSolutionContainer = document.createElement('div');
+            videoSolutionContainer.id = `video-solution-${globalIndex}`;
+            videoSolutionContainer.className = 'solution-container';
+            if (q.solutionVideoUrl) {
+                const videoElem = createVideoElement(q.solutionVideoUrl);
+                if (videoElem) videoSolutionContainer.appendChild(videoElem);
+            }
+            
+            // Submit logic with KaTeX rendering after showing elements
+            let submitted = false;
+            
+            submitBtn.onclick = async () => {
+                if (submitted) return;
+                const selectedRadio = document.querySelector(`input[name="q_${globalIndex}"]:checked`);
+                if (!selectedRadio) {
+                    alert('Please select an answer');
+                    return;
+                }
+                const selectedIndex = parseInt(selectedRadio.value);
+                const isCorrect = (selectedIndex === q.correctIndex);
+                
+                // Apply background colors
+                optionContainers.forEach((container, i) => {
+                    if (i === q.correctIndex) {
+                        container.classList.add('correct-bg');
+                    } else if (i === selectedIndex && !isCorrect) {
+                        container.classList.add('wrong-bg');
+                    }
+                });
+                
+                // Show correct answer box and render KaTeX inside it
+                correctAnswerBox.classList.add('visible');
+                renderMathInElementWithDelay(correctAnswerBox);
+                
+                // Enable solution buttons if content exists
+                if (formattedSolutionText) textSolutionBtn.disabled = false;
+                if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
+                
+                submitted = true;
+                submitBtn.disabled = true;
+            };
+            
+            textSolutionBtn.onclick = () => {
+                if (!submitted) return;
+                const wasVisible = textSolutionContainer.classList.contains('visible');
+                if (!wasVisible) {
+                    textSolutionContainer.classList.add('visible');
+                    if (videoSolutionContainer.classList.contains('visible')) {
+                        videoSolutionContainer.classList.remove('visible');
+                    }
+                    renderMathInElementWithDelay(textSolutionContainer);
+                } else {
+                    textSolutionContainer.classList.remove('visible');
+                }
+            };
+            
+            videoSolutionBtn.onclick = () => {
+                if (!submitted) return;
+                const wasVisible = videoSolutionContainer.classList.contains('visible');
+                if (!wasVisible) {
+                    videoSolutionContainer.classList.add('visible');
+                    if (textSolutionContainer.classList.contains('visible')) {
+                        textSolutionContainer.classList.remove('visible');
+                    }
+                    renderMathInElementWithDelay(videoSolutionContainer);
+                } else {
+                    videoSolutionContainer.classList.remove('visible');
+                }
+            };
+            
+            // Assemble question
+            questionDiv.appendChild(qTag);
+            questionDiv.appendChild(qText);
+            questionDiv.appendChild(optionsDiv);
+            questionDiv.appendChild(actionRow);
+            questionDiv.appendChild(correctAnswerBox);
+            questionDiv.appendChild(textSolutionContainer);
+            questionDiv.appendChild(videoSolutionContainer);
+            
+            return questionDiv;
         }
         
-        // Main quiz start function
+        // Append new questions to the container (preserving existing ones)
+        function appendQuestions(questions, startIndex) {
+            const container = document.getElementById('questionsContainer');
+            if (!questions || questions.length === 0) return;
+            
+            const fragment = document.createDocumentFragment();
+            questions.forEach((q, idx) => {
+                const globalIdx = startIndex + idx + 1;   // 1-based global question number
+                const questionDiv = createQuestionElement(q, idx, globalIdx);
+                fragment.appendChild(questionDiv);
+            });
+            container.appendChild(fragment);
+            
+            // Render math in newly added elements
+            renderMathInElementWithDelay(fragment);
+        }
+        
+        // Reset quiz state and fetch first page
         async function startQuiz() {
             const course = courseSelect.value;
             const subject = subjectSelect.value;
             const chapter = chapterSelect.value;
-            const limit = qCountInput.value;
             
             if (!course || !subject || !chapter) {
                 alert('Please select a course, subject, and chapter.');
                 return;
             }
-            const limitNum = parseInt(limit, 10);
-            if (isNaN(limitNum) || limitNum < 1) {
-                alert('Please enter a valid number of questions (minimum 1)');
-                return;
-            }
+            
+            // Reset state
+            currentCursor = null;
+            hasMore = true;
+            isLoading = false;
+            currentCourse = course;
+            currentSubject = subject;
+            currentChapter = chapter;
+            
+            // Clear existing questions
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '';
+            const loaderDiv = document.getElementById('infiniteLoader');
+            loaderDiv.style.display = 'none';
             
             // Show quiz section and header
             const quizSection = document.getElementById('quizSection');
@@ -913,38 +927,128 @@
             document.getElementById('displayCourse').textContent = course;
             document.getElementById('displaySubject').textContent = subject;
             document.getElementById('displayChapter').textContent = chapter;
-            document.getElementById('displayTotal').textContent = `Total ${limitNum} questions`;
             
-            const container = document.getElementById('questionsContainer');
+            // Show loading indicator in container
             container.innerHTML = '<div class="loader">Loading questions...</div>';
             setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
             
             try {
-                const params = new URLSearchParams({
-                    className: course,
-                    subject: subject,
-                    chapter: chapter,
-                    limit: limitNum
-                });
-                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
-                if (!response.ok) {
-                    if (response.status === 404) throw new Error('No questions found for the selected criteria.');
-                    throw new Error(`Server error: ${response.status}`);
-                }
-                const data = await response.json();
-                if (!data.success) throw new Error(data.error || 'Failed to load questions');
-                const questions = data.questions || [];
-                renderQuestions(questions);
+                await fetchNextPage(true);
             } catch (error) {
                 container.innerHTML = `<div class="error-message">${error.message}</div>`;
             }
         }
         
-        // Initialize and render any math on page load (for any static content)
+        // Fetch next page of questions (if hasMore)
+        async function fetchNextPage(reset = false) {
+            if (!hasMore || isLoading) return;
+            if (!currentCourse || !currentSubject || !currentChapter) return;
+            
+            isLoading = true;
+            const loaderDiv = document.getElementById('infiniteLoader');
+            loaderDiv.style.display = 'block';
+            
+            try {
+                const params = new URLSearchParams({
+                    className: currentCourse,
+                    subject: currentSubject,
+                    chapter: currentChapter,
+                    limit: PAGE_LIMIT
+                });
+                if (currentCursor) {
+                    params.append('cursor', currentCursor);
+                }
+                
+                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
+                if (!response.ok) {
+                    if (response.status === 404) throw new Error('No more questions found.');
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load questions');
+                
+                const questions = data.questions || [];
+                if (reset) {
+                    // Replace container content
+                    const container = document.getElementById('questionsContainer');
+                    container.innerHTML = '';
+                    if (questions.length === 0) {
+                        container.innerHTML = '<div class="error-message">No questions found for the selected criteria.</div>';
+                    } else {
+                        appendQuestions(questions, 0);
+                    }
+                } else {
+                    if (questions.length > 0) {
+                        const currentCount = document.querySelectorAll('.question-item').length;
+                        appendQuestions(questions, currentCount);
+                    }
+                }
+                
+                // Update cursor and hasMore
+                if (data.nextCursor !== undefined && data.nextCursor !== null) {
+                    currentCursor = data.nextCursor;
+                } else {
+                    currentCursor = null;
+                }
+                hasMore = data.hasMore === true;
+                
+                if (!hasMore) {
+                    loaderDiv.style.display = 'none';
+                    // Optionally show a "no more questions" message at the bottom
+                    const endMessage = document.createElement('div');
+                    endMessage.className = 'infinite-loader';
+                    endMessage.textContent = 'No more questions.';
+                    endMessage.style.padding = '20px';
+                    endMessage.style.color = '#6b7280';
+                    const container = document.getElementById('questionsContainer');
+                    if (!container.querySelector('.no-more-questions')) {
+                        const existing = container.querySelector('.no-more-questions');
+                        if (existing) existing.remove();
+                        endMessage.classList.add('no-more-questions');
+                        container.appendChild(endMessage);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching questions:', error);
+                if (reset) {
+                    const container = document.getElementById('questionsContainer');
+                    container.innerHTML = `<div class="error-message">${error.message}</div>`;
+                } else {
+                    // Show error inline
+                    const container = document.getElementById('questionsContainer');
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-message';
+                    errorDiv.textContent = error.message;
+                    container.appendChild(errorDiv);
+                }
+            } finally {
+                isLoading = false;
+                loaderDiv.style.display = hasMore ? 'none' : 'none'; // hide loader after fetch
+                // Re-enable scroll listener after loading
+            }
+        }
+        
+        // Infinite scroll: detect when user is near bottom
+        function setupScrollListener() {
+            window.addEventListener('scroll', () => {
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                const windowHeight = window.innerHeight;
+                const documentHeight = document.documentElement.scrollHeight;
+                const threshold = 200; // pixels from bottom
+                if (scrollTop + windowHeight >= documentHeight - threshold) {
+                    if (hasMore && !isLoading) {
+                        fetchNextPage();
+                    }
+                }
+            });
+        }
+        
+        // Initialization
         window.addEventListener('load', () => {
             loadClasses();
             document.getElementById('quizSection').style.display = 'none';
             renderMathInElementWithDelay(document.body);
+            setupScrollListener();
         });
     </script>
 </body>
