@@ -340,8 +340,17 @@
         img, svg, iframe, video {
             max-width: 100%;
         }
+        /* FIX: Ensure KaTeX rendered math matches surrounding text size and style */
         .katex {
-            font-size: 1.05em;
+            font-size: 1em !important;
+            font-family: inherit;
+        }
+        .katex .katex-html {
+            font-size: 1em;
+        }
+        /* Ensure inline math doesn't disrupt line height */
+        .katex-display {
+            margin: 0.5em 0;
         }
         select.form-input {
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
@@ -819,9 +828,7 @@
             questionDiv.appendChild(textSolutionContainer);
             questionDiv.appendChild(videoSolutionContainer);
             
-            // CRITICAL FIX: Render LaTeX on the entire question element (including all text, options, solution, correct answer)
-            // This ensures that any LaTeX inside question text, options, solution, or correct answer is properly rendered.
-            // The element may be detached, but KaTeX works on detached nodes as well.
+            // Render LaTeX on the entire question element (including all text, options, solution, correct answer)
             renderMathInElementWithDelay(questionDiv);
             
             return questionDiv;
