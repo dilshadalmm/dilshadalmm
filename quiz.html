@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>StudentPlus - MCQ Quiz | KaTeX Support</title>
+    <title>StudentPlus - MCQ & Lectures | KaTeX Support</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     
@@ -21,7 +21,7 @@
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
         }
-        html, body, div, span, p, h1, h2, h3, h4, h5, h6, label, button, select, input, .option-container, .question-text, .q-tag, .solution-box, .correct-answer-box {
+        html, body, div, span, p, h1, h2, h3, h4, h5, h6, label, button, select, input, .option-container, .question-text, .q-tag, .solution-box, .correct-answer-box, .lecture-card {
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
@@ -91,7 +91,7 @@
             font-size: 2rem;
             text-decoration: underline;
             text-align: center;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             margin-top: 0;
             color: #000000;
         }
@@ -164,7 +164,7 @@
         .start-btn:hover {
             background-color: #262626;
         }
-        .quiz-header {
+        .quiz-header, .lecture-header {
             background-color: #000000;
             border-radius: 4px;
             padding: 12px 16px;
@@ -319,7 +319,7 @@
         .correct-answer-label {
             font-weight: 700;
         }
-        #quizSection {
+        #quizSection, #lecturesSection {
             display: none;
             padding-top: 20px;
         }
@@ -340,7 +340,6 @@
         img, svg, iframe, video {
             max-width: 100%;
         }
-        /* FIX: Ensure KaTeX rendered math matches surrounding text size and style */
         .katex {
             font-size: 1em !important;
             font-family: inherit;
@@ -348,7 +347,6 @@
         .katex .katex-html {
             font-size: 1em;
         }
-        /* Ensure inline math doesn't disrupt line height */
         .katex-display {
             margin: 0.5em 0;
         }
@@ -366,6 +364,38 @@
             font-size: 0.85rem;
             color: #6b7280;
         }
+        /* Lecture Card Styles */
+        .lecture-card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        .lecture-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
+        }
+        .lecture-description {
+            font-size: 0.85rem;
+            color: #334155;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+        .lecture-video {
+            margin-top: 12px;
+        }
+        .lecture-meta {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 12px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
     </style>
 </head>
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
@@ -378,6 +408,15 @@
                 </div>
             </div>
             <h1 class="logo-text">StudentPlus</h1>
+            
+            <!-- Mode Selection -->
+            <div class="form-group">
+                <label class="form-label">Select Mode</label>
+                <select id="modeSelect" class="form-input">
+                    <option value="quiz">Practice Questions</option>
+                    <option value="lecture">Watch Lectures</option>
+                </select>
+            </div>
             
             <div class="form-group">
                 <label class="form-label">Select Course</label>
@@ -397,7 +436,7 @@
                     <option value="">Select a subject first</option>
                 </select>
             </div>
-            <button class="start-btn" onclick="startQuiz()">Proceed</button>
+            <button class="start-btn" onclick="startContent()">Proceed</button>
         </div>
 
         <div id="quizSection">
@@ -409,11 +448,21 @@
                 </div>
                 <div id="displayChapter" class="header-line"></div>
             </div>
-            
-            <div id="questionsContainer">
-                <!-- Questions will be dynamically inserted here -->
+            <div id="questionsContainer"></div>
+            <div id="quizLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
+        </div>
+
+        <div id="lecturesSection">
+            <div class="lecture-header" id="lectureHeader">
+                <div class="header-line">
+                    <span id="lectureDisplayCourse"></span>
+                    <div class="inline-divider"></div>
+                    <span id="lectureDisplaySubject"></span>
+                </div>
+                <div id="lectureDisplayChapter" class="header-line"></div>
             </div>
-            <div id="infiniteLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
+            <div id="lecturesContainer"></div>
+            <div id="lectureLoader" class="infinite-loader" style="display: none;">Loading more lectures...</div>
         </div>
     </div>
 
@@ -468,31 +517,35 @@
             }
         });
         
-        // ---------- BACKEND API URL ----------
-        const API_BASE = 'https://dilshadalmm.onrender.com';
-        const PAGE_LIMIT = 10;
+        // ---------- API ENDPOINTS ----------
+        const QUIZ_API_BASE = 'https://dilshadalmm.onrender.com';
+        const LECTURE_API_BASE = 'https://dilshadalmm-1.onrender.com';
         
-        // Global state for infinite scroll
-        let currentCursor = null;      // Always stored as number (or null)
-        let hasMore = true;
-        let isLoading = false;
-        let currentCourse = '';
-        let currentSubject = '';
-        let currentChapter = '';
+        let currentMode = 'quiz'; // 'quiz' or 'lecture'
         
-        // Helper: Convert newlines to <br> tags
-        function replaceNewlinesWithBr(text) {
-            if (!text) return text;
-            return text.replace(/\r?\n/g, '<br>');
-        }
+        // Quiz state
+        let quizCursor = null;
+        let quizHasMore = true;
+        let quizLoading = false;
+        let currentQuizCourse = '', currentQuizSubject = '', currentQuizChapter = '';
         
+        // Lecture state
+        let lectureCursor = null;
+        let lectureHasMore = true;
+        let lectureLoading = false;
+        let currentLectureCourse = '', currentLectureSubject = '', currentLectureChapter = '';
+        
+        const modeSelect = document.getElementById('modeSelect');
         const courseSelect = document.getElementById('courseSelect');
         const subjectSelect = document.getElementById('subjectSelect');
         const chapterSelect = document.getElementById('chapterSelect');
+        const quizSection = document.getElementById('quizSection');
+        const lecturesSection = document.getElementById('lecturesSection');
         
-        async function fetchData(endpoint) {
+        // Helper: fetch with dynamic base
+        async function fetchData(endpoint, baseUrl = QUIZ_API_BASE) {
             try {
-                const response = await fetch(`${API_BASE}${endpoint}`);
+                const response = await fetch(`${baseUrl}${endpoint}`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Unknown error');
@@ -503,10 +556,13 @@
             }
         }
         
+        // ---- Metadata loaders (based on mode) ----
         async function loadClasses() {
+            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
+            const endpoint = currentMode === 'quiz' ? '/api/classes' : '/api/lectures/classes';
             courseSelect.innerHTML = '<option value="">Loading courses...</option>';
             try {
-                const data = await fetchData('/api/classes');
+                const data = await fetchData(endpoint, base);
                 const classes = data.classes || [];
                 courseSelect.innerHTML = '<option value="">Select a course</option>';
                 if (classes.length === 0) {
@@ -530,12 +586,14 @@
         }
         
         async function loadSubjects(className) {
+            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
+            const endpoint = currentMode === 'quiz' ? `/api/subjects?class=${encodeURIComponent(className)}` : `/api/lectures/subjects?class=${encodeURIComponent(className)}`;
             subjectSelect.disabled = true;
             subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             try {
-                const data = await fetchData(`/api/subjects?class=${encodeURIComponent(className)}`);
+                const data = await fetchData(endpoint, base);
                 const subjects = data.subjects || [];
                 subjectSelect.innerHTML = '<option value="">Select a subject</option>';
                 if (subjects.length === 0) {
@@ -556,10 +614,12 @@
         }
         
         async function loadChapters(className, subjectName) {
+            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
+            const endpoint = currentMode === 'quiz' ? `/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}` : `/api/lectures/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`;
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
             try {
-                const data = await fetchData(`/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
+                const data = await fetchData(endpoint, base);
                 const chapters = data.chapters || [];
                 chapterSelect.innerHTML = '<option value="">Select a chapter</option>';
                 if (chapters.length === 0) {
@@ -578,6 +638,23 @@
                 console.error(error);
             }
         }
+        
+        // ---- Mode switch ----
+        function onModeChange() {
+            currentMode = modeSelect.value;
+            // Reset selections
+            courseSelect.value = '';
+            subjectSelect.innerHTML = '<option value="">Select a course first</option>';
+            subjectSelect.disabled = true;
+            chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            chapterSelect.disabled = true;
+            // Hide both sections
+            quizSection.style.display = 'none';
+            lecturesSection.style.display = 'none';
+            // Reload classes for new mode
+            loadClasses();
+        }
+        modeSelect.addEventListener('change', onModeChange);
         
         courseSelect.addEventListener('change', (e) => {
             const selectedClass = e.target.value;
@@ -602,6 +679,7 @@
             }
         });
         
+        // ---- Helper: YouTube embed ----
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
             const patterns = [
@@ -644,7 +722,7 @@
             } else {
                 const link = document.createElement('a');
                 link.href = url;
-                link.textContent = 'Watch video solution';
+                link.textContent = 'Watch video';
                 link.target = '_blank';
                 link.style.color = '#065f46';
                 link.style.textDecoration = 'underline';
@@ -653,7 +731,55 @@
             return container;
         }
         
-        // Robust LaTeX rendering on a DOM element (supports detached elements)
+        // ---- Lecture Card Rendering ----
+        function createLectureCard(lecture) {
+            const card = document.createElement('div');
+            card.className = 'lecture-card';
+            
+            const title = document.createElement('div');
+            title.className = 'lecture-title';
+            title.textContent = lecture.lectureTitle || 'Untitled Lecture';
+            
+            const desc = document.createElement('div');
+            desc.className = 'lecture-description';
+            desc.textContent = lecture.lectureDescription || '';
+            
+            const videoDiv = document.createElement('div');
+            videoDiv.className = 'lecture-video';
+            const videoElem = createVideoElement(lecture.lectureVideoUrl);
+            if (videoElem) videoDiv.appendChild(videoElem);
+            
+            const meta = document.createElement('div');
+            meta.className = 'lecture-meta';
+            if (lecture.tutorName) {
+                const tutorSpan = document.createElement('span');
+                tutorSpan.innerHTML = `👨‍🏫 ${lecture.tutorName}`;
+                meta.appendChild(tutorSpan);
+            }
+            if (lecture.lectureNo) {
+                const noSpan = document.createElement('span');
+                noSpan.innerHTML = `📖 Lecture ${lecture.lectureNo}`;
+                meta.appendChild(noSpan);
+            }
+            
+            card.appendChild(title);
+            if (desc.textContent) card.appendChild(desc);
+            card.appendChild(videoDiv);
+            if (meta.children.length) card.appendChild(meta);
+            
+            return card;
+        }
+        
+        function appendLectures(lectures) {
+            const container = document.getElementById('lecturesContainer');
+            const fragment = document.createDocumentFragment();
+            lectures.forEach(lec => {
+                fragment.appendChild(createLectureCard(lec));
+            });
+            container.appendChild(fragment);
+        }
+        
+        // ---- Quiz Functions (existing logic adapted) ----
         function renderMathInElementWithDelay(element) {
             if (!element) return;
             const tryRender = () => {
@@ -677,6 +803,11 @@
                 }
             };
             tryRender();
+        }
+        
+        function replaceNewlinesWithBr(text) {
+            if (!text) return text;
+            return text.replace(/\r?\n/g, '<br>');
         }
         
         function createQuestionElement(q, idx, globalIndex) {
@@ -828,25 +959,22 @@
             questionDiv.appendChild(textSolutionContainer);
             questionDiv.appendChild(videoSolutionContainer);
             
-            // Render LaTeX on the entire question element (including all text, options, solution, correct answer)
             renderMathInElementWithDelay(questionDiv);
-            
             return questionDiv;
         }
         
         function appendQuestions(questions, startIndex) {
             const container = document.getElementById('questionsContainer');
-            if (!questions || questions.length === 0) return;
             const fragment = document.createDocumentFragment();
             questions.forEach((q, idx) => {
                 const globalIdx = startIndex + idx + 1;
-                const questionDiv = createQuestionElement(q, idx, globalIdx);
-                fragment.appendChild(questionDiv);
+                fragment.appendChild(createQuestionElement(q, idx, globalIdx));
             });
             container.appendChild(fragment);
         }
         
-        async function startQuiz() {
+        // ---- Start Content (mode based) ----
+        async function startContent() {
             const course = courseSelect.value;
             const subject = subjectSelect.value;
             const chapter = chapterSelect.value;
@@ -854,66 +982,68 @@
                 alert('Please select a course, subject, and chapter.');
                 return;
             }
-            currentCursor = null;
-            hasMore = true;
-            isLoading = false;
-            currentCourse = course;
-            currentSubject = subject;
-            currentChapter = chapter;
+            
+            if (currentMode === 'quiz') {
+                await startQuiz(course, subject, chapter);
+            } else {
+                await startLectures(course, subject, chapter);
+            }
+        }
+        
+        async function startQuiz(course, subject, chapter) {
+            quizCursor = null;
+            quizHasMore = true;
+            quizLoading = false;
+            currentQuizCourse = course;
+            currentQuizSubject = subject;
+            currentQuizChapter = chapter;
             
             const container = document.getElementById('questionsContainer');
             container.innerHTML = '<div class="loader">Loading questions...</div>';
-            const loaderDiv = document.getElementById('infiniteLoader');
+            const loaderDiv = document.getElementById('quizLoader');
             loaderDiv.style.display = 'none';
             
-            const quizSection = document.getElementById('quizSection');
             quizSection.style.display = 'block';
+            lecturesSection.style.display = 'none';
             document.getElementById('displayCourse').textContent = course;
             document.getElementById('displaySubject').textContent = subject;
             document.getElementById('displayChapter').textContent = chapter;
             setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
             
             try {
-                await fetchNextPage(true);
+                await fetchNextQuizPage(true);
             } catch (error) {
                 container.innerHTML = `<div class="error-message">${error.message}</div>`;
             }
         }
         
-        async function fetchNextPage(reset = false) {
-            if (!hasMore || isLoading) return;
-            if (!currentCourse || !currentSubject || !currentChapter) return;
-            
-            isLoading = true;
-            const loaderDiv = document.getElementById('infiniteLoader');
+        async function fetchNextQuizPage(reset = false) {
+            if (!quizHasMore || quizLoading) return;
+            quizLoading = true;
+            const loaderDiv = document.getElementById('quizLoader');
             if (!reset) loaderDiv.style.display = 'block';
             
             try {
                 const params = new URLSearchParams({
-                    className: currentCourse,
-                    subject: currentSubject,
-                    chapter: currentChapter,
-                    limit: PAGE_LIMIT
+                    className: currentQuizCourse,
+                    subject: currentQuizSubject,
+                    chapter: currentQuizChapter,
+                    limit: 10
                 });
-                if (currentCursor !== null && currentCursor !== undefined) {
-                    params.append('cursor', currentCursor.toString());
+                if (quizCursor !== null && quizCursor !== undefined) {
+                    params.append('cursor', quizCursor.toString());
                 }
-                
-                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
-                if (!response.ok) {
-                    if (response.status === 404) throw new Error('–––');
-                    throw new Error(`Server error: ${response.status}`);
-                }
+                const response = await fetch(`${QUIZ_API_BASE}/api/quiz?${params.toString()}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Failed to load questions');
-                
                 const questions = data.questions || [];
                 if (reset) {
                     const container = document.getElementById('questionsContainer');
                     container.innerHTML = '';
                     if (questions.length === 0) {
                         container.innerHTML = '<div class="error-message">No questions found for the selected criteria.</div>';
-                        hasMore = false;
+                        quizHasMore = false;
                     } else {
                         appendQuestions(questions, 0);
                     }
@@ -922,45 +1052,102 @@
                         const currentCount = document.querySelectorAll('.question-item').length;
                         appendQuestions(questions, currentCount);
                     } else {
-                        hasMore = false;
+                        quizHasMore = false;
                     }
                 }
-                
-                if (data.nextCursor !== undefined && data.nextCursor !== null) {
-                    currentCursor = typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10);
-                } else {
-                    currentCursor = null;
-                }
-                hasMore = data.hasMore === true;
-                
-                if (!hasMore) {
-                    loaderDiv.style.display = 'none';
-                    const container = document.getElementById('questionsContainer');
-                    if (!reset && questions.length > 0 && !container.querySelector('.no-more-questions')) {
-                        const endMsg = document.createElement('div');
-                        endMsg.className = 'infinite-loader no-more-questions';
-                        endMsg.textContent = 'No more questions.';
-                        container.appendChild(endMsg);
-                    }
-                }
+                quizCursor = (data.nextCursor !== undefined && data.nextCursor !== null) ? (typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10)) : null;
+                quizHasMore = data.hasMore === true;
+                if (!quizHasMore) loaderDiv.style.display = 'none';
             } catch (error) {
-                console.error('Error fetching questions:', error);
+                console.error(error);
                 if (reset) {
-                    const container = document.getElementById('questionsContainer');
-                    container.innerHTML = `<div class="error-message">${error.message}</div>`;
-                } else {
-                    const container = document.getElementById('questionsContainer');
-                    const errorDiv = document.createElement('div');
-                    errorDiv.className = 'error-message';
-                    errorDiv.textContent = error.message;
-                    container.appendChild(errorDiv);
+                    document.getElementById('questionsContainer').innerHTML = `<div class="error-message">${error.message}</div>`;
                 }
             } finally {
-                isLoading = false;
+                quizLoading = false;
                 loaderDiv.style.display = 'none';
             }
         }
         
+        async function startLectures(course, subject, chapter) {
+            lectureCursor = null;
+            lectureHasMore = true;
+            lectureLoading = false;
+            currentLectureCourse = course;
+            currentLectureSubject = subject;
+            currentLectureChapter = chapter;
+            
+            const container = document.getElementById('lecturesContainer');
+            container.innerHTML = '<div class="loader">Loading lectures...</div>';
+            const loaderDiv = document.getElementById('lectureLoader');
+            loaderDiv.style.display = 'none';
+            
+            lecturesSection.style.display = 'block';
+            quizSection.style.display = 'none';
+            document.getElementById('lectureDisplayCourse').textContent = course;
+            document.getElementById('lectureDisplaySubject').textContent = subject;
+            document.getElementById('lectureDisplayChapter').textContent = chapter;
+            setTimeout(() => lecturesSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
+            
+            try {
+                await fetchNextLecturesPage(true);
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">${error.message}</div>`;
+            }
+        }
+        
+        async function fetchNextLecturesPage(reset = false) {
+            if (!lectureHasMore || lectureLoading) return;
+            lectureLoading = true;
+            const loaderDiv = document.getElementById('lectureLoader');
+            if (!reset) loaderDiv.style.display = 'block';
+            
+            try {
+                const params = new URLSearchParams({
+                    class: currentLectureCourse,
+                    subject: currentLectureSubject,
+                    chapter: currentLectureChapter,
+                    limit: 10
+                });
+                if (lectureCursor !== null && lectureCursor !== undefined) {
+                    params.append('cursor', lectureCursor.toString());
+                }
+                const response = await fetch(`${LECTURE_API_BASE}/api/lectures/playlist?${params.toString()}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load lectures');
+                const lectures = data.lectures || [];
+                if (reset) {
+                    const container = document.getElementById('lecturesContainer');
+                    container.innerHTML = '';
+                    if (lectures.length === 0) {
+                        container.innerHTML = '<div class="error-message">No lectures found for the selected criteria.</div>';
+                        lectureHasMore = false;
+                    } else {
+                        appendLectures(lectures);
+                    }
+                } else {
+                    if (lectures.length > 0) {
+                        appendLectures(lectures);
+                    } else {
+                        lectureHasMore = false;
+                    }
+                }
+                lectureCursor = (data.nextCursor !== undefined && data.nextCursor !== null) ? (typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10)) : null;
+                lectureHasMore = data.hasMore === true;
+                if (!lectureHasMore) loaderDiv.style.display = 'none';
+            } catch (error) {
+                console.error(error);
+                if (reset) {
+                    document.getElementById('lecturesContainer').innerHTML = `<div class="error-message">${error.message}</div>`;
+                }
+            } finally {
+                lectureLoading = false;
+                loaderDiv.style.display = 'none';
+            }
+        }
+        
+        // ---- Infinite Scroll Listener ----
         function setupScrollListener() {
             window.addEventListener('scroll', () => {
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
@@ -968,16 +1155,20 @@
                 const documentHeight = document.documentElement.scrollHeight;
                 const threshold = 200;
                 if (scrollTop + windowHeight >= documentHeight - threshold) {
-                    if (hasMore && !isLoading) {
-                        fetchNextPage(false);
+                    if (currentMode === 'quiz' && quizHasMore && !quizLoading && quizSection.style.display === 'block') {
+                        fetchNextQuizPage(false);
+                    } else if (currentMode === 'lecture' && lectureHasMore && !lectureLoading && lecturesSection.style.display === 'block') {
+                        fetchNextLecturesPage(false);
                     }
                 }
             });
         }
         
+        // ---- Initial Load ----
         window.addEventListener('load', () => {
             loadClasses();
-            document.getElementById('quizSection').style.display = 'none';
+            quizSection.style.display = 'none';
+            lecturesSection.style.display = 'none';
             setupScrollListener();
         });
     </script>
