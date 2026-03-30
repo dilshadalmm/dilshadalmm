@@ -494,8 +494,6 @@
             }
         }
         
-        // FIX #1: Reset subject & chapter dropdowns to default disabled states after courses load.
-        // No automatic loadSubjects based on courseSelect.value.
         async function loadClasses() {
             courseSelect.innerHTML = '<option value="">Loading courses...</option>';
             try {
@@ -512,12 +510,10 @@
                         courseSelect.appendChild(option);
                     });
                 }
-                // Explicitly reset subject and chapter dropdowns to pristine disabled state
                 subjectSelect.disabled = true;
                 subjectSelect.innerHTML = '<option value="">Select a course first</option>';
                 chapterSelect.disabled = true;
                 chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
-                // Ensure no automatic loading of subjects — only user selection triggers it
             } catch (error) {
                 courseSelect.innerHTML = '<option value="">Error loading courses</option>';
                 console.error(error);
@@ -648,26 +644,30 @@
             return container;
         }
         
-        // FIX #4: Render math only on the passed DOM element (no global re-render)
+        // Robust LaTeX rendering on a DOM element (supports detached elements)
         function renderMathInElementWithDelay(element) {
-            if (typeof renderMathInElement === 'function') {
-                try {
-                    renderMathInElement(element, {
-                        delimiters: [
-                            {left: '$$', right: '$$', display: true},
-                            {left: '$', right: '$', display: false},
-                            {left: '\\(', right: '\\)', display: false},
-                            {left: '\\[', right: '\\]', display: true}
-                        ],
-                        throwOnError: false,
-                        errorColor: '#cc0000'
-                    });
-                } catch (e) {
-                    console.warn('KaTeX rendering error:', e);
+            if (!element) return;
+            const tryRender = () => {
+                if (typeof renderMathInElement === 'function') {
+                    try {
+                        renderMathInElement(element, {
+                            delimiters: [
+                                {left: '$$', right: '$$', display: true},
+                                {left: '$', right: '$', display: false},
+                                {left: '\\(', right: '\\)', display: false},
+                                {left: '\\[', right: '\\]', display: true}
+                            ],
+                            throwOnError: false,
+                            errorColor: '#cc0000'
+                        });
+                    } catch (e) {
+                        console.warn('KaTeX rendering error:', e);
+                    }
+                } else {
+                    setTimeout(tryRender, 150);
                 }
-            } else {
-                setTimeout(() => renderMathInElementWithDelay(element), 200);
-            }
+            };
+            tryRender();
         }
         
         function createQuestionElement(q, idx, globalIndex) {
@@ -785,7 +785,6 @@
                     else if (i === selectedIndex && !isCorrect) container.classList.add('wrong-bg');
                 });
                 correctAnswerBox.classList.add('visible');
-                renderMathInElementWithDelay(correctAnswerBox);
                 if (formattedSolutionText) textSolutionBtn.disabled = false;
                 if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
                 submitted = true;
@@ -797,7 +796,6 @@
                 if (!wasVisible) {
                     textSolutionContainer.classList.add('visible');
                     if (videoSolutionContainer.classList.contains('visible')) videoSolutionContainer.classList.remove('visible');
-                    renderMathInElementWithDelay(textSolutionContainer);
                 } else {
                     textSolutionContainer.classList.remove('visible');
                 }
@@ -808,7 +806,6 @@
                 if (!wasVisible) {
                     videoSolutionContainer.classList.add('visible');
                     if (textSolutionContainer.classList.contains('visible')) textSolutionContainer.classList.remove('visible');
-                    renderMathInElementWithDelay(videoSolutionContainer);
                 } else {
                     videoSolutionContainer.classList.remove('visible');
                 }
@@ -821,6 +818,12 @@
             questionDiv.appendChild(correctAnswerBox);
             questionDiv.appendChild(textSolutionContainer);
             questionDiv.appendChild(videoSolutionContainer);
+            
+            // CRITICAL FIX: Render LaTeX on the entire question element (including all text, options, solution, correct answer)
+            // This ensures that any LaTeX inside question text, options, solution, or correct answer is properly rendered.
+            // The element may be detached, but KaTeX works on detached nodes as well.
+            renderMathInElementWithDelay(questionDiv);
+            
             return questionDiv;
         }
         
@@ -834,11 +837,8 @@
                 fragment.appendChild(questionDiv);
             });
             container.appendChild(fragment);
-            // Render math only on the newly added fragment
-            renderMathInElementWithDelay(fragment);
         }
         
-        // FIX #2 & #5: clear loading placeholder explicitly; handle empty questions gracefully
         async function startQuiz() {
             const course = courseSelect.value;
             const subject = subjectSelect.value;
@@ -888,7 +888,6 @@
                     chapter: currentChapter,
                     limit: PAGE_LIMIT
                 });
-                // FIX #3: ensure cursor is sent as number (or omitted if null)
                 if (currentCursor !== null && currentCursor !== undefined) {
                     params.append('cursor', currentCursor.toString());
                 }
@@ -902,10 +901,9 @@
                 if (!data.success) throw new Error(data.error || 'Failed to load questions');
                 
                 const questions = data.questions || [];
-                // FIX #5: handle empty array with proper message
                 if (reset) {
                     const container = document.getElementById('questionsContainer');
-                    container.innerHTML = '';   // clear loading placeholder explicitly
+                    container.innerHTML = '';
                     if (questions.length === 0) {
                         container.innerHTML = '<div class="error-message">No questions found for the selected criteria.</div>';
                         hasMore = false;
@@ -917,12 +915,10 @@
                         const currentCount = document.querySelectorAll('.question-item').length;
                         appendQuestions(questions, currentCount);
                     } else {
-                        // If no questions returned but hasMore might be true (edge case), stop further loads
                         hasMore = false;
                     }
                 }
                 
-                // Update cursor: backend returns nextCursor as number (questionNo) or null/undefined
                 if (data.nextCursor !== undefined && data.nextCursor !== null) {
                     currentCursor = typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10);
                 } else {
@@ -975,7 +971,6 @@
         window.addEventListener('load', () => {
             loadClasses();
             document.getElementById('quizSection').style.display = 'none';
-            renderMathInElementWithDelay(document.body);
             setupScrollListener();
         });
     </script>
