@@ -2,14 +2,12 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, shrink-to-fit=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>StudentPlus - MCQ Quiz | KaTeX Support</title>
+    <title>StudentPlus - MCQ & Lectures | KaTeX Support</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Lucide Icons (for optional style) -->
-    <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- KaTeX CSS and JS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
@@ -17,38 +15,178 @@
     <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"></script>
     
     <style>
-        /* Global reset and scrollbar removal (CRITICAL) */
-        * {
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
-            user-select: none;
+        }
+        html, body, div, span, p, h1, h2, h3, h4, h5, h6, label, button, select, input, .option-container, .question-text, .q-tag, .solution-box, .correct-answer-box, .lecture-card {
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
-        input, textarea, select {
-            user-select: text !important;
-            -webkit-user-select: text !important;
+        input, select, textarea, button {
+            -webkit-user-select: none;
+            user-select: none;
         }
-        html, body {
-            scrollbar-width: none; /* Firefox */
-            -ms-overflow-style: none; /* IE/Edge */
+        html {
             overflow-x: hidden;
-        }
-        body::-webkit-scrollbar, .custom-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .custom-scrollbar {
-            scrollbar-width: none;
+            scroll-behavior: smooth;
         }
         body {
-            background-color: #020617;
-            font-family: 'Inter', system-ui, sans-serif;
+            background-color: #f8fafc;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
             margin: 0;
-            padding: 0;
+            padding: 10px 0 60px 0;
             overflow-x: hidden;
+            overflow-y: auto;
             touch-action: pan-y;
+            position: relative;
         }
-        /* Existing quiz question styles (preserved) */
+        body::-webkit-scrollbar {
+            display: none;
+            width: 0;
+            background: transparent;
+        }
+        body {
+            scrollbar-width: none;
+        }
+        .main-container {
+            width: 97%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 4px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            padding: 20px 8px;
+            max-width: 100%;
+            overflow-x: visible;
+        }
+        .logo-img-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 8px;
+        }
+        .logo-img-wrapper {
+            width: 64px;
+            height: 64px;
+            border-radius: 4px;
+            overflow: hidden;
+            background-color: #f1f5f9;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .logo-img-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .logo-text {
+            font-family: 'Creepster', system-ui;
+            font-size: 2rem;
+            text-decoration: underline;
+            text-align: center;
+            margin-bottom: 16px;
+            margin-top: 0;
+            color: #000000;
+        }
+        .setup-form {
+            max-width: 500px;
+            margin: 20px auto 40px auto;
+            padding: 24px;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            background: #ffffff;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 12px;
+            white-space: nowrap;
+            width: 100%;
+        }
+        .form-label::before,
+        .form-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background-color: #cbd5e1;
+        }
+        .form-label::before {
+            margin-right: 8px;
+        }
+        .form-label::after {
+            margin-left: 8px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 10px 18px;
+            border: 1px solid #e2e8f0;
+            border-radius: 9999px;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-color: #fff;
+        }
+        .form-input:focus {
+            border-color: #000000;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+        }
+        .start-btn {
+            width: 100%;
+            background-color: #000000;
+            color: white;
+            padding: 12px;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 1rem;
+            margin-top: 10px;
+            cursor: pointer;
+            transition: background 0.2s;
+            letter-spacing: 0.025em;
+            border: none;
+        }
+        .start-btn:hover {
+            background-color: #262626;
+        }
+        .quiz-header, .lecture-header {
+            background-color: #000000;
+            border-radius: 4px;
+            padding: 12px 16px;
+            margin: 0 4px 24px 4px;
+            color: white;
+        }
+        .header-line {
+            padding: 8px 0;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+        .header-line:not(:last-child) {
+            border-bottom: 1px solid #334155;
+        }
+        .inline-divider {
+            width: 1px;
+            height: 14px;
+            background-color: #475569;
+            margin: 0 12px;
+        }
         .question-item {
             background-color: #f1f5f9; 
             padding: 16px 12px;
@@ -80,7 +218,7 @@
             padding: 10px 14px;
             margin: 6px 0;
             border: 1px solid #cbd5e1;
-            border-radius: 4px;
+            border-radius: 9999px;
             font-size: 0.85rem;
             color: #334155;
             cursor: pointer;
@@ -114,24 +252,49 @@
             background-color: #334155;
             color: white;
             padding: 6px 14px;
-            border-radius: 4px;
+            border-radius: 9999px;
             font-size: 0.75rem;
             font-weight: 500;
             cursor: pointer;
             border: none;
+            transition: opacity 0.2s;
         }
-        .submit-btn { background-color: #059669; }
-        .text-solution-btn, .video-solution-btn { background-color: #4b5563; }
-        .solution-container { display: none; margin-top: 12px; }
-        .solution-container.visible { display: block; }
+        .action-btn:hover {
+            opacity: 0.9;
+        }
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .submit-btn {
+            background-color: #059669;
+        }
+        .text-solution-btn, .video-solution-btn {
+            background-color: #4b5563;
+        }
+        .solution-container {
+            margin-top: 12px;
+            display: none;
+        }
+        .solution-container.visible {
+            display: block;
+        }
         .solution-box {
             padding: 12px;
             background-color: #ecfdf5;
             border-left: 4px solid #10b981;
             font-size: 0.85rem;
+            color: #065f46;
             border-radius: 4px;
         }
-        .video-container iframe, .video-container video {
+        .video-container {
+            margin-top: 12px;
+            width: 100%;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .video-container iframe,
+        .video-container video {
             width: 100%;
             max-width: 100%;
             border-radius: 4px;
@@ -143,390 +306,301 @@
             background-color: #fef9c3;
             border-left: 4px solid #eab308;
             font-size: 0.85rem;
+            color: #854d0e;
             border-radius: 4px;
             display: none;
         }
-        .correct-answer-box.visible { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
-        .loader { text-align: center; padding: 40px; color: #4b5563; }
+        .correct-answer-box.visible {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .correct-answer-label {
+            font-weight: 700;
+        }
+        #quizSection, #lecturesSection {
+            display: none;
+            padding-top: 20px;
+        }
+        .loader {
+            text-align: center;
+            padding: 40px;
+            font-size: 1rem;
+            color: #4b5563;
+        }
         .error-message {
             background-color: #fee2e2;
             border-left: 4px solid #ef4444;
             padding: 12px;
             margin: 20px 4px;
             border-radius: 4px;
+            color: #991b1b;
         }
-        /* Terminal UI specific styles */
-        .bg-top-section { background-color: #0f172a; } 
-        .bg-form-section { background-color: #020617; } 
-        .bg-bottom-section { background-color: #1e1b4b; }
-        .mode-btn-active {
-            background-color: black !important;
-            color: white !important;
-            border-color: black !important;
+        img, svg, iframe, video {
+            max-width: 100%;
         }
-        .preview-box {
-            width: 100%;
-            max-height: 100px;
-            object-fit: contain;
-            border-radius: 12px;
-            margin-top: 4px;
-            border: 1.5px solid #000;
+        .katex {
+            font-size: 1em !important;
+            font-family: inherit;
         }
-        #dropdown-overlay {
-            position: fixed;
-            inset: 0;
-            z-index: 100;
-            background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(4px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .katex .katex-html {
+            font-size: 1em;
+        }
+        .katex-display {
+            margin: 0.5em 0;
+        }
+        select.form-input {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
+            background-position: right 12px center;
+            background-repeat: no-repeat;
+            background-size: 18px;
+            appearance: none;
+            padding-right: 38px;
+        }
+        .infinite-loader {
+            text-align: center;
             padding: 20px;
+            font-size: 0.85rem;
+            color: #6b7280;
         }
-        .hidden-el { display: none !important; }
-        .animate-modal { animation: modalFadeIn 0.2s ease-out forwards; }
-        @keyframes modalFadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+        /* Lecture Card Styles */
+        .lecture-card {
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
-        /* Quiz section wrapper white background for readability */
-        .quiz-wrapper {
-            background: white;
-            border-radius: 1rem;
-            margin-top: 2rem;
-            padding: 1rem 0.5rem;
-            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        .lecture-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 8px;
         }
-        /* Hide original selects but keep functional */
-        .hidden-selects {
-            display: none;
+        .lecture-description {
+            font-size: 0.85rem;
+            color: #334155;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+        .lecture-video {
+            margin-top: 12px;
+        }
+        .lecture-meta {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 12px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
         }
     </style>
 </head>
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
-    <!-- TOP DECORATIVE SECTION -->
-    <section class="bg-top-section h-24 flex items-end justify-center pb-4">
-        <div class="flex gap-4 opacity-20">
-            <div class="w-12 h-1 bg-white rounded-full"></div>
-            <div class="w-12 h-1 bg-white rounded-full"></div>
-            <div class="w-12 h-1 bg-white rounded-full"></div>
-        </div>
-    </section>
 
-    <!-- MAIN FORM SECTION (dark background) -->
-    <main class="flex-grow flex items-center justify-center p-4 bg-form-section relative">
-        <div class="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/20 via-transparent to-transparent"></div>
-        
-        <div class="w-full max-w-[600px] z-10">
-            <!-- New Form Card (StudentPlus Terminal) -->
-            <div id="form-card" class="bg-zinc-50 rounded-xl border-[2px] border-black p-6 sm:p-8 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]">
-                <!-- Branding -->
-                <div class="flex flex-col items-center gap-2 mb-8">
-                    <div class="h-12 w-12 flex items-center justify-center bg-white border-[1.5px] border-black rounded-lg overflow-hidden p-1.5 shadow-sm">
-                        <img src="https://i.postimg.cc/y88hFhh3/20260311-205800-0000.png" alt="Logo" class="h-full w-full object-contain">
-                    </div>
-                    <div class="flex flex-col items-center">
-                        <h1 class="creepster text-black text-3xl tracking-wide leading-none">StudentPlus</h1>
-                        <div class="w-full h-[2px] mt-1 bg-black"></div>
-                    </div>
-                </div>
-
-                <!-- Mode Selection Buttons -->
-                <div class="flex flex-col gap-3 mb-6">
-                    <div class="flex items-center gap-3">
-                        <button data-mode="Lecture" class="mode-btn flex-1 py-1.5 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest rounded-full bg-transparent text-black transition-all">Lecture</button>
-                        <button data-mode="Module" class="mode-btn flex-1 py-1.5 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest rounded-full bg-transparent text-black transition-all">Module</button>
-                        <button data-mode="Question" class="mode-btn flex-1 py-1.5 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest rounded-full bg-transparent text-black transition-all">Question</button>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <button data-mode="Solution" class="mode-btn flex-1 py-1.5 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest rounded-full bg-transparent text-black transition-all">Solution</button>
-                        <button data-mode="Live Class" class="mode-btn flex-1 py-1.5 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest rounded-full bg-transparent text-black transition-all">Live Class</button>
-                        <button data-mode="Exam" class="mode-btn flex-1 py-1.5 border-[1.5px] border-black text-[10px] font-black uppercase tracking-widest rounded-full bg-transparent text-black transition-all">Exam</button>
-                    </div>
-                </div>
-
-                <!-- Dynamic Form Fields (Course, Subject, Chapter, Qty) -->
-                <div id="dynamic-fields" class="flex flex-col gap-4">
-                    <!-- Custom Course Dropdown -->
-                    <div class="w-full">
-                        <div class="flex items-center gap-3 mb-3 mt-2">
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-black">SELECT COURSE</label>
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                        </div>
-                        <div id="custom-course-trigger" class="w-full flex items-center justify-center border-[2px] rounded-full px-5 py-2.5 transition-all text-center bg-white border-black cursor-pointer hover:bg-zinc-100">
-                            <span id="course-display" class="text-sm font-black tracking-widest text-zinc-400">---</span>
-                        </div>
-                    </div>
-                    <!-- Custom Subject Dropdown -->
-                    <div class="w-full">
-                        <div class="flex items-center gap-3 mb-3 mt-2">
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-black">SELECT SUBJECT</label>
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                        </div>
-                        <div id="custom-subject-trigger" class="w-full flex items-center justify-center border-[2px] rounded-full px-5 py-2.5 transition-all text-center bg-white border-black cursor-pointer hover:bg-zinc-100">
-                            <span id="subject-display" class="text-sm font-black tracking-widest text-zinc-400">---</span>
-                        </div>
-                    </div>
-                    <!-- Custom Chapter Dropdown -->
-                    <div class="w-full">
-                        <div class="flex items-center gap-3 mb-3 mt-2">
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-black">SELECT CHAPTER</label>
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                        </div>
-                        <div id="custom-chapter-trigger" class="w-full flex items-center justify-center border-[2px] rounded-full px-5 py-2.5 transition-all text-center bg-white border-black cursor-pointer hover:bg-zinc-100">
-                            <span id="chapter-display" class="text-sm font-black tracking-widest text-zinc-400">---</span>
-                        </div>
-                    </div>
-                    <!-- Number of Questions Input -->
-                    <div class="w-full">
-                        <div class="flex items-center gap-3 mb-3 mt-2">
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                            <label class="text-[10px] font-black uppercase tracking-[0.2em] text-black">NO. OF QUESTIONS</label>
-                            <div class="flex-grow h-[1.2px] bg-black"></div>
-                        </div>
-                        <input type="number" id="qCount" class="w-full border-[2px] border-black rounded-full px-6 py-2.5 text-sm font-black text-center focus:outline-none bg-transparent" value="14" min="1" max="100">
-                    </div>
-                </div>
-
-                <!-- Proceed Button -->
-                <div class="pt-4 flex justify-center">
-                    <button id="proceed-btn" disabled class="w-full py-3.5 rounded-full text-[11px] font-black uppercase tracking-[0.4em] transition-all border-[2px] bg-white text-zinc-300 border-zinc-200 cursor-not-allowed">
-                        Proceed
-                    </button>
+    <div class="main-container">
+        <div id="setupSection" class="setup-form">
+            <div class="logo-img-container">
+                <div class="logo-img-wrapper">
+                    <img src="https://i.postimg.cc/y88hFhh3/20260311-205800-0000.png" alt="StudentPlus Logo">
                 </div>
             </div>
-
-            <!-- Quiz Section (existing, untouched logic, wrapped with white background) -->
-            <div id="quizSection" class="quiz-wrapper hidden-el">
-                <div class="quiz-header bg-black rounded-lg p-3 mb-4 text-white">
-                    <div class="header-line flex items-center gap-2 text-sm">
-                        <span id="displayCourse"></span>
-                        <span class="inline-block w-px h-3 bg-gray-500 mx-1"></span>
-                        <span id="displaySubject"></span>
-                    </div>
-                    <div id="displayChapter" class="header-line text-sm mt-1"></div>
-                    <div id="displayTotal" class="header-line text-sm mt-1"></div>
-                </div>
-                <div id="questionsContainer"></div>
+            <h1 class="logo-text">StudentPlus</h1>
+            
+            <!-- Mode Selection -->
+            <div class="form-group">
+                <label class="form-label">Select Mode</label>
+                <select id="modeSelect" class="form-input">
+                    <option value="quiz">Practice Questions</option>
+                    <option value="lecture">Watch Lectures</option>
+                </select>
             </div>
+            
+            <div class="form-group">
+                <label class="form-label">Select Course</label>
+                <select id="courseSelect" class="form-input">
+                    <option value="">Loading courses...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Select Subject</label>
+                <select id="subjectSelect" class="form-input" disabled>
+                    <option value="">Select a course first</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Select Chapter</label>
+                <select id="chapterSelect" class="form-input" disabled>
+                    <option value="">Select a subject first</option>
+                </select>
+            </div>
+            <button class="start-btn" onclick="startContent()">Proceed</button>
         </div>
-    </main>
 
-    <!-- BOTTOM DECORATIVE SECTION -->
-    <section class="bg-bottom-section h-32 flex items-start justify-center pt-6">
-        <div class="flex flex-col items-center gap-2 opacity-30">
-            <div class="h-2 w-32 border border-white/50 rounded-full"></div>
-            <div class="h-2 w-24 border border-white/30 rounded-full"></div>
+        <div id="quizSection">
+            <div class="quiz-header" id="quizHeader">
+                <div class="header-line">
+                    <span id="displayCourse"></span>
+                    <div class="inline-divider"></div>
+                    <span id="displaySubject"></span>
+                </div>
+                <div id="displayChapter" class="header-line"></div>
+            </div>
+            <div id="questionsContainer"></div>
+            <div id="quizLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
         </div>
-    </section>
 
-    <!-- GLOBAL DROPDOWN MODAL (reusable) -->
-    <div id="dropdown-overlay" class="hidden-el" onclick="closeDropdown()">
-        <div id="dropdown-modal" class="w-full max-w-[320px] bg-white border-[2px] border-black rounded-[4px] overflow-hidden animate-modal" onclick="event.stopPropagation()">
-            <div id="dropdown-list" class="flex flex-col max-h-[60vh] overflow-y-auto custom-scrollbar"></div>
+        <div id="lecturesSection">
+            <div class="lecture-header" id="lectureHeader">
+                <div class="header-line">
+                    <span id="lectureDisplayCourse"></span>
+                    <div class="inline-divider"></div>
+                    <span id="lectureDisplaySubject"></span>
+                </div>
+                <div id="lectureDisplayChapter" class="header-line"></div>
+            </div>
+            <div id="lecturesContainer"></div>
+            <div id="lectureLoader" class="infinite-loader" style="display: none;">Loading more lectures...</div>
         </div>
-    </div>
-
-    <!-- Hidden Original Selects (keep functional for quiz logic) -->
-    <div class="hidden-selects">
-        <select id="courseSelect"></select>
-        <select id="subjectSelect" disabled></select>
-        <select id="chapterSelect" disabled></select>
     </div>
 
     <script>
-        // ---------- SECURITY & DISABLE ZOOM (fully preserved) ----------
+        // ---------- DISABLE ZOOM & COPY PROTECTION ----------
         function disableZoomShortcuts(e) {
             if (e.ctrlKey || e.metaKey) {
-                if (e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 48 || e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0') e.preventDefault();
+                if (e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 48 || e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0') {
+                    e.preventDefault();
+                    return false;
+                }
             }
         }
-        window.addEventListener('wheel', function(e) { if (e.ctrlKey || e.metaKey) e.preventDefault(); }, { passive: false });
+        window.addEventListener('wheel', function(e) {
+            if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                return false;
+            }
+        }, { passive: false });
         document.addEventListener('keydown', disableZoomShortcuts);
         let lastTouchEnd = 0;
-        document.addEventListener('touchstart', function(event) { if (event.touches.length > 1) event.preventDefault(); }, { passive: false });
-        document.addEventListener('touchend', function(event) { const now = Date.now(); if (now - lastTouchEnd <= 300) event.preventDefault(); lastTouchEnd = now; }, false);
-        function blockCopyEvent(e) { e.preventDefault(); return false; }
-        document.addEventListener('copy', blockCopyEvent); document.addEventListener('cut', blockCopyEvent); document.addEventListener('paste', blockCopyEvent);
-        document.addEventListener('contextmenu', e => e.preventDefault());
-        document.addEventListener('dragstart', e => e.preventDefault());
-        document.addEventListener('keydown', function(e) { if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'u')) e.preventDefault(); });
-
-        // ---------- BACKEND API URL ----------
-        const API_BASE = 'https://dilshadalmm.onrender.com';
+        document.addEventListener('touchstart', function(event) {
+            if (event.touches.length > 1) event.preventDefault();
+        }, { passive: false });
+        document.addEventListener('touchend', function(event) {
+            const now = (new Date()).getTime();
+            if (now - lastTouchEnd <= 300) event.preventDefault();
+            lastTouchEnd = now;
+        }, false);
         
-        // ---------- HELPER: Convert newlines to <br> ----------
-        function replaceNewlinesWithBr(text) { if (!text) return text; return text.replace(/\r?\n/g, '<br>'); }
+        function blockCopyEvent(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+        document.addEventListener('copy', blockCopyEvent);
+        document.addEventListener('cut', blockCopyEvent);
+        document.addEventListener('paste', blockCopyEvent);
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        document.addEventListener('dragstart', function(e) {
+            e.preventDefault();
+            return false;
+        });
+        document.body.style.webkitTouchCallout = 'none';
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J')) || (e.ctrlKey && e.key === 'u')) {
+                e.preventDefault();
+                return false;
+            }
+        });
         
-        // DOM references
+        // ---------- API ENDPOINTS ----------
+        // Updated quiz backend URL as required
+        const QUIZ_API_BASE = 'https://dilshadalmm-yosv.onrender.com';
+        const LECTURE_API_BASE = 'https://dilshadalmm-1.onrender.com';
+        
+        let currentMode = 'quiz'; // 'quiz' or 'lecture'
+        
+        // Quiz state
+        let quizCursor = null;
+        let quizHasMore = true;
+        let quizLoading = false;
+        let currentQuizCourse = '', currentQuizSubject = '', currentQuizChapter = '';
+        
+        // Lecture state
+        let lectureCursor = null;
+        let lectureHasMore = true;
+        let lectureLoading = false;
+        let currentLectureCourse = '', currentLectureSubject = '', currentLectureChapter = '';
+        
+        const modeSelect = document.getElementById('modeSelect');
         const courseSelect = document.getElementById('courseSelect');
         const subjectSelect = document.getElementById('subjectSelect');
         const chapterSelect = document.getElementById('chapterSelect');
-        const qCountInput = document.getElementById('qCount');
+        const quizSection = document.getElementById('quizSection');
+        const lecturesSection = document.getElementById('lecturesSection');
         
-        // Custom UI elements
-        const courseDisplay = document.getElementById('course-display');
-        const subjectDisplay = document.getElementById('subject-display');
-        const chapterDisplay = document.getElementById('chapter-display');
-        const customCourseTrigger = document.getElementById('custom-course-trigger');
-        const customSubjectTrigger = document.getElementById('custom-subject-trigger');
-        const customChapterTrigger = document.getElementById('custom-chapter-trigger');
-        
-        // Mode state
-        let currentMode = "Question";
-        const modeBtns = document.querySelectorAll('.mode-btn');
-        
-        // Helper to sync custom display with hidden select values
-        function updateCustomDisplays() {
-            courseDisplay.textContent = courseSelect.value || '---';
-            courseDisplay.className = `text-sm font-black tracking-widest ${courseSelect.value ? 'text-black' : 'text-zinc-400'}`;
-            subjectDisplay.textContent = subjectSelect.value || '---';
-            subjectDisplay.className = `text-sm font-black tracking-widest ${subjectSelect.value ? 'text-black' : 'text-zinc-400'}`;
-            chapterDisplay.textContent = chapterSelect.value || '---';
-            chapterDisplay.className = `text-sm font-black tracking-widest ${chapterSelect.value ? 'text-black' : 'text-zinc-400'}`;
-        }
-        
-        // Generic function to show dropdown modal with options from a select element
-        let activeDropdownCallback = null;
-        function showDropdown(optionsArray, onSelectCallback) {
-            const overlay = document.getElementById('dropdown-overlay');
-            const list = document.getElementById('dropdown-list');
-            list.innerHTML = '';
-            optionsArray.forEach((opt, idx) => {
-                const item = document.createElement('div');
-                item.className = "px-6 py-1.5 text-sm font-bold text-left text-black hover:bg-black hover:text-white cursor-pointer transition-colors";
-                if (idx < optionsArray.length - 1) item.className += " border-b border-black/10";
-                item.innerText = opt;
-                item.onclick = (e) => { e.stopPropagation(); onSelectCallback(opt); closeDropdown(); };
-                list.appendChild(item);
-            });
-            overlay.classList.remove('hidden-el');
-        }
-        function closeDropdown() { document.getElementById('dropdown-overlay').classList.add('hidden-el'); activeDropdownCallback = null; }
-        
-        // Get options from a select element (excluding disabled/placeholder)
-        function getSelectOptions(selectEl) {
-            let opts = [];
-            for (let i = 0; i < selectEl.options.length; i++) {
-                let val = selectEl.options[i].value;
-                if (val && val !== "") opts.push(val);
-            }
-            return opts;
-        }
-        
-        // Setup dropdown triggers
-        customCourseTrigger.onclick = () => {
-            const opts = getSelectOptions(courseSelect);
-            if (opts.length === 0) return;
-            showDropdown(opts, (selected) => {
-                courseSelect.value = selected;
-                // trigger change event to load subjects
-                const evt = new Event('change', { bubbles: true });
-                courseSelect.dispatchEvent(evt);
-                updateCustomDisplays();
-            });
-        };
-        customSubjectTrigger.onclick = () => {
-            if (subjectSelect.disabled || subjectSelect.options.length <= 1) return;
-            const opts = getSelectOptions(subjectSelect);
-            if (opts.length === 0) return;
-            showDropdown(opts, (selected) => {
-                subjectSelect.value = selected;
-                const evt = new Event('change', { bubbles: true });
-                subjectSelect.dispatchEvent(evt);
-                updateCustomDisplays();
-            });
-        };
-        customChapterTrigger.onclick = () => {
-            if (chapterSelect.disabled || chapterSelect.options.length <= 1) return;
-            const opts = getSelectOptions(chapterSelect);
-            if (opts.length === 0) return;
-            showDropdown(opts, (selected) => {
-                chapterSelect.value = selected;
-                updateCustomDisplays();
-            });
-        };
-        
-        // Sync whenever original selects change (via API)
-        courseSelect.addEventListener('change', () => { updateCustomDisplays(); validateProceedByMode(); });
-        subjectSelect.addEventListener('change', () => { updateCustomDisplays(); validateProceedByMode(); });
-        chapterSelect.addEventListener('change', () => { updateCustomDisplays(); validateProceedByMode(); });
-        qCountInput.addEventListener('input', () => { validateProceedByMode(); });
-        
-        // Mode switching logic
-        function setActiveMode(mode) {
-            currentMode = mode;
-            modeBtns.forEach(btn => {
-                const btnMode = btn.getAttribute('data-mode');
-                if (btnMode === mode) btn.classList.add('mode-btn-active');
-                else btn.classList.remove('mode-btn-active');
-            });
-            validateProceedByMode();
-        }
-        
-        modeBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const mode = btn.getAttribute('data-mode');
-                setActiveMode(mode);
-            });
-        });
-        
-        function validateProceedByMode() {
-            const proceedBtn = document.getElementById('proceed-btn');
-            if (currentMode !== "Question") {
-                proceedBtn.disabled = true;
-                proceedBtn.className = "w-full py-3.5 rounded-full text-[11px] font-black uppercase tracking-[0.4em] transition-all border-[2px] bg-white text-zinc-300 border-zinc-200 cursor-not-allowed";
-                return;
-            }
-            // Mode Question: validate course, subject, chapter, qCount
-            const isValid = courseSelect.value && subjectSelect.value && chapterSelect.value && qCountInput.value && parseInt(qCountInput.value) > 0;
-            if (isValid) {
-                proceedBtn.disabled = false;
-                proceedBtn.className = "w-full py-3.5 rounded-full text-[11px] font-black uppercase tracking-[0.4em] transition-all border-[2px] bg-black text-white border-black hover:bg-zinc-900 cursor-pointer shadow-sm active:scale-95";
-            } else {
-                proceedBtn.disabled = true;
-                proceedBtn.className = "w-full py-3.5 rounded-full text-[11px] font-black uppercase tracking-[0.4em] transition-all border-[2px] bg-white text-zinc-300 border-zinc-200 cursor-not-allowed";
-            }
-        }
-        
-        // Original API fetch and quiz functions (unchanged logic)
-        async function fetchData(endpoint) {
+        // Helper: fetch with dynamic base
+        async function fetchData(endpoint, baseUrl = QUIZ_API_BASE) {
             try {
-                const response = await fetch(`${API_BASE}${endpoint}`);
+                const response = await fetch(`${baseUrl}${endpoint}`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Unknown error');
                 return data;
-            } catch (error) { console.error(error); throw error; }
+            } catch (error) {
+                console.error(`Error fetching ${endpoint}:`, error);
+                throw error;
+            }
         }
         
+        // ---- Metadata loaders (based on mode) ----
         async function loadClasses() {
-            courseSelect.innerHTML = '<option value="">Select a course</option>';
+            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
+            const endpoint = currentMode === 'quiz' ? '/api/classes' : '/api/lectures/classes';
+            courseSelect.innerHTML = '<option value="">Loading courses...</option>';
             try {
-                const data = await fetchData('/api/classes');
+                const data = await fetchData(endpoint, base);
                 const classes = data.classes || [];
-                classes.forEach(cls => {
-                    const option = document.createElement('option');
-                    option.value = cls;
-                    option.textContent = cls;
-                    courseSelect.appendChild(option);
-                });
-                updateCustomDisplays();
-                if (courseSelect.value) loadSubjects(courseSelect.value);
-            } catch (error) { courseSelect.innerHTML = '<option value="">Error</option>'; }
+                courseSelect.innerHTML = '<option value="">Select a course</option>';
+                if (classes.length === 0) {
+                    courseSelect.innerHTML = '<option value="">No courses available</option>';
+                } else {
+                    classes.forEach(cls => {
+                        const option = document.createElement('option');
+                        option.value = cls;
+                        option.textContent = cls;
+                        courseSelect.appendChild(option);
+                    });
+                }
+                subjectSelect.disabled = true;
+                subjectSelect.innerHTML = '<option value="">Select a course first</option>';
+                chapterSelect.disabled = true;
+                chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            } catch (error) {
+                courseSelect.innerHTML = '<option value="">Error loading courses</option>';
+                console.error(error);
+            }
         }
         
         async function loadSubjects(className) {
+            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
+            const endpoint = currentMode === 'quiz' ? `/api/subjects?class=${encodeURIComponent(className)}` : `/api/lectures/subjects?class=${encodeURIComponent(className)}`;
             subjectSelect.disabled = true;
-            subjectSelect.innerHTML = '<option value="">Select a subject</option>';
+            subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
             chapterSelect.disabled = true;
-            chapterSelect.innerHTML = '<option value="">Select chapter</option>';
+            chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             try {
-                const data = await fetchData(`/api/subjects?class=${encodeURIComponent(className)}`);
+                const data = await fetchData(endpoint, base);
                 const subjects = data.subjects || [];
+                subjectSelect.innerHTML = '<option value="">Select a subject</option>';
+                if (subjects.length === 0) {
+                    subjectSelect.innerHTML = '<option value="">No subjects available</option>';
+                    return;
+                }
                 subjects.forEach(sub => {
                     const option = document.createElement('option');
                     option.value = sub;
@@ -534,17 +608,25 @@
                     subjectSelect.appendChild(option);
                 });
                 subjectSelect.disabled = false;
-                updateCustomDisplays();
-                if (subjectSelect.value) loadChapters(className, subjectSelect.value);
-            } catch (error) { subjectSelect.innerHTML = '<option value="">Error</option>'; }
+            } catch (error) {
+                subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+                console.error(error);
+            }
         }
         
         async function loadChapters(className, subjectName) {
+            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
+            const endpoint = currentMode === 'quiz' ? `/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}` : `/api/lectures/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`;
             chapterSelect.disabled = true;
-            chapterSelect.innerHTML = '<option value="">Select chapter</option>';
+            chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
             try {
-                const data = await fetchData(`/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
+                const data = await fetchData(endpoint, base);
                 const chapters = data.chapters || [];
+                chapterSelect.innerHTML = '<option value="">Select a chapter</option>';
+                if (chapters.length === 0) {
+                    chapterSelect.innerHTML = '<option value="">No chapters available</option>';
+                    return;
+                }
                 chapters.forEach(ch => {
                     const option = document.createElement('option');
                     option.value = ch;
@@ -552,130 +634,544 @@
                     chapterSelect.appendChild(option);
                 });
                 chapterSelect.disabled = false;
-                updateCustomDisplays();
-            } catch (error) { chapterSelect.innerHTML = '<option value="">Error</option>'; }
+            } catch (error) {
+                chapterSelect.innerHTML = '<option value="">Error loading chapters</option>';
+                console.error(error);
+            }
         }
         
-        courseSelect.addEventListener('change', (e) => { if (e.target.value) loadSubjects(e.target.value); else { subjectSelect.disabled=true; subjectSelect.innerHTML='<option value="">Select course first</option>'; chapterSelect.disabled=true; chapterSelect.innerHTML='<option value="">Select subject first</option>'; } updateCustomDisplays(); });
-        subjectSelect.addEventListener('change', (e) => { if (courseSelect.value && e.target.value) loadChapters(courseSelect.value, e.target.value); else { chapterSelect.disabled=true; chapterSelect.innerHTML='<option value="">Select subject first</option>'; } updateCustomDisplays(); });
-        
-        // KaTeX rendering
-        function renderMathInElementWithDelay(element) {
-            if (typeof renderMathInElement === 'function') {
-                try { renderMathInElement(element, { delimiters: [{left:'$$',right:'$$',display:true},{left:'$',right:'$',display:false},{left:'\\(',right:'\\)',display:false},{left:'\\[',right:'\\]',display:true}], throwOnError:false }); }
-                catch(e) { console.warn(e); }
-            } else { setTimeout(() => renderMathInElementWithDelay(element), 200); }
+        // ---- Mode switch ----
+        function onModeChange() {
+            currentMode = modeSelect.value;
+            // Reset selections
+            courseSelect.value = '';
+            subjectSelect.innerHTML = '<option value="">Select a course first</option>';
+            subjectSelect.disabled = true;
+            chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            chapterSelect.disabled = true;
+            // Hide both sections
+            quizSection.style.display = 'none';
+            lecturesSection.style.display = 'none';
+            // Reload classes for new mode
+            loadClasses();
         }
+        modeSelect.addEventListener('change', onModeChange);
         
+        courseSelect.addEventListener('change', (e) => {
+            const selectedClass = e.target.value;
+            if (selectedClass) {
+                loadSubjects(selectedClass);
+            } else {
+                subjectSelect.disabled = true;
+                subjectSelect.innerHTML = '<option value="">Select a course first</option>';
+                chapterSelect.disabled = true;
+                chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            }
+        });
+        
+        subjectSelect.addEventListener('change', (e) => {
+            const selectedClass = courseSelect.value;
+            const selectedSubject = e.target.value;
+            if (selectedClass && selectedSubject) {
+                loadChapters(selectedClass, selectedSubject);
+            } else {
+                chapterSelect.disabled = true;
+                chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+            }
+        });
+        
+        // ---- Helper: YouTube embed ----
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
-            const patterns = [/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?#]+)/, /youtube\.com\/embed\/([^?]+)/];
-            for (let pattern of patterns) { const match = url.match(pattern); if (match && match[1]) return `https://www.youtube.com/embed/${match[1]}`; }
+            const patterns = [
+                /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&?#]+)/,
+                /youtube\.com\/embed\/([^?]+)/
+            ];
+            for (let pattern of patterns) {
+                const match = url.match(pattern);
+                if (match && match[1]) {
+                    return `https://www.youtube.com/embed/${match[1]}`;
+                }
+            }
             return null;
         }
         
         function createVideoElement(url) {
             if (!url) return null;
-            const container = document.createElement('div'); container.className = 'video-container';
+            const container = document.createElement('div');
+            container.className = 'video-container';
             const youtubeEmbed = getYouTubeEmbedUrl(url);
             if (youtubeEmbed) {
-                const iframe = document.createElement('iframe'); iframe.src = youtubeEmbed; iframe.allowFullscreen = true; iframe.frameBorder = '0'; iframe.style.width = '100%'; iframe.style.aspectRatio = '16/9';
+                const iframe = document.createElement('iframe');
+                iframe.src = youtubeEmbed;
+                iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+                iframe.allowFullscreen = true;
+                iframe.frameBorder = '0';
+                iframe.style.width = '100%';
+                iframe.style.aspectRatio = '16/9';
                 container.appendChild(iframe);
             } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
-                const video = document.createElement('video'); video.controls = true; video.style.width = '100%'; const source = document.createElement('source'); source.src = url; video.appendChild(source); container.appendChild(video);
+                const video = document.createElement('video');
+                video.controls = true;
+                video.preload = 'metadata';
+                video.style.width = '100%';
+                const source = document.createElement('source');
+                source.src = url;
+                source.type = 'video/mp4';
+                video.appendChild(source);
+                container.appendChild(video);
             } else {
-                const link = document.createElement('a'); link.href = url; link.textContent = 'Watch video solution'; link.target = '_blank'; container.appendChild(link);
+                const link = document.createElement('a');
+                link.href = url;
+                link.textContent = 'Watch video';
+                link.target = '_blank';
+                link.style.color = '#065f46';
+                link.style.textDecoration = 'underline';
+                container.appendChild(link);
             }
             return container;
         }
         
-        function renderQuestions(questions) {
-            const container = document.getElementById('questionsContainer'); container.innerHTML = '';
-            if (!questions || questions.length === 0) { container.innerHTML = '<div class="error-message">No questions found.</div>'; return; }
-            questions.forEach((q, idx) => {
-                const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
-                const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
-                const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
-                const questionDiv = document.createElement('div'); questionDiv.className = 'question-item';
-                const qTag = document.createElement('div'); qTag.className = 'q-tag'; qTag.textContent = `Question ${idx + 1}`;
-                const qText = document.createElement('div'); qText.className = 'question-text'; qText.innerHTML = formattedQuestionText;
-                const optionsDiv = document.createElement('div'); optionsDiv.className = 'options-list';
-                if (q.questionImageUrl) { const img = document.createElement('img'); img.src = q.questionImageUrl; img.style.maxWidth = '100%'; img.style.marginBottom = '12px'; optionsDiv.appendChild(img); }
-                const optionContainers = [];
-                formattedOptions.forEach((opt, optIdx) => {
-                    const label = document.createElement('label'); label.className = 'option-container';
-                    const radio = document.createElement('input'); radio.type = 'radio'; radio.name = `q_${idx}`; radio.value = optIdx;
-                    const span = document.createElement('span'); span.innerHTML = opt;
-                    label.appendChild(radio); label.appendChild(span); optionsDiv.appendChild(label); optionContainers.push(label);
-                });
-                const actionRow = document.createElement('div'); actionRow.className = 'action-buttons';
-                const submitBtn = document.createElement('button'); submitBtn.textContent = 'Submit'; submitBtn.className = 'action-btn submit-btn';
-                const textSolutionBtn = document.createElement('button'); textSolutionBtn.textContent = 'Text Solution'; textSolutionBtn.className = 'action-btn text-solution-btn'; textSolutionBtn.disabled = true;
-                const videoSolutionBtn = document.createElement('button'); videoSolutionBtn.textContent = 'Video Solution'; videoSolutionBtn.className = 'action-btn video-solution-btn'; videoSolutionBtn.disabled = true;
-                actionRow.appendChild(submitBtn); actionRow.appendChild(textSolutionBtn); actionRow.appendChild(videoSolutionBtn);
-                const correctAnswerBox = document.createElement('div'); correctAnswerBox.className = 'correct-answer-box';
-                const correctLabel = document.createElement('span'); correctLabel.className = 'correct-answer-label'; correctLabel.textContent = 'Correct Answer:';
-                const correctAnswerSpan = document.createElement('span'); correctAnswerSpan.innerHTML = formattedOptions[q.correctIndex] || 'N/A';
-                correctAnswerBox.appendChild(correctLabel); correctAnswerBox.appendChild(correctAnswerSpan);
-                const textSolutionContainer = document.createElement('div'); textSolutionContainer.id = `text-solution-${idx}`; textSolutionContainer.className = 'solution-container';
-                if (formattedSolutionText) { const textBox = document.createElement('div'); textBox.className = 'solution-box'; const solutionPara = document.createElement('p'); solutionPara.innerHTML = formattedSolutionText; textBox.appendChild(solutionPara); if (q.solutionImageUrl) { const img = document.createElement('img'); img.src = q.solutionImageUrl; img.style.maxWidth = '100%'; textBox.appendChild(img); } textSolutionContainer.appendChild(textBox); }
-                const videoSolutionContainer = document.createElement('div'); videoSolutionContainer.id = `video-solution-${idx}`; videoSolutionContainer.className = 'solution-container';
-                if (q.solutionVideoUrl) { const videoElem = createVideoElement(q.solutionVideoUrl); if (videoElem) videoSolutionContainer.appendChild(videoElem); }
-                let submitted = false;
-                submitBtn.onclick = async () => {
-                    if (submitted) return;
-                    const selectedRadio = document.querySelector(`input[name="q_${idx}"]:checked`);
-                    if (!selectedRadio) { alert('Please select an answer'); return; }
-                    const selectedIndex = parseInt(selectedRadio.value);
-                    const isCorrect = (selectedIndex === q.correctIndex);
-                    optionContainers.forEach((container, i) => { if (i === q.correctIndex) container.classList.add('correct-bg'); else if (i === selectedIndex && !isCorrect) container.classList.add('wrong-bg'); });
-                    correctAnswerBox.classList.add('visible'); renderMathInElementWithDelay(correctAnswerBox);
-                    if (formattedSolutionText) textSolutionBtn.disabled = false;
-                    if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
-                    submitted = true; submitBtn.disabled = true;
-                };
-                textSolutionBtn.onclick = () => { if (!submitted) return; const wasVisible = textSolutionContainer.classList.contains('visible'); if (!wasVisible) { textSolutionContainer.classList.add('visible'); if (videoSolutionContainer.classList.contains('visible')) videoSolutionContainer.classList.remove('visible'); renderMathInElementWithDelay(textSolutionContainer); } else textSolutionContainer.classList.remove('visible'); };
-                videoSolutionBtn.onclick = () => { if (!submitted) return; const wasVisible = videoSolutionContainer.classList.contains('visible'); if (!wasVisible) { videoSolutionContainer.classList.add('visible'); if (textSolutionContainer.classList.contains('visible')) textSolutionContainer.classList.remove('visible'); renderMathInElementWithDelay(videoSolutionContainer); } else videoSolutionContainer.classList.remove('visible'); };
-                questionDiv.appendChild(qTag); questionDiv.appendChild(qText); questionDiv.appendChild(optionsDiv); questionDiv.appendChild(actionRow); questionDiv.appendChild(correctAnswerBox); questionDiv.appendChild(textSolutionContainer); questionDiv.appendChild(videoSolutionContainer);
-                container.appendChild(questionDiv);
-            });
-            renderMathInElementWithDelay(container);
+        // ---- Lecture Card Rendering ----
+        function createLectureCard(lecture) {
+            const card = document.createElement('div');
+            card.className = 'lecture-card';
+            
+            const title = document.createElement('div');
+            title.className = 'lecture-title';
+            title.textContent = lecture.lectureTitle || 'Untitled Lecture';
+            
+            const desc = document.createElement('div');
+            desc.className = 'lecture-description';
+            desc.textContent = lecture.lectureDescription || '';
+            
+            const videoDiv = document.createElement('div');
+            videoDiv.className = 'lecture-video';
+            const videoElem = createVideoElement(lecture.lectureVideoUrl);
+            if (videoElem) videoDiv.appendChild(videoElem);
+            
+            const meta = document.createElement('div');
+            meta.className = 'lecture-meta';
+            if (lecture.tutorName) {
+                const tutorSpan = document.createElement('span');
+                tutorSpan.innerHTML = `👨‍🏫 ${lecture.tutorName}`;
+                meta.appendChild(tutorSpan);
+            }
+            if (lecture.lectureNo) {
+                const noSpan = document.createElement('span');
+                noSpan.innerHTML = `📖 Lecture ${lecture.lectureNo}`;
+                meta.appendChild(noSpan);
+            }
+            
+            card.appendChild(title);
+            if (desc.textContent) card.appendChild(desc);
+            card.appendChild(videoDiv);
+            if (meta.children.length) card.appendChild(meta);
+            
+            return card;
         }
         
-        async function startQuiz() {
-            if (currentMode !== "Question") { alert("Quiz is only available in 'Question' mode."); return; }
-            const course = courseSelect.value, subject = subjectSelect.value, chapter = chapterSelect.value, limit = qCountInput.value;
-            if (!course || !subject || !chapter) { alert('Please select course, subject, and chapter.'); return; }
-            const limitNum = parseInt(limit, 10);
-            if (isNaN(limitNum) || limitNum < 1) { alert('Valid number of questions required'); return; }
-            const quizSection = document.getElementById('quizSection');
-            quizSection.classList.remove('hidden-el');
+        function appendLectures(lectures) {
+            const container = document.getElementById('lecturesContainer');
+            const fragment = document.createDocumentFragment();
+            lectures.forEach(lec => {
+                fragment.appendChild(createLectureCard(lec));
+            });
+            container.appendChild(fragment);
+        }
+        
+        // ---- Quiz Functions (existing logic adapted) ----
+        function renderMathInElementWithDelay(element) {
+            if (!element) return;
+            const tryRender = () => {
+                if (typeof renderMathInElement === 'function') {
+                    try {
+                        renderMathInElement(element, {
+                            delimiters: [
+                                {left: '$$', right: '$$', display: true},
+                                {left: '$', right: '$', display: false},
+                                {left: '\\(', right: '\\)', display: false},
+                                {left: '\\[', right: '\\]', display: true}
+                            ],
+                            throwOnError: false,
+                            errorColor: '#cc0000'
+                        });
+                    } catch (e) {
+                        console.warn('KaTeX rendering error:', e);
+                    }
+                } else {
+                    setTimeout(tryRender, 150);
+                }
+            };
+            tryRender();
+        }
+        
+        function replaceNewlinesWithBr(text) {
+            if (!text) return text;
+            return text.replace(/\r?\n/g, '<br>');
+        }
+        
+        function createQuestionElement(q, idx, globalIndex) {
+            const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
+            const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
+            const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
+            
+            const questionDiv = document.createElement('div');
+            questionDiv.className = 'question-item';
+            
+            const qTag = document.createElement('div');
+            qTag.className = 'q-tag';
+            qTag.textContent = `Question ${globalIndex}`;
+            
+            const qText = document.createElement('div');
+            qText.className = 'question-text';
+            qText.innerHTML = formattedQuestionText;
+            
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options-list';
+            if (q.questionImageUrl) {
+                const img = document.createElement('img');
+                img.src = q.questionImageUrl;
+                img.alt = 'Question illustration';
+                img.style.maxWidth = '100%';
+                img.style.marginBottom = '12px';
+                img.style.borderRadius = '4px';
+                optionsDiv.appendChild(img);
+            }
+            
+            const optionContainers = [];
+            formattedOptions.forEach((opt, optIdx) => {
+                const label = document.createElement('label');
+                label.className = 'option-container';
+                const radio = document.createElement('input');
+                radio.type = 'radio';
+                radio.name = `q_${globalIndex}`;
+                radio.value = optIdx;
+                const span = document.createElement('span');
+                span.innerHTML = opt;
+                label.appendChild(radio);
+                label.appendChild(span);
+                optionsDiv.appendChild(label);
+                optionContainers.push(label);
+            });
+            
+            const actionRow = document.createElement('div');
+            actionRow.className = 'action-buttons';
+            const submitBtn = document.createElement('button');
+            submitBtn.textContent = 'Submit';
+            submitBtn.className = 'action-btn submit-btn';
+            const textSolutionBtn = document.createElement('button');
+            textSolutionBtn.textContent = 'Text Solution';
+            textSolutionBtn.className = 'action-btn text-solution-btn';
+            textSolutionBtn.disabled = true;
+            const videoSolutionBtn = document.createElement('button');
+            videoSolutionBtn.textContent = 'Video Solution';
+            videoSolutionBtn.className = 'action-btn video-solution-btn';
+            videoSolutionBtn.disabled = true;
+            actionRow.appendChild(submitBtn);
+            actionRow.appendChild(textSolutionBtn);
+            actionRow.appendChild(videoSolutionBtn);
+            
+            const correctAnswerBox = document.createElement('div');
+            correctAnswerBox.className = 'correct-answer-box';
+            const correctLabel = document.createElement('span');
+            correctLabel.className = 'correct-answer-label';
+            correctLabel.textContent = 'Correct Answer:';
+            const correctAnswerSpan = document.createElement('span');
+            correctAnswerSpan.innerHTML = formattedOptions[q.correctIndex] || 'N/A';
+            correctAnswerBox.appendChild(correctLabel);
+            correctAnswerBox.appendChild(correctAnswerSpan);
+            
+            const textSolutionContainer = document.createElement('div');
+            textSolutionContainer.id = `text-solution-${globalIndex}`;
+            textSolutionContainer.className = 'solution-container';
+            if (formattedSolutionText) {
+                const textBox = document.createElement('div');
+                textBox.className = 'solution-box';
+                const solutionPara = document.createElement('p');
+                solutionPara.innerHTML = formattedSolutionText;
+                textBox.appendChild(solutionPara);
+                if (q.solutionImageUrl) {
+                    const img = document.createElement('img');
+                    img.src = q.solutionImageUrl;
+                    img.alt = 'Solution illustration';
+                    img.style.maxWidth = '100%';
+                    img.style.marginTop = '10px';
+                    img.style.borderRadius = '4px';
+                    textBox.appendChild(img);
+                }
+                textSolutionContainer.appendChild(textBox);
+            }
+            
+            const videoSolutionContainer = document.createElement('div');
+            videoSolutionContainer.id = `video-solution-${globalIndex}`;
+            videoSolutionContainer.className = 'solution-container';
+            if (q.solutionVideoUrl) {
+                const videoElem = createVideoElement(q.solutionVideoUrl);
+                if (videoElem) videoSolutionContainer.appendChild(videoElem);
+            }
+            
+            let submitted = false;
+            submitBtn.onclick = async () => {
+                if (submitted) return;
+                const selectedRadio = document.querySelector(`input[name="q_${globalIndex}"]:checked`);
+                if (!selectedRadio) {
+                    alert('Please select an answer');
+                    return;
+                }
+                const selectedIndex = parseInt(selectedRadio.value);
+                const isCorrect = (selectedIndex === q.correctIndex);
+                optionContainers.forEach((container, i) => {
+                    if (i === q.correctIndex) container.classList.add('correct-bg');
+                    else if (i === selectedIndex && !isCorrect) container.classList.add('wrong-bg');
+                });
+                correctAnswerBox.classList.add('visible');
+                if (formattedSolutionText) textSolutionBtn.disabled = false;
+                if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
+                submitted = true;
+                submitBtn.disabled = true;
+            };
+            textSolutionBtn.onclick = () => {
+                if (!submitted) return;
+                const wasVisible = textSolutionContainer.classList.contains('visible');
+                if (!wasVisible) {
+                    textSolutionContainer.classList.add('visible');
+                    if (videoSolutionContainer.classList.contains('visible')) videoSolutionContainer.classList.remove('visible');
+                } else {
+                    textSolutionContainer.classList.remove('visible');
+                }
+            };
+            videoSolutionBtn.onclick = () => {
+                if (!submitted) return;
+                const wasVisible = videoSolutionContainer.classList.contains('visible');
+                if (!wasVisible) {
+                    videoSolutionContainer.classList.add('visible');
+                    if (textSolutionContainer.classList.contains('visible')) textSolutionContainer.classList.remove('visible');
+                } else {
+                    videoSolutionContainer.classList.remove('visible');
+                }
+            };
+            
+            questionDiv.appendChild(qTag);
+            questionDiv.appendChild(qText);
+            questionDiv.appendChild(optionsDiv);
+            questionDiv.appendChild(actionRow);
+            questionDiv.appendChild(correctAnswerBox);
+            questionDiv.appendChild(textSolutionContainer);
+            questionDiv.appendChild(videoSolutionContainer);
+            
+            renderMathInElementWithDelay(questionDiv);
+            return questionDiv;
+        }
+        
+        function appendQuestions(questions, startIndex) {
+            const container = document.getElementById('questionsContainer');
+            const fragment = document.createDocumentFragment();
+            questions.forEach((q, idx) => {
+                const globalIdx = startIndex + idx + 1;
+                fragment.appendChild(createQuestionElement(q, idx, globalIdx));
+            });
+            container.appendChild(fragment);
+        }
+        
+        // ---- Start Content (mode based) ----
+        async function startContent() {
+            const course = courseSelect.value;
+            const subject = subjectSelect.value;
+            const chapter = chapterSelect.value;
+            if (!course || !subject || !chapter) {
+                alert('Please select a course, subject, and chapter.');
+                return;
+            }
+            
+            if (currentMode === 'quiz') {
+                await startQuiz(course, subject, chapter);
+            } else {
+                await startLectures(course, subject, chapter);
+            }
+        }
+        
+        async function startQuiz(course, subject, chapter) {
+            quizCursor = null;
+            quizHasMore = true;
+            quizLoading = false;
+            currentQuizCourse = course;
+            currentQuizSubject = subject;
+            currentQuizChapter = chapter;
+            
+            const container = document.getElementById('questionsContainer');
+            container.innerHTML = '<div class="loader">Loading questions...</div>';
+            const loaderDiv = document.getElementById('quizLoader');
+            loaderDiv.style.display = 'none';
+            
+            quizSection.style.display = 'block';
+            lecturesSection.style.display = 'none';
             document.getElementById('displayCourse').textContent = course;
             document.getElementById('displaySubject').textContent = subject;
             document.getElementById('displayChapter').textContent = chapter;
-            document.getElementById('displayTotal').textContent = `Total ${limitNum} questions`;
-            const container = document.getElementById('questionsContainer');
-            container.innerHTML = '<div class="loader">Loading questions...</div>';
-            quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(() => quizSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
+            
             try {
-                const params = new URLSearchParams({ className: course, subject, chapter, limit: limitNum });
-                const response = await fetch(`${API_BASE}/api/quiz?${params.toString()}`);
-                if (!response.ok) throw new Error('No questions found');
-                const data = await response.json();
-                if (!data.success) throw new Error(data.error);
-                renderQuestions(data.questions || []);
-            } catch (error) { container.innerHTML = `<div class="error-message">${error.message}</div>`; }
+                await fetchNextQuizPage(true);
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">${error.message}</div>`;
+            }
         }
         
-        // Attach proceed button with mode check
-        document.getElementById('proceed-btn').addEventListener('click', () => { startQuiz(); });
+        async function fetchNextQuizPage(reset = false) {
+            if (!quizHasMore || quizLoading) return;
+            quizLoading = true;
+            const loaderDiv = document.getElementById('quizLoader');
+            if (!reset) loaderDiv.style.display = 'block';
+            
+            try {
+                const params = new URLSearchParams({
+                    className: currentQuizCourse,
+                    subject: currentQuizSubject,
+                    chapter: currentQuizChapter,
+                    limit: 10
+                });
+                if (quizCursor !== null && quizCursor !== undefined) {
+                    params.append('cursor', quizCursor.toString());
+                }
+                // Using updated QUIZ_API_BASE
+                const response = await fetch(`${QUIZ_API_BASE}/api/quiz?${params.toString()}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load questions');
+                const questions = data.questions || [];
+                if (reset) {
+                    const container = document.getElementById('questionsContainer');
+                    container.innerHTML = '';
+                    if (questions.length === 0) {
+                        container.innerHTML = '<div class="error-message">No questions found for the selected criteria.</div>';
+                        quizHasMore = false;
+                    } else {
+                        appendQuestions(questions, 0);
+                    }
+                } else {
+                    if (questions.length > 0) {
+                        const currentCount = document.querySelectorAll('.question-item').length;
+                        appendQuestions(questions, currentCount);
+                    } else {
+                        quizHasMore = false;
+                    }
+                }
+                quizCursor = (data.nextCursor !== undefined && data.nextCursor !== null) ? (typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10)) : null;
+                quizHasMore = data.hasMore === true;
+                if (!quizHasMore) loaderDiv.style.display = 'none';
+            } catch (error) {
+                console.error(error);
+                if (reset) {
+                    document.getElementById('questionsContainer').innerHTML = `<div class="error-message">${error.message}</div>`;
+                }
+            } finally {
+                quizLoading = false;
+                loaderDiv.style.display = 'none';
+            }
+        }
         
-        // Initialization
+        async function startLectures(course, subject, chapter) {
+            lectureCursor = null;
+            lectureHasMore = true;
+            lectureLoading = false;
+            currentLectureCourse = course;
+            currentLectureSubject = subject;
+            currentLectureChapter = chapter;
+            
+            const container = document.getElementById('lecturesContainer');
+            container.innerHTML = '<div class="loader">Loading lectures...</div>';
+            const loaderDiv = document.getElementById('lectureLoader');
+            loaderDiv.style.display = 'none';
+            
+            lecturesSection.style.display = 'block';
+            quizSection.style.display = 'none';
+            document.getElementById('lectureDisplayCourse').textContent = course;
+            document.getElementById('lectureDisplaySubject').textContent = subject;
+            document.getElementById('lectureDisplayChapter').textContent = chapter;
+            setTimeout(() => lecturesSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
+            
+            try {
+                await fetchNextLecturesPage(true);
+            } catch (error) {
+                container.innerHTML = `<div class="error-message">${error.message}</div>`;
+            }
+        }
+        
+        async function fetchNextLecturesPage(reset = false) {
+            if (!lectureHasMore || lectureLoading) return;
+            lectureLoading = true;
+            const loaderDiv = document.getElementById('lectureLoader');
+            if (!reset) loaderDiv.style.display = 'block';
+            
+            try {
+                const params = new URLSearchParams({
+                    class: currentLectureCourse,
+                    subject: currentLectureSubject,
+                    chapter: currentLectureChapter,
+                    limit: 10
+                });
+                if (lectureCursor !== null && lectureCursor !== undefined) {
+                    params.append('cursor', lectureCursor.toString());
+                }
+                const response = await fetch(`${LECTURE_API_BASE}/api/lectures/playlist?${params.toString()}`);
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error || 'Failed to load lectures');
+                const lectures = data.lectures || [];
+                if (reset) {
+                    const container = document.getElementById('lecturesContainer');
+                    container.innerHTML = '';
+                    if (lectures.length === 0) {
+                        container.innerHTML = '<div class="error-message">No lectures found for the selected criteria.</div>';
+                        lectureHasMore = false;
+                    } else {
+                        appendLectures(lectures);
+                    }
+                } else {
+                    if (lectures.length > 0) {
+                        appendLectures(lectures);
+                    } else {
+                        lectureHasMore = false;
+                    }
+                }
+                lectureCursor = (data.nextCursor !== undefined && data.nextCursor !== null) ? (typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10)) : null;
+                lectureHasMore = data.hasMore === true;
+                if (!lectureHasMore) loaderDiv.style.display = 'none';
+            } catch (error) {
+                console.error(error);
+                if (reset) {
+                    document.getElementById('lecturesContainer').innerHTML = `<div class="error-message">${error.message}</div>`;
+                }
+            } finally {
+                lectureLoading = false;
+                loaderDiv.style.display = 'none';
+            }
+        }
+        
+        // ---- Infinite Scroll Listener ----
+        function setupScrollListener() {
+            window.addEventListener('scroll', () => {
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                const windowHeight = window.innerHeight;
+                const documentHeight = document.documentElement.scrollHeight;
+                const threshold = 200;
+                if (scrollTop + windowHeight >= documentHeight - threshold) {
+                    if (currentMode === 'quiz' && quizHasMore && !quizLoading && quizSection.style.display === 'block') {
+                        fetchNextQuizPage(false);
+                    } else if (currentMode === 'lecture' && lectureHasMore && !lectureLoading && lecturesSection.style.display === 'block') {
+                        fetchNextLecturesPage(false);
+                    }
+                }
+            });
+        }
+        
+        // ---- Initial Load ----
         window.addEventListener('load', () => {
             loadClasses();
-            setActiveMode("Question");
-            updateCustomDisplays();
-            validateProceedByMode();
+            quizSection.style.display = 'none';
+            lecturesSection.style.display = 'none';
+            setupScrollListener();
         });
     </script>
 </body>
