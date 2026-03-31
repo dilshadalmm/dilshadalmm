@@ -195,7 +195,7 @@
             transition: background-color 0.2s;
         }
         .question-item.subjective {
-            background-color: #ffe4e1; /* light pink */
+            background-color: #ffe4e1;
         }
         .q-tag {
             display: inline-block;
@@ -400,11 +400,99 @@
             gap: 12px;
             flex-wrap: wrap;
         }
+        /* Auth UI */
+        .auth-bar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+            gap: 8px;
+        }
+        .auth-btn {
+            background: transparent;
+            border: 1px solid #000;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: #000;
+            margin-top: 0;
+            width: auto;
+        }
+        .auth-btn:hover {
+            background: #000;
+            color: white;
+        }
+        .user-status {
+            font-size: 0.8rem;
+            background: #eef2ff;
+            padding: 4px 12px;
+            border-radius: 20px;
+            color: #1e293b;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .modal-content {
+            background: white;
+            max-width: 90%;
+            width: 400px;
+            border-radius: 28px;
+            padding: 1.8rem;
+            box-shadow: 0 20px 35px rgba(0,0,0,0.2);
+        }
+        .modal-content h3 {
+            margin-bottom: 1rem;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+            margin-top: 1.5rem;
+        }
+        .modal-buttons button {
+            width: auto;
+            padding: 0.6rem 1.4rem;
+        }
+        .close-modal {
+            background: #94a3b8;
+        }
+        .switch-auth {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            color: #3b82f6;
+        }
+        .error-text {
+            color: #ef4444;
+            font-size: 0.75rem;
+            margin-top: 4px;
+            display: none;
+        }
     </style>
 </head>
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
 
     <div class="main-container">
+        <div class="auth-bar" id="authBar">
+            <div id="userStatus" class="user-status" style="display: none;"></div>
+            <button id="loginBtn" class="auth-btn">Login</button>
+            <button id="logoutBtn" class="auth-btn" style="display: none;">Logout</button>
+        </div>
+
         <div id="setupSection" class="setup-form">
             <div class="logo-img-container">
                 <div class="logo-img-wrapper">
@@ -470,6 +558,29 @@
         </div>
     </div>
 
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <h3 id="authModalTitle">Login</h3>
+            <form id="authForm">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="authEmail" class="form-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="authPassword" class="form-input" required>
+                </div>
+                <div id="authError" class="error-text"></div>
+                <div class="modal-buttons">
+                    <button type="button" class="close-modal" id="closeAuthModal">Cancel</button>
+                    <button type="submit" id="authSubmitBtn">Login</button>
+                </div>
+                <div class="switch-auth" id="switchAuthMode">Don't have an account? Register</div>
+            </form>
+        </div>
+    </div>
+
     <script>
         // ---------- DISABLE ZOOM & COPY PROTECTION ----------
         function disableZoomShortcuts(e) {
@@ -525,7 +636,12 @@
         const QUIZ_API_BASE = 'https://dilshadalmm-yosv.onrender.com';
         const LECTURE_API_BASE = 'https://dilshadalmm-1.onrender.com';
         
-        let currentMode = 'quiz'; // 'quiz' or 'lecture'
+        // Authentication state
+        let accessToken = localStorage.getItem('accessToken') || null;
+        let refreshToken = localStorage.getItem('refreshToken') || null;
+        let userEmail = localStorage.getItem('userEmail') || null;
+        
+        let currentMode = 'quiz';
         
         // Quiz state
         let quizCursor = null;
@@ -545,8 +661,206 @@
         const chapterSelect = document.getElementById('chapterSelect');
         const quizSection = document.getElementById('quizSection');
         const lecturesSection = document.getElementById('lecturesSection');
+        const authModal = document.getElementById('authModal');
+        const closeAuthModal = document.getElementById('closeAuthModal');
+        const authForm = document.getElementById('authForm');
+        const authEmail = document.getElementById('authEmail');
+        const authPassword = document.getElementById('authPassword');
+        const authSubmitBtn = document.getElementById('authSubmitBtn');
+        const authModalTitle = document.getElementById('authModalTitle');
+        const switchAuthMode = document.getElementById('switchAuthMode');
+        const authError = document.getElementById('authError');
+        const loginBtn = document.getElementById('loginBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const userStatus = document.getElementById('userStatus');
         
-        // Helper: fetch with dynamic base
+        let isLoginMode = true;
+        
+        // Helper: fetch with auth headers
+        async function fetchWithAuth(url, options = {}) {
+            if (!accessToken) {
+                throw new Error('Not authenticated');
+            }
+            const headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${accessToken}`
+            };
+            let response = await fetch(url, { ...options, headers });
+            if (response.status === 401) {
+                // Token expired, try refresh
+                const refreshed = await refreshAccessToken();
+                if (refreshed) {
+                    // Retry with new token
+                    headers['Authorization'] = `Bearer ${accessToken}`;
+                    response = await fetch(url, { ...options, headers });
+                } else {
+                    // Refresh failed, clear tokens and require login
+                    clearAuth();
+                    throw new Error('Session expired. Please login again.');
+                }
+            }
+            return response;
+        }
+        
+        async function refreshAccessToken() {
+            if (!refreshToken) return false;
+            try {
+                const response = await fetch(`${QUIZ_API_BASE}/api/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    accessToken = data.accessToken;
+                    localStorage.setItem('accessToken', accessToken);
+                    return true;
+                } else {
+                    return false;
+                }
+            } catch (err) {
+                return false;
+            }
+        }
+        
+        function setAuthTokens(access, refresh, email) {
+            accessToken = access;
+            refreshToken = refresh;
+            userEmail = email;
+            localStorage.setItem('accessToken', access);
+            localStorage.setItem('refreshToken', refresh);
+            localStorage.setItem('userEmail', email);
+            updateAuthUI();
+        }
+        
+        function clearAuth() {
+            accessToken = null;
+            refreshToken = null;
+            userEmail = null;
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('userEmail');
+            updateAuthUI();
+        }
+        
+        function updateAuthUI() {
+            if (accessToken && userEmail) {
+                userStatus.textContent = `👤 ${userEmail}`;
+                userStatus.style.display = 'inline-flex';
+                loginBtn.style.display = 'none';
+                logoutBtn.style.display = 'inline-block';
+            } else {
+                userStatus.style.display = 'none';
+                loginBtn.style.display = 'inline-block';
+                logoutBtn.style.display = 'none';
+            }
+        }
+        
+        async function login(email, password) {
+            try {
+                const response = await fetch(`${QUIZ_API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    setAuthTokens(data.accessToken, data.refreshToken, email);
+                    authModal.style.display = 'none';
+                    return true;
+                } else {
+                    throw new Error(data.error || 'Login failed');
+                }
+            } catch (err) {
+                authError.textContent = err.message;
+                authError.style.display = 'block';
+                return false;
+            }
+        }
+        
+        async function register(email, password) {
+            try {
+                const response = await fetch(`${QUIZ_API_BASE}/api/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    // After registration, auto-login
+                    return await login(email, password);
+                } else {
+                    throw new Error(data.error || 'Registration failed');
+                }
+            } catch (err) {
+                authError.textContent = err.message;
+                authError.style.display = 'block';
+                return false;
+            }
+        }
+        
+        function showAuthModal(loginMode = true) {
+            isLoginMode = loginMode;
+            authModalTitle.textContent = isLoginMode ? 'Login' : 'Register';
+            authSubmitBtn.textContent = isLoginMode ? 'Login' : 'Register';
+            switchAuthMode.textContent = isLoginMode ? "Don't have an account? Register" : "Already have an account? Login";
+            authEmail.value = '';
+            authPassword.value = '';
+            authError.style.display = 'none';
+            authModal.style.display = 'flex';
+        }
+        
+        authForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = authEmail.value.trim();
+            const password = authPassword.value;
+            if (!email || !password) {
+                authError.textContent = 'Please fill both fields';
+                authError.style.display = 'block';
+                return;
+            }
+            let success = false;
+            if (isLoginMode) {
+                success = await login(email, password);
+            } else {
+                success = await register(email, password);
+            }
+            if (success) {
+                // If the user was trying to start quiz, we may need to trigger start after login
+                if (window.pendingQuizStart) {
+                    window.pendingQuizStart = false;
+                    startContent();
+                }
+            }
+        });
+        
+        switchAuthMode.addEventListener('click', () => {
+            showAuthModal(!isLoginMode);
+        });
+        
+        loginBtn.addEventListener('click', () => showAuthModal(true));
+        logoutBtn.addEventListener('click', () => {
+            clearAuth();
+            // Optionally call logout endpoint to invalidate refresh token
+            if (refreshToken) {
+                fetch(`${QUIZ_API_BASE}/api/auth/logout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken })
+                }).catch(console.error);
+            }
+            // Reload page to reset state
+            location.reload();
+        });
+        closeAuthModal.addEventListener('click', () => {
+            authModal.style.display = 'none';
+            if (window.pendingQuizStart) window.pendingQuizStart = false;
+        });
+        window.addEventListener('click', (e) => {
+            if (e.target === authModal) authModal.style.display = 'none';
+        });
+        
+        // Helper: fetch data with optional auth for metadata (public)
         async function fetchData(endpoint, baseUrl = QUIZ_API_BASE) {
             try {
                 const response = await fetch(`${baseUrl}${endpoint}`);
@@ -818,7 +1132,7 @@
             const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
             const formattedOptions = q.options ? q.options.map(opt => replaceNewlinesWithBr(opt)) : [];
             const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
-            const questionType = q.questionType || 'Objective'; // default to Objective if missing
+            const questionType = q.questionType || 'Objective';
             
             const isSubjective = (questionType === 'Subjective');
             
@@ -839,7 +1153,6 @@
             questionDiv.appendChild(qTag);
             questionDiv.appendChild(qText);
             
-            // Question image if any
             if (q.questionImageUrl) {
                 const img = document.createElement('img');
                 img.src = q.questionImageUrl;
@@ -855,7 +1168,6 @@
             let submitBtn = null;
             let correctAnswerBox = null;
             
-            // For Objective: create options, submit button, correct answer box
             if (!isSubjective) {
                 optionsDiv = document.createElement('div');
                 optionsDiv.className = 'options-list';
@@ -877,7 +1189,6 @@
                 questionDiv.appendChild(optionsDiv);
             }
             
-            // Action buttons row
             const actionRow = document.createElement('div');
             actionRow.className = 'action-buttons';
             
@@ -898,7 +1209,6 @@
             actionRow.appendChild(videoSolutionBtn);
             questionDiv.appendChild(actionRow);
             
-            // Correct answer box (only for objective)
             if (!isSubjective) {
                 correctAnswerBox = document.createElement('div');
                 correctAnswerBox.className = 'correct-answer-box';
@@ -912,7 +1222,6 @@
                 questionDiv.appendChild(correctAnswerBox);
             }
             
-            // Text solution container
             const textSolutionContainer = document.createElement('div');
             textSolutionContainer.id = `text-solution-${globalIndex}`;
             textSolutionContainer.className = 'solution-container';
@@ -935,7 +1244,6 @@
             }
             questionDiv.appendChild(textSolutionContainer);
             
-            // Video solution container
             const videoSolutionContainer = document.createElement('div');
             videoSolutionContainer.id = `video-solution-${globalIndex}`;
             videoSolutionContainer.className = 'solution-container';
@@ -945,7 +1253,6 @@
             }
             questionDiv.appendChild(videoSolutionContainer);
             
-            // For objective: submission logic
             if (!isSubjective) {
                 let submitted = false;
                 submitBtn.onclick = async () => {
@@ -967,17 +1274,13 @@
                     submitted = true;
                     submitBtn.disabled = true;
                 };
-                // Initially disable solution buttons until submission
                 textSolutionBtn.disabled = true;
                 videoSolutionBtn.disabled = true;
             } else {
-                // For subjective: solution buttons are enabled from start
                 textSolutionBtn.disabled = false;
                 videoSolutionBtn.disabled = false;
-                // Also we don't have submit button, so we can directly show solution
             }
             
-            // Common solution toggle logic
             textSolutionBtn.onclick = () => {
                 const wasVisible = textSolutionContainer.classList.contains('visible');
                 if (!wasVisible) {
@@ -1022,6 +1325,11 @@
             }
             
             if (currentMode === 'quiz') {
+                if (!accessToken) {
+                    window.pendingQuizStart = true;
+                    showAuthModal(true);
+                    return;
+                }
                 await startQuiz(course, subject, chapter);
             } else {
                 await startLectures(course, subject, chapter);
@@ -1071,8 +1379,7 @@
                 if (quizCursor !== null && quizCursor !== undefined) {
                     params.append('cursor', quizCursor.toString());
                 }
-                const response = await fetch(`${QUIZ_API_BASE}/api/quiz?${params.toString()}`);
-                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                const response = await fetchWithAuth(`${QUIZ_API_BASE}/api/quiz?${params.toString()}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Failed to load questions');
                 const questions = data.questions || [];
@@ -1204,6 +1511,7 @@
         
         // ---- Initial Load ----
         window.addEventListener('load', () => {
+            updateAuthUI();
             loadClasses();
             quizSection.style.display = 'none';
             lecturesSection.style.display = 'none';
