@@ -443,7 +443,7 @@ async function processBatch(batch) {
         }
     }
 
-    // Prepare create writes
+    // Prepare create writes (including questionType)
     const createWrites = [];
     for (const { item, question, hash, mapping } of newDocs) {
         const questionId = crypto.randomUUID();
@@ -456,16 +456,17 @@ async function processBatch(batch) {
             questionImageUrl: question.questionImageUrl || null,
             solutionVideoUrl: question.solutionVideoUrl || null,
             solutionImageUrl: question.solutionImageUrl || null,
+            questionType: question.questionType || null,   // NEW FIELD
             mappings: [mapping],
             questionHash: hash,
             embedded: false,
-            questionNo: question.questionNo,   // added
+            questionNo: question.questionNo,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         };
         createWrites.push({ docRef: db.collection('questions').doc(questionId), data: questionDoc });
     }
 
-    // Prepare update writes (no change to questionNo)
+    // Prepare update writes (no change to questionType)
     const updateWrites = [];
     for (const { docRef, currentMappings, newMappingsSet } of updatesMap.values()) {
         const newMappingsArray = [...currentMappings];
@@ -648,16 +649,14 @@ app.get('/api/quiz', async (req, res) => {
                 correctIndex: data.correctIndex,
                 solutionVideoUrl: data.solutionVideoUrl || null,
                 questionImageUrl: data.questionImageUrl || null,
-                solutionImageUrl: data.solutionImageUrl || null
+                solutionImageUrl: data.solutionImageUrl || null,
+                questionType: data.questionType || null   // NEW FIELD
             });
         });
 
         let nextCursor = null;
         let hasMore = false;
         if (questions.length > 0) {
-            // To get nextCursor, we need the last document's questionNo.
-            // Since we only have the data, we can re-fetch the last document's questionNo from snapshot.
-            // But snapshot.docs gives us the documents, so we can get it from the last doc.
             const lastDoc = snapshot.docs[snapshot.docs.length - 1];
             nextCursor = lastDoc.data().questionNo;
             hasMore = snapshot.size === limit;
@@ -718,7 +717,9 @@ app.get('/api/question', async (req, res) => {
         }
 
         const data = snapshot.docs[0].data();
-        res.json({ success: true, question: data });
+        // Include questionType in response
+        const question = { ...data, questionType: data.questionType || null };
+        res.json({ success: true, question });
     } catch (error) {
         console.error('Error fetching single question:', error);
         res.status(500).json({
@@ -787,8 +788,6 @@ app.delete('/api/question', async (req, res) => {
         for (const [key, count] of decrementMap.entries()) {
             const [className, subject, chapter] = key.split('|');
             await updateMetadataCounts(className, subject, chapter, -count);
-            // Note: we do NOT remove from cache even if count becomes zero.
-            // Stale entries will be cleared on next server restart.
         }
 
         console.log(`🗑️ Deleted question: ${questionId}`);
@@ -916,6 +915,7 @@ app.put('/api/question', async (req, res) => {
             questionImageUrl,
             solutionVideoUrl,
             solutionImageUrl,
+            questionType,          // NEW FIELD
             mappings
         } = req.body;
 
@@ -954,6 +954,7 @@ app.put('/api/question', async (req, res) => {
         if (questionImageUrl !== undefined) updateData.questionImageUrl = questionImageUrl;
         if (solutionVideoUrl !== undefined) updateData.solutionVideoUrl = solutionVideoUrl;
         if (solutionImageUrl !== undefined) updateData.solutionImageUrl = solutionImageUrl;
+        if (questionType !== undefined) updateData.questionType = questionType;   // NEW
 
         // Track newly added mappings for cache update
         const newlyAddedMappings = [];
@@ -1074,6 +1075,7 @@ app.get('/api/questions', async (req, res) => {
                     questionImageUrl: data.questionImageUrl || null,
                     solutionVideoUrl: data.solutionVideoUrl || null,
                     solutionImageUrl: data.solutionImageUrl || null,
+                    questionType: data.questionType || null,   // NEW FIELD
                     mappings: data.mappings,
                     questionNo: data.questionNo,
                     createdAt: data.createdAt,
@@ -1098,7 +1100,6 @@ app.get('/api/questions', async (req, res) => {
         }
 
         // Fallback: old behavior without pagination (legacy query merging)
-        // This part remains for backward compatibility when no class/subject/chapter is provided
         const questionsMap = new Map();
 
         let legacyQuery = db.collection('questions');
@@ -1145,6 +1146,7 @@ app.get('/api/questions', async (req, res) => {
                 questionImageUrl: q.questionImageUrl || null,
                 solutionVideoUrl: q.solutionVideoUrl || null,
                 solutionImageUrl: q.solutionImageUrl || null,
+                questionType: q.questionType || null,   // NEW FIELD
                 questionNo: q.questionNo || null
             };
             if (q.mappings) result.mappings = q.mappings;
