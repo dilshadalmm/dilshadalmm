@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
