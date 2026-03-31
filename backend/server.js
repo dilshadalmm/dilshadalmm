@@ -39,7 +39,7 @@ const REFRESH_TOKEN_EXPIRY = '7d';
 function normalizeText(text) {
   if (!text || typeof text !== 'string') return '';
   let normalized = text.toLowerCase();
-  normalized = normalized.replace(/[^\w\s+-*/=]/g, ' ');
+  normalized = normalized.replace(/[^\w\s+\-*/]/g, '');
   normalized = normalized.replace(/\s+/g, ' ').trim();
   return normalized;
 }
