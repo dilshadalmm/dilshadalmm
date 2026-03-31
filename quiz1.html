@@ -131,23 +131,70 @@
         .form-label::after {
             margin-left: 8px;
         }
-        .form-input {
+        .custom-select-wrapper {
+            position: relative;
+            width: 100%;
+        }
+        .custom-select-trigger {
             width: 100%;
             padding: 10px 18px;
             border: 1px solid #e2e8f0;
             border-radius: 9999px;
             font-size: 0.9rem;
             outline: none;
-            transition: border-color 0.2s;
-            -webkit-appearance: none;
-            -moz-appearance: none;
-            appearance: none;
             background-color: #fff;
             font-family: 'Montserrat', sans-serif;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        .form-input:focus {
-            border-color: #000000;
-            box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+        .custom-select-trigger::after {
+            content: "▼";
+            font-size: 0.7rem;
+            color: #94a3b8;
+            transition: transform 0.2s;
+        }
+        .custom-select-trigger.open::after {
+            transform: rotate(180deg);
+        }
+        .custom-select-dropdown {
+            position: absolute;
+            top: calc(100% + 4px);
+            left: 0;
+            width: 100%;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            z-index: 50;
+            display: none;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+        .custom-select-dropdown.show {
+            display: block;
+        }
+        .custom-select-option {
+            padding: 12px 18px;
+            font-size: 0.9rem;
+            font-family: 'Montserrat', sans-serif;
+            cursor: pointer;
+            transition: background 0.1s;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .custom-select-option:last-child {
+            border-bottom: none;
+        }
+        .custom-select-option:hover {
+            background-color: #f1f5f9;
+        }
+        .custom-select-option.selected {
+            background-color: #eef2ff;
+            font-weight: 500;
+        }
+        .form-input-hidden {
+            display: none;
         }
         .start-btn {
             width: 100%;
@@ -225,7 +272,7 @@
             padding: 10px 14px;
             margin: 6px 0;
             border: 1px solid #cbd5e1;
-            border-radius: 9999px;
+            border-radius: 4px; /* changed from 9999px to rectangle with 4px corners */
             font-size: 0.85rem;
             color: #334155;
             cursor: pointer;
@@ -361,14 +408,6 @@
         .katex-display {
             margin: 0.5em 0;
         }
-        select.form-input {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
-            background-position: right 12px center;
-            background-repeat: no-repeat;
-            background-size: 18px;
-            appearance: none;
-            padding-right: 38px;
-        }
         .infinite-loader {
             text-align: center;
             padding: 20px;
@@ -388,24 +427,30 @@
             </div>
             <h1 class="logo-text">StudentPlus</h1>
             
-            <!-- Course selection -->
+            <!-- Custom dropdowns for Course, Subject, Chapter -->
             <div class="form-group">
                 <label class="form-label">Select Course</label>
-                <select id="courseSelect" class="form-input">
-                    <option value="">Loading courses...</option>
-                </select>
+                <div class="custom-select-wrapper" id="courseSelectWrapper">
+                    <div class="custom-select-trigger" id="courseSelectTrigger">Select a course</div>
+                    <div class="custom-select-dropdown" id="courseSelectDropdown"></div>
+                </div>
+                <select id="courseSelect" class="form-input-hidden"></select>
             </div>
             <div class="form-group">
                 <label class="form-label">Select Subject</label>
-                <select id="subjectSelect" class="form-input" disabled>
-                    <option value="">Select a course first</option>
-                </select>
+                <div class="custom-select-wrapper" id="subjectSelectWrapper">
+                    <div class="custom-select-trigger" id="subjectSelectTrigger" disabled>Select a course first</div>
+                    <div class="custom-select-dropdown" id="subjectSelectDropdown"></div>
+                </div>
+                <select id="subjectSelect" class="form-input-hidden" disabled></select>
             </div>
             <div class="form-group">
                 <label class="form-label">Select Chapter</label>
-                <select id="chapterSelect" class="form-input" disabled>
-                    <option value="">Select a subject first</option>
-                </select>
+                <div class="custom-select-wrapper" id="chapterSelectWrapper">
+                    <div class="custom-select-trigger" id="chapterSelectTrigger" disabled>Select a subject first</div>
+                    <div class="custom-select-dropdown" id="chapterSelectDropdown"></div>
+                </div>
+                <select id="chapterSelect" class="form-input-hidden" disabled></select>
             </div>
             <button class="start-btn" onclick="startContent()">Proceed</button>
         </div>
@@ -484,10 +529,169 @@
         let quizLoading = false;
         let currentQuizCourse = '', currentQuizSubject = '', currentQuizChapter = '';
         
+        // Hidden native selects
         const courseSelect = document.getElementById('courseSelect');
         const subjectSelect = document.getElementById('subjectSelect');
         const chapterSelect = document.getElementById('chapterSelect');
+        
+        // Custom dropdown elements
+        const courseTrigger = document.getElementById('courseSelectTrigger');
+        const subjectTrigger = document.getElementById('subjectSelectTrigger');
+        const chapterTrigger = document.getElementById('chapterSelectTrigger');
+        const courseDropdown = document.getElementById('courseSelectDropdown');
+        const subjectDropdown = document.getElementById('subjectSelectDropdown');
+        const chapterDropdown = document.getElementById('chapterSelectDropdown');
+        
         const quizSection = document.getElementById('quizSection');
+        
+        // Helper to sync custom dropdown UI from hidden select
+        function syncCustomDropdown(selectElement, dropdownContainer, triggerElement) {
+            const options = Array.from(selectElement.options);
+            dropdownContainer.innerHTML = '';
+            if (options.length === 0) {
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'custom-select-option';
+                emptyDiv.textContent = 'No options available';
+                emptyDiv.style.cursor = 'default';
+                dropdownContainer.appendChild(emptyDiv);
+                triggerElement.textContent = 'No options';
+                return;
+            }
+            options.forEach((opt, idx) => {
+                const optionDiv = document.createElement('div');
+                optionDiv.className = 'custom-select-option';
+                if (opt.value === selectElement.value) {
+                    optionDiv.classList.add('selected');
+                    triggerElement.textContent = opt.textContent;
+                }
+                optionDiv.textContent = opt.textContent;
+                optionDiv.dataset.value = opt.value;
+                optionDiv.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectElement.value = opt.value;
+                    triggerElement.textContent = opt.textContent;
+                    // update selected class
+                    document.querySelectorAll(`#${dropdownContainer.id} .custom-select-option`).forEach(el => el.classList.remove('selected'));
+                    optionDiv.classList.add('selected');
+                    // close dropdown
+                    document.querySelectorAll('.custom-select-dropdown').forEach(dd => dd.classList.remove('show'));
+                    document.querySelectorAll('.custom-select-trigger').forEach(tr => tr.classList.remove('open'));
+                    // trigger change event on hidden select
+                    const event = new Event('change', { bubbles: true });
+                    selectElement.dispatchEvent(event);
+                });
+                dropdownContainer.appendChild(optionDiv);
+            });
+            // Ensure trigger shows current selection
+            const selectedOpt = options.find(opt => opt.value === selectElement.value);
+            if (selectedOpt) triggerElement.textContent = selectedOpt.textContent;
+            else if (options.length) triggerElement.textContent = options[0].textContent;
+            else triggerElement.textContent = 'Select';
+        }
+        
+        // Attach click handlers for custom dropdowns
+        function initCustomDropdowns() {
+            function toggleDropdown(trigger, dropdown) {
+                const isOpen = dropdown.classList.contains('show');
+                // close all others
+                document.querySelectorAll('.custom-select-dropdown').forEach(dd => dd.classList.remove('show'));
+                document.querySelectorAll('.custom-select-trigger').forEach(tr => tr.classList.remove('open'));
+                if (!isOpen) {
+                    dropdown.classList.add('show');
+                    trigger.classList.add('open');
+                }
+            }
+            courseTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!courseSelect.disabled) toggleDropdown(courseTrigger, courseDropdown);
+            });
+            subjectTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!subjectSelect.disabled) toggleDropdown(subjectTrigger, subjectDropdown);
+            });
+            chapterTrigger.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!chapterSelect.disabled) toggleDropdown(chapterTrigger, chapterDropdown);
+            });
+            document.addEventListener('click', () => {
+                document.querySelectorAll('.custom-select-dropdown').forEach(dd => dd.classList.remove('show'));
+                document.querySelectorAll('.custom-select-trigger').forEach(tr => tr.classList.remove('open'));
+            });
+        }
+        
+        // Function to update custom dropdowns after hidden select changes
+        function updateAllCustomDropdowns() {
+            syncCustomDropdown(courseSelect, courseDropdown, courseTrigger);
+            syncCustomDropdown(subjectSelect, subjectDropdown, subjectTrigger);
+            syncCustomDropdown(chapterSelect, chapterDropdown, chapterTrigger);
+        }
+        
+        // Override some native methods to keep UI in sync after innerHTML changes
+        const originalCourseInnerHTMLSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'innerHTML').set;
+        Object.defineProperty(courseSelect, 'innerHTML', {
+            set: function(html) {
+                originalCourseInnerHTMLSetter.call(this, html);
+                updateAllCustomDropdowns();
+            }
+        });
+        Object.defineProperty(subjectSelect, 'innerHTML', {
+            set: function(html) {
+                originalCourseInnerHTMLSetter.call(this, html);
+                updateAllCustomDropdowns();
+            }
+        });
+        Object.defineProperty(chapterSelect, 'innerHTML', {
+            set: function(html) {
+                originalCourseInnerHTMLSetter.call(this, html);
+                updateAllCustomDropdowns();
+            }
+        });
+        
+        // Also watch for disabled attribute changes
+        function setSelectDisabled(select, disabled, triggerElement) {
+            select.disabled = disabled;
+            if (disabled) {
+                triggerElement.style.opacity = '0.6';
+                triggerElement.style.cursor = 'not-allowed';
+                triggerElement.textContent = select.options.length ? select.options[0]?.textContent || 'Disabled' : 'Select a course first';
+            } else {
+                triggerElement.style.opacity = '1';
+                triggerElement.style.cursor = 'pointer';
+                if (select.options.length) {
+                    const selected = select.options[select.selectedIndex];
+                    triggerElement.textContent = selected ? selected.textContent : 'Select';
+                } else {
+                    triggerElement.textContent = 'No options';
+                }
+            }
+        }
+        
+        // Override disabled property
+        const originalCourseDisabled = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'disabled');
+        Object.defineProperty(courseSelect, 'disabled', {
+            get: function() { return this.hasAttribute('disabled'); },
+            set: function(val) {
+                if (val) this.setAttribute('disabled', '');
+                else this.removeAttribute('disabled');
+                setSelectDisabled(courseSelect, val, courseTrigger);
+            }
+        });
+        Object.defineProperty(subjectSelect, 'disabled', {
+            get: function() { return this.hasAttribute('disabled'); },
+            set: function(val) {
+                if (val) this.setAttribute('disabled', '');
+                else this.removeAttribute('disabled');
+                setSelectDisabled(subjectSelect, val, subjectTrigger);
+            }
+        });
+        Object.defineProperty(chapterSelect, 'disabled', {
+            get: function() { return this.hasAttribute('disabled'); },
+            set: function(val) {
+                if (val) this.setAttribute('disabled', '');
+                else this.removeAttribute('disabled');
+                setSelectDisabled(chapterSelect, val, chapterTrigger);
+            }
+        });
         
         // Helper: fetch with dynamic base
         async function fetchData(endpoint) {
@@ -524,6 +728,7 @@
                 subjectSelect.innerHTML = '<option value="">Select a course first</option>';
                 chapterSelect.disabled = true;
                 chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+                updateAllCustomDropdowns();
             } catch (error) {
                 courseSelect.innerHTML = '<option value="">Error loading courses</option>';
                 console.error(error);
@@ -550,6 +755,7 @@
                     subjectSelect.appendChild(option);
                 });
                 subjectSelect.disabled = false;
+                updateAllCustomDropdowns();
             } catch (error) {
                 subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
                 console.error(error);
@@ -574,6 +780,7 @@
                     chapterSelect.appendChild(option);
                 });
                 chapterSelect.disabled = false;
+                updateAllCustomDropdowns();
             } catch (error) {
                 chapterSelect.innerHTML = '<option value="">Error loading chapters</option>';
                 console.error(error);
@@ -589,6 +796,7 @@
                 subjectSelect.innerHTML = '<option value="">Select a course first</option>';
                 chapterSelect.disabled = true;
                 chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+                updateAllCustomDropdowns();
             }
         });
         
@@ -600,6 +808,7 @@
             } else {
                 chapterSelect.disabled = true;
                 chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
+                updateAllCustomDropdowns();
             }
         });
         
@@ -978,6 +1187,7 @@
         
         // ---- Initial Load ----
         window.addEventListener('load', () => {
+            initCustomDropdowns();
             loadClasses();
             quizSection.style.display = 'none';
             setupScrollListener();
