@@ -2,8 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');             // for password hashing
-const jwt = require('jsonwebtoken');          // for JWT tokens
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const app = express();
@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
-// ---------- Firestore Initialization ----------
+// Initialize Firebase Admin
 let firebaseInitialized = false;
 try {
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -29,13 +29,13 @@ try {
 }
 const db = firebaseInitialized ? admin.firestore() : null;
 
-// ---------- JWT Configuration ----------
+// JWT Configuration
 const JWT_SECRET = process.env.JWT_SECRET || 'your_jwt_secret_here';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'your_refresh_secret_here';
-const ACCESS_TOKEN_EXPIRY = '15m';      // 15 minutes
-const REFRESH_TOKEN_EXPIRY = '7d';      // 7 days
+const ACCESS_TOKEN_EXPIRY = '15m';
+const REFRESH_TOKEN_EXPIRY = '7d';
 
-// ---------- Hashing & Normalization Functions ----------
+// ---- Hashing & Normalization Functions ----
 function normalizeText(text) {
   if (!text || typeof text !== 'string') return '';
   let normalized = text.toLowerCase();
@@ -56,7 +56,7 @@ function makeDocId(...parts) {
   return parts.map(p => p.replace(/[^a-zA-Z0-9]/g, '')).join('');
 }
 
-// ---------- Metadata Counts Update ----------
+// ---- Metadata Counts Update (atomic increment) ----
 async function updateMetadataCounts(className, subject, chapter, incrementBy) {
   if (!db) return;
   const courseId = makeDocId('class', className);
@@ -77,11 +77,11 @@ async function updateMetadataCounts(className, subject, chapter, incrementBy) {
   );
 }
 
-// ---------- In-Memory Metadata Cache ----------
+// ---- In-Memory Metadata Cache ----
 let metadataCache = {
   classes: new Set(),
-  subjectsByClass: new Map(),   // className -> Set(subject)
-  chaptersByClassSubject: new Map() // `${className}|${subject}` -> Set(chapter)
+  subjectsByClass: new Map(),
+  chaptersByClassSubject: new Map()
 };
 
 async function loadMetadataCache() {
@@ -132,18 +132,18 @@ function updateCacheForNewMapping(className, subject, chapter) {
   metadataCache.chaptersByClassSubject.get(key).add(chapter);
 }
 
-// ---------- Configuration Constants ----------
+// ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
 const MAX_WAIT_MS = 100;
 const RESPONSE_TIMEOUT_MS = 60000;
 
-// ---------- Queue and Concurrency State ----------
+// ---- Queue and Concurrency State ----
 const requestQueue = [];
 let activeBatches = 0;
 let partialBatchTimeoutId = null;
 
-// ---------- Utility Functions ----------
+// ---- Utility Functions ----
 async function commitMixedWrites(createWrites, updateWrites) {
   const allOperations = [];
   for (const { docRef, data } of createWrites) {
@@ -274,8 +274,8 @@ async function processBatch(batch) {
   const newDocs = [];
   const updatesMap = new Map();
   const itemCounts = new Map();
-  const metadataIncrements = new Map(); // for new questions
-  const mappingAdditions = new Set();   // for ANY new mapping
+  const metadataIncrements = new Map();
+  const mappingAdditions = new Set();
 
   function getItemCounts(item) {
     if (!itemCounts.has(item)) itemCounts.set(item, { newCount: 0, updatedCount: 0 });
@@ -287,7 +287,6 @@ async function processBatch(batch) {
     const counts = getItemCounts(item);
 
     if (!existingDocsMap.has(hash)) {
-      // New question
       newDocs.push({ item, question, hash, mapping });
       counts.newCount++;
       const key = `${mapping.class}|${mapping.subject}|${mapping.chapter}`;
@@ -296,7 +295,6 @@ async function processBatch(batch) {
       continue;
     }
 
-    // Existing question – check if mapping already exists
     const docData = existingDocsMap.get(hash);
     const docRef = db.collection('questions').doc(docData.questionId);
     let currentMappings = docData.mappings;
@@ -319,7 +317,7 @@ async function processBatch(batch) {
     }
   }
 
-  // --- Assign questionNo to new questions (ordered per mapping group) ---
+  // Assign questionNo to new questions
   const newDocsByMapping = new Map();
   for (const nd of newDocs) {
     const key = `${nd.mapping.class}|${nd.mapping.subject}|${nd.mapping.chapter}`;
@@ -341,7 +339,7 @@ async function processBatch(batch) {
 
     let nextNo = maxQuestionNo + 1;
     const usedInBatch = new Set();
-    const existsCache = new Map(); // questionNo -> exists
+    const existsCache = new Map();
 
     for (const nd of ndList) {
       const incomingNo = nd.question.questionNo;
@@ -436,7 +434,6 @@ async function processBatch(batch) {
     await commitMixedWrites(createWrites, updateWrites);
   }
 
-  // Update metadata counts and cache for every new mapping added
   for (const key of mappingAdditions) {
     const [className, subject, chapter] = key.split('|');
     const incrementCount = metadataIncrements.get(key) || 1;
@@ -444,7 +441,6 @@ async function processBatch(batch) {
     updateCacheForNewMapping(className, subject, chapter);
   }
 
-  // Send responses
   for (const item of batch) {
     if (!item.sent) {
       const counts = itemCounts.get(item) || { newCount: 0, updatedCount: 0 };
@@ -479,7 +475,6 @@ function scheduleProcessing() {
 
 // ==================== AUTHENTICATION & PERMISSION ====================
 
-// ---------- Helper: Generate tokens ----------
 function generateAccessToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_EXPIRY });
 }
@@ -488,7 +483,6 @@ function generateRefreshToken(userId) {
   return jwt.sign({ userId }, JWT_REFRESH_SECRET, { expiresIn: REFRESH_TOKEN_EXPIRY });
 }
 
-// ---------- Middleware: Verify JWT ----------
 const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -497,7 +491,6 @@ const authenticate = async (req, res, next) => {
   const token = authHeader.split(' ')[1];
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    // Fetch user from Firestore to ensure still active
     const userDoc = await db.collection('users').doc(decoded.userId).get();
     if (!userDoc.exists) {
       return res.status(401).json({ success: false, error: 'User not found' });
@@ -516,7 +509,6 @@ const authenticate = async (req, res, next) => {
   }
 };
 
-// ---------- Middleware: Check permission for a class ----------
 const checkPermission = (className) => async (req, res, next) => {
   if (!req.user) return res.status(401).json({ success: false, error: 'Unauthorized' });
   try {
@@ -542,7 +534,6 @@ const checkPermission = (className) => async (req, res, next) => {
 
 // ==================== AUTH ENDPOINTS ====================
 
-// POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -550,16 +541,12 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Email and password are required' });
     }
 
-    // Check if user already exists
     const existingUser = await db.collection('users').where('email', '==', email).limit(1).get();
     if (!existingUser.empty) {
       return res.status(409).json({ success: false, error: 'Email already registered' });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create user document
     const userId = crypto.randomUUID();
     const userData = {
       userId,
@@ -572,7 +559,6 @@ app.post('/api/auth/register', async (req, res) => {
     };
     await db.collection('users').doc(userId).set(userData);
 
-    // Optionally, you could create a default permission here, but we leave that to admin.
     res.status(201).json({ success: true, message: 'User registered successfully', userId });
   } catch (error) {
     console.error('Registration error:', error);
@@ -580,7 +566,6 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// POST /api/auth/login
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -588,7 +573,6 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Email and password are required' });
     }
 
-    // Find user by email
     const userSnapshot = await db.collection('users').where('email', '==', email).limit(1).get();
     if (userSnapshot.empty) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
@@ -599,21 +583,18 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(403).json({ success: false, error: 'Account is inactive' });
     }
 
-    // Verify password
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       return res.status(401).json({ success: false, error: 'Invalid credentials' });
     }
 
-    // Generate tokens
     const accessToken = generateAccessToken(user.userId);
     const refreshToken = generateRefreshToken(user.userId);
 
-    // Store refresh token in Firestore
     const refreshTokenDoc = {
       token: refreshToken,
       userId: user.userId,
-      expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days
+      expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)),
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     };
     await db.collection('refresh_tokens').doc(refreshToken).set(refreshTokenDoc);
@@ -630,7 +611,6 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// POST /api/auth/refresh
 app.post('/api/auth/refresh', async (req, res) => {
   try {
     const { refreshToken } = req.body;
@@ -638,7 +618,6 @@ app.post('/api/auth/refresh', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Refresh token required' });
     }
 
-    // Verify token and check existence in DB
     let decoded;
     try {
       decoded = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
@@ -651,14 +630,12 @@ app.post('/api/auth/refresh', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Refresh token not found' });
     }
 
-    // Optionally check expiry (though JWT verification already checks signature)
     const tokenData = tokenDoc.data();
     if (tokenData.expiresAt.toDate() < new Date()) {
       await db.collection('refresh_tokens').doc(refreshToken).delete();
       return res.status(401).json({ success: false, error: 'Refresh token expired' });
     }
 
-    // Generate new access token
     const newAccessToken = generateAccessToken(decoded.userId);
     res.json({ success: true, accessToken: newAccessToken });
   } catch (error) {
@@ -667,7 +644,6 @@ app.post('/api/auth/refresh', async (req, res) => {
   }
 });
 
-// POST /api/auth/logout
 app.post('/api/auth/logout', async (req, res) => {
   try {
     const { refreshToken } = req.body;
@@ -683,16 +659,12 @@ app.post('/api/auth/logout', async (req, res) => {
 
 // ==================== STUDENT-FACING ENDPOINTS ====================
 
-// GET /api/quiz – requires authentication and permission for the requested class
 app.get('/api/quiz', authenticate, async (req, res, next) => {
-  // Extract class from query and pass to permission middleware
   const { className } = req.query;
   if (!className) {
     return res.status(400).json({ success: false, error: 'class parameter is required' });
   }
-  // Invoke permission middleware dynamically
   checkPermission(className)(req, res, async () => {
-    // Original /api/quiz logic goes here
     try {
       const { subject, chapter, cursor, limit: limitParam } = req.query;
       if (!subject || !chapter) {
@@ -755,7 +727,6 @@ app.get('/api/quiz', authenticate, async (req, res, next) => {
 
 // ==================== UNPROTECTED ENDPOINTS ====================
 
-// GET /api/question – no authentication (as requested)
 app.get('/api/question', async (req, res) => {
   try {
     const { class: className, subject, chapter, questionNo } = req.query;
@@ -797,10 +768,8 @@ app.get('/api/question', async (req, res) => {
   }
 });
 
-// ==================== ADMIN ENDPOINTS (UNPROTECTED FOR NOW) ====================
-// (All admin endpoints remain unchanged and do not require authentication)
+// ==================== ADMIN ENDPOINTS (UNPROTECTED) ====================
 
-// Helper
 function extractMappingsFromDoc(docData) {
   if (docData.mappings && Array.isArray(docData.mappings)) {
     return docData.mappings;
@@ -810,7 +779,6 @@ function extractMappingsFromDoc(docData) {
   return [];
 }
 
-// DELETE /api/question
 app.delete('/api/question', async (req, res) => {
   try {
     const { questionId } = req.body;
@@ -847,7 +815,6 @@ app.delete('/api/question', async (req, res) => {
   }
 });
 
-// DELETE /api/questions/bulk
 app.delete('/api/questions/bulk', async (req, res) => {
   try {
     const { questionIds, class: className, subject, chapter } = req.body;
@@ -882,14 +849,12 @@ app.delete('/api/questions/bulk', async (req, res) => {
       return res.json({ success: true, deletedCount: 0 });
     }
 
-    // Fetch all documents to get mappings
     const docsData = [];
     for (const ref of docRefs) {
       const snap = await ref.get();
       if (snap.exists) docsData.push({ ref, data: snap.data() });
     }
 
-    // Batch delete
     const chunkSize = 500;
     for (let i = 0; i < docRefs.length; i += chunkSize) {
       const chunk = docRefs.slice(i, i + chunkSize);
@@ -900,7 +865,6 @@ app.delete('/api/questions/bulk', async (req, res) => {
       await batch.commit();
     }
 
-    // Aggregate decrements
     const decrementMap = new Map();
     for (const { data } of docsData) {
       const mappings = extractMappingsFromDoc(data);
@@ -921,7 +885,6 @@ app.delete('/api/questions/bulk', async (req, res) => {
   }
 });
 
-// PUT /api/question
 app.put('/api/question', async (req, res) => {
   try {
     const {
@@ -960,7 +923,6 @@ app.put('/api/question', async (req, res) => {
     if (solutionImageUrl !== undefined) updateData.solutionImageUrl = solutionImageUrl;
     if (questionType !== undefined) updateData.questionType = questionType;
 
-    // Track newly added mappings for cache update
     const newlyAddedMappings = [];
     if (mappings !== undefined && Array.isArray(mappings)) {
       let existingMappings = [];
@@ -994,7 +956,6 @@ app.put('/api/question', async (req, res) => {
     updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
     await docRef.update(updateData);
 
-    // Update metadata counts and cache for newly added mappings
     for (const m of newlyAddedMappings) {
       await updateMetadataCounts(m.class, m.subject, m.chapter, 1);
       updateCacheForNewMapping(m.class, m.subject, m.chapter);
@@ -1007,7 +968,6 @@ app.put('/api/question', async (req, res) => {
   }
 });
 
-// GET /api/questions (admin) with optional cursor/limit pagination
 app.get('/api/questions', async (req, res) => {
   try {
     const { class: className, subject, chapter, cursor, limit: limitParam } = req.query;
@@ -1026,7 +986,6 @@ app.get('/api/questions', async (req, res) => {
       }
     }
 
-    // If class, subject, chapter are provided, use mapping query with cursor pagination
     if (className && subject && chapter) {
       let query = db.collection('questions')
         .where('mappings', 'array-contains', { class: className, subject: subject, chapter: chapter })
@@ -1069,7 +1028,6 @@ app.get('/api/questions', async (req, res) => {
       return res.json({ success: true, questions, nextCursor, hasMore });
     }
 
-    // Fallback: old behavior without pagination (legacy query merging)
     const questionsMap = new Map();
     let legacyQuery = db.collection('questions');
     if (className) legacyQuery = legacyQuery.where('class', '==', className);
@@ -1126,7 +1084,6 @@ app.get('/api/questions', async (req, res) => {
   }
 });
 
-// Metadata endpoints (still public)
 app.get('/api/classes', async (req, res) => {
   try {
     const classes = Array.from(metadataCache.classes).sort();
@@ -1168,8 +1125,6 @@ app.get('/api/chapters', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => res.send('Active'));
 
-// Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
