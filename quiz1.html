@@ -192,6 +192,10 @@
             padding: 16px 12px;
             border-radius: 4px;
             margin: 20px 4px;
+            transition: background-color 0.2s;
+        }
+        .question-item.subjective {
+            background-color: #ffe4e1; /* light pink */
         }
         .q-tag {
             display: inline-block;
@@ -518,7 +522,6 @@
         });
         
         // ---------- API ENDPOINTS ----------
-        // Updated quiz backend URL as required
         const QUIZ_API_BASE = 'https://dilshadalmm-yosv.onrender.com';
         const LECTURE_API_BASE = 'https://dilshadalmm-1.onrender.com';
         
@@ -780,7 +783,7 @@
             container.appendChild(fragment);
         }
         
-        // ---- Quiz Functions (existing logic adapted) ----
+        // ---- Quiz Functions (with questionType support) ----
         function renderMathInElementWithDelay(element) {
             if (!element) return;
             const tryRender = () => {
@@ -813,22 +816,30 @@
         
         function createQuestionElement(q, idx, globalIndex) {
             const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
-            const formattedOptions = q.options.map(opt => replaceNewlinesWithBr(opt));
+            const formattedOptions = q.options ? q.options.map(opt => replaceNewlinesWithBr(opt)) : [];
             const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
+            const questionType = q.questionType || 'Objective'; // default to Objective if missing
+            
+            const isSubjective = (questionType === 'Subjective');
             
             const questionDiv = document.createElement('div');
             questionDiv.className = 'question-item';
+            if (isSubjective) {
+                questionDiv.classList.add('subjective');
+            }
             
             const qTag = document.createElement('div');
             qTag.className = 'q-tag';
-            qTag.textContent = `Question ${globalIndex}`;
+            qTag.textContent = `Question ${globalIndex} ${isSubjective ? '(Subjective)' : '(Objective)'}`;
             
             const qText = document.createElement('div');
             qText.className = 'question-text';
             qText.innerHTML = formattedQuestionText;
             
-            const optionsDiv = document.createElement('div');
-            optionsDiv.className = 'options-list';
+            questionDiv.appendChild(qTag);
+            questionDiv.appendChild(qText);
+            
+            // Question image if any
             if (q.questionImageUrl) {
                 const img = document.createElement('img');
                 img.src = q.questionImageUrl;
@@ -836,52 +847,72 @@
                 img.style.maxWidth = '100%';
                 img.style.marginBottom = '12px';
                 img.style.borderRadius = '4px';
-                optionsDiv.appendChild(img);
+                questionDiv.appendChild(img);
             }
             
-            const optionContainers = [];
-            formattedOptions.forEach((opt, optIdx) => {
-                const label = document.createElement('label');
-                label.className = 'option-container';
-                const radio = document.createElement('input');
-                radio.type = 'radio';
-                radio.name = `q_${globalIndex}`;
-                radio.value = optIdx;
-                const span = document.createElement('span');
-                span.innerHTML = opt;
-                label.appendChild(radio);
-                label.appendChild(span);
-                optionsDiv.appendChild(label);
-                optionContainers.push(label);
-            });
+            let optionsDiv = null;
+            let optionContainers = [];
+            let submitBtn = null;
+            let correctAnswerBox = null;
             
+            // For Objective: create options, submit button, correct answer box
+            if (!isSubjective) {
+                optionsDiv = document.createElement('div');
+                optionsDiv.className = 'options-list';
+                
+                formattedOptions.forEach((opt, optIdx) => {
+                    const label = document.createElement('label');
+                    label.className = 'option-container';
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = `q_${globalIndex}`;
+                    radio.value = optIdx;
+                    const span = document.createElement('span');
+                    span.innerHTML = opt;
+                    label.appendChild(radio);
+                    label.appendChild(span);
+                    optionsDiv.appendChild(label);
+                    optionContainers.push(label);
+                });
+                questionDiv.appendChild(optionsDiv);
+            }
+            
+            // Action buttons row
             const actionRow = document.createElement('div');
             actionRow.className = 'action-buttons';
-            const submitBtn = document.createElement('button');
-            submitBtn.textContent = 'Submit';
-            submitBtn.className = 'action-btn submit-btn';
+            
             const textSolutionBtn = document.createElement('button');
             textSolutionBtn.textContent = 'Text Solution';
             textSolutionBtn.className = 'action-btn text-solution-btn';
-            textSolutionBtn.disabled = true;
             const videoSolutionBtn = document.createElement('button');
             videoSolutionBtn.textContent = 'Video Solution';
             videoSolutionBtn.className = 'action-btn video-solution-btn';
-            videoSolutionBtn.disabled = true;
-            actionRow.appendChild(submitBtn);
+            
+            if (!isSubjective) {
+                submitBtn = document.createElement('button');
+                submitBtn.textContent = 'Submit';
+                submitBtn.className = 'action-btn submit-btn';
+                actionRow.appendChild(submitBtn);
+            }
             actionRow.appendChild(textSolutionBtn);
             actionRow.appendChild(videoSolutionBtn);
+            questionDiv.appendChild(actionRow);
             
-            const correctAnswerBox = document.createElement('div');
-            correctAnswerBox.className = 'correct-answer-box';
-            const correctLabel = document.createElement('span');
-            correctLabel.className = 'correct-answer-label';
-            correctLabel.textContent = 'Correct Answer:';
-            const correctAnswerSpan = document.createElement('span');
-            correctAnswerSpan.innerHTML = formattedOptions[q.correctIndex] || 'N/A';
-            correctAnswerBox.appendChild(correctLabel);
-            correctAnswerBox.appendChild(correctAnswerSpan);
+            // Correct answer box (only for objective)
+            if (!isSubjective) {
+                correctAnswerBox = document.createElement('div');
+                correctAnswerBox.className = 'correct-answer-box';
+                const correctLabel = document.createElement('span');
+                correctLabel.className = 'correct-answer-label';
+                correctLabel.textContent = 'Correct Answer:';
+                const correctAnswerSpan = document.createElement('span');
+                correctAnswerSpan.innerHTML = formattedOptions[q.correctIndex] || 'N/A';
+                correctAnswerBox.appendChild(correctLabel);
+                correctAnswerBox.appendChild(correctAnswerSpan);
+                questionDiv.appendChild(correctAnswerBox);
+            }
             
+            // Text solution container
             const textSolutionContainer = document.createElement('div');
             textSolutionContainer.id = `text-solution-${globalIndex}`;
             textSolutionContainer.className = 'solution-container';
@@ -902,7 +933,9 @@
                 }
                 textSolutionContainer.appendChild(textBox);
             }
+            questionDiv.appendChild(textSolutionContainer);
             
+            // Video solution container
             const videoSolutionContainer = document.createElement('div');
             videoSolutionContainer.id = `video-solution-${globalIndex}`;
             videoSolutionContainer.className = 'solution-container';
@@ -910,29 +943,42 @@
                 const videoElem = createVideoElement(q.solutionVideoUrl);
                 if (videoElem) videoSolutionContainer.appendChild(videoElem);
             }
+            questionDiv.appendChild(videoSolutionContainer);
             
-            let submitted = false;
-            submitBtn.onclick = async () => {
-                if (submitted) return;
-                const selectedRadio = document.querySelector(`input[name="q_${globalIndex}"]:checked`);
-                if (!selectedRadio) {
-                    alert('Please select an answer');
-                    return;
-                }
-                const selectedIndex = parseInt(selectedRadio.value);
-                const isCorrect = (selectedIndex === q.correctIndex);
-                optionContainers.forEach((container, i) => {
-                    if (i === q.correctIndex) container.classList.add('correct-bg');
-                    else if (i === selectedIndex && !isCorrect) container.classList.add('wrong-bg');
-                });
-                correctAnswerBox.classList.add('visible');
-                if (formattedSolutionText) textSolutionBtn.disabled = false;
-                if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
-                submitted = true;
-                submitBtn.disabled = true;
-            };
+            // For objective: submission logic
+            if (!isSubjective) {
+                let submitted = false;
+                submitBtn.onclick = async () => {
+                    if (submitted) return;
+                    const selectedRadio = document.querySelector(`input[name="q_${globalIndex}"]:checked`);
+                    if (!selectedRadio) {
+                        alert('Please select an answer');
+                        return;
+                    }
+                    const selectedIndex = parseInt(selectedRadio.value);
+                    const isCorrect = (selectedIndex === q.correctIndex);
+                    optionContainers.forEach((container, i) => {
+                        if (i === q.correctIndex) container.classList.add('correct-bg');
+                        else if (i === selectedIndex && !isCorrect) container.classList.add('wrong-bg');
+                    });
+                    if (correctAnswerBox) correctAnswerBox.classList.add('visible');
+                    if (formattedSolutionText) textSolutionBtn.disabled = false;
+                    if (q.solutionVideoUrl) videoSolutionBtn.disabled = false;
+                    submitted = true;
+                    submitBtn.disabled = true;
+                };
+                // Initially disable solution buttons until submission
+                textSolutionBtn.disabled = true;
+                videoSolutionBtn.disabled = true;
+            } else {
+                // For subjective: solution buttons are enabled from start
+                textSolutionBtn.disabled = false;
+                videoSolutionBtn.disabled = false;
+                // Also we don't have submit button, so we can directly show solution
+            }
+            
+            // Common solution toggle logic
             textSolutionBtn.onclick = () => {
-                if (!submitted) return;
                 const wasVisible = textSolutionContainer.classList.contains('visible');
                 if (!wasVisible) {
                     textSolutionContainer.classList.add('visible');
@@ -942,7 +988,6 @@
                 }
             };
             videoSolutionBtn.onclick = () => {
-                if (!submitted) return;
                 const wasVisible = videoSolutionContainer.classList.contains('visible');
                 if (!wasVisible) {
                     videoSolutionContainer.classList.add('visible');
@@ -951,14 +996,6 @@
                     videoSolutionContainer.classList.remove('visible');
                 }
             };
-            
-            questionDiv.appendChild(qTag);
-            questionDiv.appendChild(qText);
-            questionDiv.appendChild(optionsDiv);
-            questionDiv.appendChild(actionRow);
-            questionDiv.appendChild(correctAnswerBox);
-            questionDiv.appendChild(textSolutionContainer);
-            questionDiv.appendChild(videoSolutionContainer);
             
             renderMathInElementWithDelay(questionDiv);
             return questionDiv;
@@ -1034,7 +1071,6 @@
                 if (quizCursor !== null && quizCursor !== undefined) {
                     params.append('cursor', quizCursor.toString());
                 }
-                // Using updated QUIZ_API_BASE
                 const response = await fetch(`${QUIZ_API_BASE}/api/quiz?${params.toString()}`);
                 if (!response.ok) throw new Error(`Server error: ${response.status}`);
                 const data = await response.json();
