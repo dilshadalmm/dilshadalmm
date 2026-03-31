@@ -272,7 +272,7 @@
             padding: 10px 14px;
             margin: 6px 0;
             border: 1px solid #cbd5e1;
-            border-radius: 4px; /* changed from 9999px to rectangle with 4px corners */
+            border-radius: 4px;
             font-size: 0.85rem;
             color: #334155;
             cursor: pointer;
@@ -589,6 +589,13 @@
             else triggerElement.textContent = 'Select';
         }
         
+        // Function to update all custom dropdowns from hidden selects
+        function updateAllCustomDropdowns() {
+            syncCustomDropdown(courseSelect, courseDropdown, courseTrigger);
+            syncCustomDropdown(subjectSelect, subjectDropdown, subjectTrigger);
+            syncCustomDropdown(chapterSelect, chapterDropdown, chapterTrigger);
+        }
+        
         // Attach click handlers for custom dropdowns
         function initCustomDropdowns() {
             function toggleDropdown(trigger, dropdown) {
@@ -619,79 +626,26 @@
             });
         }
         
-        // Function to update custom dropdowns after hidden select changes
-        function updateAllCustomDropdowns() {
-            syncCustomDropdown(courseSelect, courseDropdown, courseTrigger);
-            syncCustomDropdown(subjectSelect, subjectDropdown, subjectTrigger);
-            syncCustomDropdown(chapterSelect, chapterDropdown, chapterTrigger);
-        }
-        
-        // Override some native methods to keep UI in sync after innerHTML changes
-        const originalCourseInnerHTMLSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'innerHTML').set;
-        Object.defineProperty(courseSelect, 'innerHTML', {
-            set: function(html) {
-                originalCourseInnerHTMLSetter.call(this, html);
-                updateAllCustomDropdowns();
-            }
-        });
-        Object.defineProperty(subjectSelect, 'innerHTML', {
-            set: function(html) {
-                originalCourseInnerHTMLSetter.call(this, html);
-                updateAllCustomDropdowns();
-            }
-        });
-        Object.defineProperty(chapterSelect, 'innerHTML', {
-            set: function(html) {
-                originalCourseInnerHTMLSetter.call(this, html);
-                updateAllCustomDropdowns();
-            }
-        });
-        
-        // Also watch for disabled attribute changes
-        function setSelectDisabled(select, disabled, triggerElement) {
-            select.disabled = disabled;
+        // Helper to set disabled state on custom trigger
+        function setTriggerDisabled(trigger, disabled, defaultText) {
             if (disabled) {
-                triggerElement.style.opacity = '0.6';
-                triggerElement.style.cursor = 'not-allowed';
-                triggerElement.textContent = select.options.length ? select.options[0]?.textContent || 'Disabled' : 'Select a course first';
+                trigger.style.opacity = '0.6';
+                trigger.style.cursor = 'not-allowed';
+                trigger.textContent = defaultText;
             } else {
-                triggerElement.style.opacity = '1';
-                triggerElement.style.cursor = 'pointer';
-                if (select.options.length) {
-                    const selected = select.options[select.selectedIndex];
-                    triggerElement.textContent = selected ? selected.textContent : 'Select';
-                } else {
-                    triggerElement.textContent = 'No options';
-                }
+                trigger.style.opacity = '1';
+                trigger.style.cursor = 'pointer';
             }
         }
         
-        // Override disabled property
-        const originalCourseDisabled = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'disabled');
-        Object.defineProperty(courseSelect, 'disabled', {
-            get: function() { return this.hasAttribute('disabled'); },
-            set: function(val) {
-                if (val) this.setAttribute('disabled', '');
-                else this.removeAttribute('disabled');
-                setSelectDisabled(courseSelect, val, courseTrigger);
-            }
-        });
-        Object.defineProperty(subjectSelect, 'disabled', {
-            get: function() { return this.hasAttribute('disabled'); },
-            set: function(val) {
-                if (val) this.setAttribute('disabled', '');
-                else this.removeAttribute('disabled');
-                setSelectDisabled(subjectSelect, val, subjectTrigger);
-            }
-        });
-        Object.defineProperty(chapterSelect, 'disabled', {
-            get: function() { return this.hasAttribute('disabled'); },
-            set: function(val) {
-                if (val) this.setAttribute('disabled', '');
-                else this.removeAttribute('disabled');
-                setSelectDisabled(chapterSelect, val, chapterTrigger);
-            }
-        });
+        // Override disabled property on hidden selects to keep triggers in sync
+        function watchDisabled(select, trigger, defaultText) {
+            const observer = new MutationObserver(() => {
+                setTriggerDisabled(trigger, select.disabled, defaultText);
+            });
+            observer.observe(select, { attributes: true, attributeFilter: ['disabled'] });
+            setTriggerDisabled(trigger, select.disabled, defaultText);
+        }
         
         // Helper: fetch with dynamic base
         async function fetchData(endpoint) {
@@ -1188,6 +1142,9 @@
         // ---- Initial Load ----
         window.addEventListener('load', () => {
             initCustomDropdowns();
+            // Watch disabled state on hidden selects to update triggers
+            watchDisabled(subjectSelect, subjectTrigger, 'Select a course first');
+            watchDisabled(chapterSelect, chapterTrigger, 'Select a subject first');
             loadClasses();
             quizSection.style.display = 'none';
             setupScrollListener();
