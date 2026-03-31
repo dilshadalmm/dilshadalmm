@@ -7,7 +7,8 @@
     <meta name="mobile-web-app-capable" content="yes">
     <title>StudentPlus - MCQ & Lectures | KaTeX Support</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Montserrat + Creepster fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Creepster&display=swap" rel="stylesheet">
     
     <!-- KaTeX CSS and JS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
@@ -21,7 +22,7 @@
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
         }
-        html, body, div, span, p, h1, h2, h3, h4, h5, h6, label, button, select, input, .option-container, .question-text, .q-tag, .solution-box, .correct-answer-box, .lecture-card {
+        html, body, div, span, p, h1, h2, h3, h4, h5, h6, label, button, select, input, .option-container, .question-text, .q-tag, .solution-box, .correct-answer-box {
             -webkit-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
@@ -38,7 +39,7 @@
         }
         body {
             background-color: #f8fafc;
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: 'Montserrat', sans-serif;
             margin: 0;
             padding: 10px 0 60px 0;
             overflow-x: hidden;
@@ -142,6 +143,7 @@
             -moz-appearance: none;
             appearance: none;
             background-color: #fff;
+            font-family: 'Montserrat', sans-serif;
         }
         .form-input:focus {
             border-color: #000000;
@@ -160,11 +162,12 @@
             transition: background 0.2s;
             letter-spacing: 0.025em;
             border: none;
+            font-family: 'Montserrat', sans-serif;
         }
         .start-btn:hover {
             background-color: #262626;
         }
-        .quiz-header, .lecture-header {
+        .quiz-header {
             background-color: #000000;
             border-radius: 4px;
             padding: 12px 16px;
@@ -195,7 +198,7 @@
             transition: background-color 0.2s;
         }
         .question-item.subjective {
-            background-color: #ffe4e1; /* light pink */
+            background-color: #ffe4e1;
         }
         .q-tag {
             display: inline-block;
@@ -228,6 +231,7 @@
             cursor: pointer;
             transition: all 0.2s ease;
             background-color: #ffffff;
+            font-family: 'Montserrat', sans-serif;
         }
         .option-container:hover {
             background-color: #f8fafc;
@@ -262,6 +266,7 @@
             cursor: pointer;
             border: none;
             transition: opacity 0.2s;
+            font-family: 'Montserrat', sans-serif;
         }
         .action-btn:hover {
             opacity: 0.9;
@@ -290,6 +295,7 @@
             font-size: 0.85rem;
             color: #065f46;
             border-radius: 4px;
+            font-family: 'Montserrat', sans-serif;
         }
         .video-container {
             margin-top: 12px;
@@ -313,6 +319,7 @@
             color: #854d0e;
             border-radius: 4px;
             display: none;
+            font-family: 'Montserrat', sans-serif;
         }
         .correct-answer-box.visible {
             display: flex;
@@ -323,7 +330,7 @@
         .correct-answer-label {
             font-weight: 700;
         }
-        #quizSection, #lecturesSection {
+        #quizSection {
             display: none;
             padding-top: 20px;
         }
@@ -368,38 +375,6 @@
             font-size: 0.85rem;
             color: #6b7280;
         }
-        /* Lecture Card Styles */
-        .lecture-card {
-            background-color: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 20px 4px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-        .lecture-title {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #0f172a;
-            margin-bottom: 8px;
-        }
-        .lecture-description {
-            font-size: 0.85rem;
-            color: #334155;
-            margin-bottom: 16px;
-            line-height: 1.4;
-        }
-        .lecture-video {
-            margin-top: 12px;
-        }
-        .lecture-meta {
-            font-size: 0.7rem;
-            color: #64748b;
-            margin-top: 12px;
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
     </style>
 </head>
 <body oncontextmenu="return false" ondragstart="return false" onselectstart="return false">
@@ -413,15 +388,7 @@
             </div>
             <h1 class="logo-text">StudentPlus</h1>
             
-            <!-- Mode Selection -->
-            <div class="form-group">
-                <label class="form-label">Select Mode</label>
-                <select id="modeSelect" class="form-input">
-                    <option value="quiz">Practice Questions</option>
-                    <option value="lecture">Watch Lectures</option>
-                </select>
-            </div>
-            
+            <!-- Course selection -->
             <div class="form-group">
                 <label class="form-label">Select Course</label>
                 <select id="courseSelect" class="form-input">
@@ -454,19 +421,6 @@
             </div>
             <div id="questionsContainer"></div>
             <div id="quizLoader" class="infinite-loader" style="display: none;">Loading more questions...</div>
-        </div>
-
-        <div id="lecturesSection">
-            <div class="lecture-header" id="lectureHeader">
-                <div class="header-line">
-                    <span id="lectureDisplayCourse"></span>
-                    <div class="inline-divider"></div>
-                    <span id="lectureDisplaySubject"></span>
-                </div>
-                <div id="lectureDisplayChapter" class="header-line"></div>
-            </div>
-            <div id="lecturesContainer"></div>
-            <div id="lectureLoader" class="infinite-loader" style="display: none;">Loading more lectures...</div>
         </div>
     </div>
 
@@ -521,11 +475,8 @@
             }
         });
         
-        // ---------- API ENDPOINTS ----------
+        // ---------- API ENDPOINTS (Quiz Only) ----------
         const QUIZ_API_BASE = 'https://dilshadalmm-yosv.onrender.com';
-        const LECTURE_API_BASE = 'https://dilshadalmm-1.onrender.com';
-        
-        let currentMode = 'quiz'; // 'quiz' or 'lecture'
         
         // Quiz state
         let quizCursor = null;
@@ -533,23 +484,15 @@
         let quizLoading = false;
         let currentQuizCourse = '', currentQuizSubject = '', currentQuizChapter = '';
         
-        // Lecture state
-        let lectureCursor = null;
-        let lectureHasMore = true;
-        let lectureLoading = false;
-        let currentLectureCourse = '', currentLectureSubject = '', currentLectureChapter = '';
-        
-        const modeSelect = document.getElementById('modeSelect');
         const courseSelect = document.getElementById('courseSelect');
         const subjectSelect = document.getElementById('subjectSelect');
         const chapterSelect = document.getElementById('chapterSelect');
         const quizSection = document.getElementById('quizSection');
-        const lecturesSection = document.getElementById('lecturesSection');
         
         // Helper: fetch with dynamic base
-        async function fetchData(endpoint, baseUrl = QUIZ_API_BASE) {
+        async function fetchData(endpoint) {
             try {
-                const response = await fetch(`${baseUrl}${endpoint}`);
+                const response = await fetch(`${QUIZ_API_BASE}${endpoint}`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
                 if (!data.success) throw new Error(data.error || 'Unknown error');
@@ -560,13 +503,11 @@
             }
         }
         
-        // ---- Metadata loaders (based on mode) ----
+        // ---- Metadata loaders (Quiz only) ----
         async function loadClasses() {
-            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
-            const endpoint = currentMode === 'quiz' ? '/api/classes' : '/api/lectures/classes';
             courseSelect.innerHTML = '<option value="">Loading courses...</option>';
             try {
-                const data = await fetchData(endpoint, base);
+                const data = await fetchData('/api/classes');
                 const classes = data.classes || [];
                 courseSelect.innerHTML = '<option value="">Select a course</option>';
                 if (classes.length === 0) {
@@ -590,14 +531,12 @@
         }
         
         async function loadSubjects(className) {
-            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
-            const endpoint = currentMode === 'quiz' ? `/api/subjects?class=${encodeURIComponent(className)}` : `/api/lectures/subjects?class=${encodeURIComponent(className)}`;
             subjectSelect.disabled = true;
             subjectSelect.innerHTML = '<option value="">Loading subjects...</option>';
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
             try {
-                const data = await fetchData(endpoint, base);
+                const data = await fetchData(`/api/subjects?class=${encodeURIComponent(className)}`);
                 const subjects = data.subjects || [];
                 subjectSelect.innerHTML = '<option value="">Select a subject</option>';
                 if (subjects.length === 0) {
@@ -618,12 +557,10 @@
         }
         
         async function loadChapters(className, subjectName) {
-            const base = currentMode === 'quiz' ? QUIZ_API_BASE : LECTURE_API_BASE;
-            const endpoint = currentMode === 'quiz' ? `/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}` : `/api/lectures/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`;
             chapterSelect.disabled = true;
             chapterSelect.innerHTML = '<option value="">Loading chapters...</option>';
             try {
-                const data = await fetchData(endpoint, base);
+                const data = await fetchData(`/api/chapters?class=${encodeURIComponent(className)}&subject=${encodeURIComponent(subjectName)}`);
                 const chapters = data.chapters || [];
                 chapterSelect.innerHTML = '<option value="">Select a chapter</option>';
                 if (chapters.length === 0) {
@@ -642,23 +579,6 @@
                 console.error(error);
             }
         }
-        
-        // ---- Mode switch ----
-        function onModeChange() {
-            currentMode = modeSelect.value;
-            // Reset selections
-            courseSelect.value = '';
-            subjectSelect.innerHTML = '<option value="">Select a course first</option>';
-            subjectSelect.disabled = true;
-            chapterSelect.innerHTML = '<option value="">Select a subject first</option>';
-            chapterSelect.disabled = true;
-            // Hide both sections
-            quizSection.style.display = 'none';
-            lecturesSection.style.display = 'none';
-            // Reload classes for new mode
-            loadClasses();
-        }
-        modeSelect.addEventListener('change', onModeChange);
         
         courseSelect.addEventListener('change', (e) => {
             const selectedClass = e.target.value;
@@ -683,7 +603,7 @@
             }
         });
         
-        // ---- Helper: YouTube embed ----
+        // ---- Helper: YouTube embed & video element (for solutions) ----
         function getYouTubeEmbedUrl(url) {
             if (!url) return null;
             const patterns = [
@@ -735,55 +655,7 @@
             return container;
         }
         
-        // ---- Lecture Card Rendering ----
-        function createLectureCard(lecture) {
-            const card = document.createElement('div');
-            card.className = 'lecture-card';
-            
-            const title = document.createElement('div');
-            title.className = 'lecture-title';
-            title.textContent = lecture.lectureTitle || 'Untitled Lecture';
-            
-            const desc = document.createElement('div');
-            desc.className = 'lecture-description';
-            desc.textContent = lecture.lectureDescription || '';
-            
-            const videoDiv = document.createElement('div');
-            videoDiv.className = 'lecture-video';
-            const videoElem = createVideoElement(lecture.lectureVideoUrl);
-            if (videoElem) videoDiv.appendChild(videoElem);
-            
-            const meta = document.createElement('div');
-            meta.className = 'lecture-meta';
-            if (lecture.tutorName) {
-                const tutorSpan = document.createElement('span');
-                tutorSpan.innerHTML = `👨‍🏫 ${lecture.tutorName}`;
-                meta.appendChild(tutorSpan);
-            }
-            if (lecture.lectureNo) {
-                const noSpan = document.createElement('span');
-                noSpan.innerHTML = `📖 Lecture ${lecture.lectureNo}`;
-                meta.appendChild(noSpan);
-            }
-            
-            card.appendChild(title);
-            if (desc.textContent) card.appendChild(desc);
-            card.appendChild(videoDiv);
-            if (meta.children.length) card.appendChild(meta);
-            
-            return card;
-        }
-        
-        function appendLectures(lectures) {
-            const container = document.getElementById('lecturesContainer');
-            const fragment = document.createDocumentFragment();
-            lectures.forEach(lec => {
-                fragment.appendChild(createLectureCard(lec));
-            });
-            container.appendChild(fragment);
-        }
-        
-        // ---- Quiz Functions (with questionType support) ----
+        // ---- Quiz Rendering (with Subjective/Objective support) ----
         function renderMathInElementWithDelay(element) {
             if (!element) return;
             const tryRender = () => {
@@ -818,8 +690,7 @@
             const formattedQuestionText = replaceNewlinesWithBr(q.questionText);
             const formattedOptions = q.options ? q.options.map(opt => replaceNewlinesWithBr(opt)) : [];
             const formattedSolutionText = q.solutionText ? replaceNewlinesWithBr(q.solutionText) : null;
-            const questionType = q.questionType || 'Objective'; // default to Objective if missing
-            
+            const questionType = q.questionType || 'Objective';
             const isSubjective = (questionType === 'Subjective');
             
             const questionDiv = document.createElement('div');
@@ -839,7 +710,6 @@
             questionDiv.appendChild(qTag);
             questionDiv.appendChild(qText);
             
-            // Question image if any
             if (q.questionImageUrl) {
                 const img = document.createElement('img');
                 img.src = q.questionImageUrl;
@@ -855,7 +725,6 @@
             let submitBtn = null;
             let correctAnswerBox = null;
             
-            // For Objective: create options, submit button, correct answer box
             if (!isSubjective) {
                 optionsDiv = document.createElement('div');
                 optionsDiv.className = 'options-list';
@@ -877,7 +746,6 @@
                 questionDiv.appendChild(optionsDiv);
             }
             
-            // Action buttons row
             const actionRow = document.createElement('div');
             actionRow.className = 'action-buttons';
             
@@ -898,7 +766,6 @@
             actionRow.appendChild(videoSolutionBtn);
             questionDiv.appendChild(actionRow);
             
-            // Correct answer box (only for objective)
             if (!isSubjective) {
                 correctAnswerBox = document.createElement('div');
                 correctAnswerBox.className = 'correct-answer-box';
@@ -912,7 +779,6 @@
                 questionDiv.appendChild(correctAnswerBox);
             }
             
-            // Text solution container
             const textSolutionContainer = document.createElement('div');
             textSolutionContainer.id = `text-solution-${globalIndex}`;
             textSolutionContainer.className = 'solution-container';
@@ -935,7 +801,6 @@
             }
             questionDiv.appendChild(textSolutionContainer);
             
-            // Video solution container
             const videoSolutionContainer = document.createElement('div');
             videoSolutionContainer.id = `video-solution-${globalIndex}`;
             videoSolutionContainer.className = 'solution-container';
@@ -945,7 +810,6 @@
             }
             questionDiv.appendChild(videoSolutionContainer);
             
-            // For objective: submission logic
             if (!isSubjective) {
                 let submitted = false;
                 submitBtn.onclick = async () => {
@@ -967,17 +831,13 @@
                     submitted = true;
                     submitBtn.disabled = true;
                 };
-                // Initially disable solution buttons until submission
                 textSolutionBtn.disabled = true;
                 videoSolutionBtn.disabled = true;
             } else {
-                // For subjective: solution buttons are enabled from start
                 textSolutionBtn.disabled = false;
                 videoSolutionBtn.disabled = false;
-                // Also we don't have submit button, so we can directly show solution
             }
             
-            // Common solution toggle logic
             textSolutionBtn.onclick = () => {
                 const wasVisible = textSolutionContainer.classList.contains('visible');
                 if (!wasVisible) {
@@ -1011,7 +871,7 @@
             container.appendChild(fragment);
         }
         
-        // ---- Start Content (mode based) ----
+        // ---- Start Quiz (primary content) ----
         async function startContent() {
             const course = courseSelect.value;
             const subject = subjectSelect.value;
@@ -1020,12 +880,7 @@
                 alert('Please select a course, subject, and chapter.');
                 return;
             }
-            
-            if (currentMode === 'quiz') {
-                await startQuiz(course, subject, chapter);
-            } else {
-                await startLectures(course, subject, chapter);
-            }
+            await startQuiz(course, subject, chapter);
         }
         
         async function startQuiz(course, subject, chapter) {
@@ -1042,7 +897,6 @@
             loaderDiv.style.display = 'none';
             
             quizSection.style.display = 'block';
-            lecturesSection.style.display = 'none';
             document.getElementById('displayCourse').textContent = course;
             document.getElementById('displaySubject').textContent = subject;
             document.getElementById('displayChapter').textContent = chapter;
@@ -1107,85 +961,7 @@
             }
         }
         
-        async function startLectures(course, subject, chapter) {
-            lectureCursor = null;
-            lectureHasMore = true;
-            lectureLoading = false;
-            currentLectureCourse = course;
-            currentLectureSubject = subject;
-            currentLectureChapter = chapter;
-            
-            const container = document.getElementById('lecturesContainer');
-            container.innerHTML = '<div class="loader">Loading lectures...</div>';
-            const loaderDiv = document.getElementById('lectureLoader');
-            loaderDiv.style.display = 'none';
-            
-            lecturesSection.style.display = 'block';
-            quizSection.style.display = 'none';
-            document.getElementById('lectureDisplayCourse').textContent = course;
-            document.getElementById('lectureDisplaySubject').textContent = subject;
-            document.getElementById('lectureDisplayChapter').textContent = chapter;
-            setTimeout(() => lecturesSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 10);
-            
-            try {
-                await fetchNextLecturesPage(true);
-            } catch (error) {
-                container.innerHTML = `<div class="error-message">${error.message}</div>`;
-            }
-        }
-        
-        async function fetchNextLecturesPage(reset = false) {
-            if (!lectureHasMore || lectureLoading) return;
-            lectureLoading = true;
-            const loaderDiv = document.getElementById('lectureLoader');
-            if (!reset) loaderDiv.style.display = 'block';
-            
-            try {
-                const params = new URLSearchParams({
-                    class: currentLectureCourse,
-                    subject: currentLectureSubject,
-                    chapter: currentLectureChapter,
-                    limit: 10
-                });
-                if (lectureCursor !== null && lectureCursor !== undefined) {
-                    params.append('cursor', lectureCursor.toString());
-                }
-                const response = await fetch(`${LECTURE_API_BASE}/api/lectures/playlist?${params.toString()}`);
-                if (!response.ok) throw new Error(`Server error: ${response.status}`);
-                const data = await response.json();
-                if (!data.success) throw new Error(data.error || 'Failed to load lectures');
-                const lectures = data.lectures || [];
-                if (reset) {
-                    const container = document.getElementById('lecturesContainer');
-                    container.innerHTML = '';
-                    if (lectures.length === 0) {
-                        container.innerHTML = '<div class="error-message">No lectures found for the selected criteria.</div>';
-                        lectureHasMore = false;
-                    } else {
-                        appendLectures(lectures);
-                    }
-                } else {
-                    if (lectures.length > 0) {
-                        appendLectures(lectures);
-                    } else {
-                        lectureHasMore = false;
-                    }
-                }
-                lectureCursor = (data.nextCursor !== undefined && data.nextCursor !== null) ? (typeof data.nextCursor === 'number' ? data.nextCursor : parseInt(data.nextCursor, 10)) : null;
-                lectureHasMore = data.hasMore === true;
-                if (!lectureHasMore) loaderDiv.style.display = 'none';
-            } catch (error) {
-                console.error(error);
-                if (reset) {
-                    document.getElementById('lecturesContainer').innerHTML = `<div class="error-message">${error.message}</div>`;
-                }
-            } finally {
-                lectureLoading = false;
-                loaderDiv.style.display = 'none';
-            }
-        }
-        
-        // ---- Infinite Scroll Listener ----
+        // ---- Infinite Scroll Listener (Quiz only) ----
         function setupScrollListener() {
             window.addEventListener('scroll', () => {
                 const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
@@ -1193,10 +969,8 @@
                 const documentHeight = document.documentElement.scrollHeight;
                 const threshold = 200;
                 if (scrollTop + windowHeight >= documentHeight - threshold) {
-                    if (currentMode === 'quiz' && quizHasMore && !quizLoading && quizSection.style.display === 'block') {
+                    if (quizHasMore && !quizLoading && quizSection.style.display === 'block') {
                         fetchNextQuizPage(false);
-                    } else if (currentMode === 'lecture' && lectureHasMore && !lectureLoading && lecturesSection.style.display === 'block') {
-                        fetchNextLecturesPage(false);
                     }
                 }
             });
@@ -1206,7 +980,6 @@
         window.addEventListener('load', () => {
             loadClasses();
             quizSection.style.display = 'none';
-            lecturesSection.style.display = 'none';
             setupScrollListener();
         });
     </script>
