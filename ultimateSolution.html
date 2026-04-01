@@ -8,12 +8,12 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Creepster&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* ===== HIDE SCROLLBAR TECHNIQUE (copied from questionpage) ===== */
+        /* Hide scrollbar technique - only main scrolls, body static */
         html, body {
             height: 100%;
-            overflow: hidden !important;  /* Prevent body scroll, main will scroll */
             margin: 0;
             padding: 0;
+            overflow: hidden !important;  /* Prevent body scroll, main will scroll */
         }
 
         body {
@@ -27,10 +27,9 @@
             -ms-user-select: none;
             user-select: none;
             touch-action: pan-y pinch-zoom;
-
-            /* Flex layout to make main scrollable */
             display: flex;
             flex-direction: column;
+            height: 100%;
         }
 
         /* Main content scrollable container - hide scrollbar */
@@ -45,7 +44,12 @@
             display: none;               /* Chrome, Safari, Edge */
         }
 
-        /* Other existing styles */
+        /* Header stays fixed at top */
+        header {
+            flex-shrink: 0;
+        }
+
+        /* Other styles unchanged */
         .header-shadow {
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
@@ -119,13 +123,6 @@
         .top-margin-adjust {
             margin-top: 0.5rem;
         }
-        /* Ensure header stays at top */
-        header {
-            flex-shrink: 0;
-        }
-        footer {
-            flex-shrink: 0;
-        }
     </style>
 </head>
 <body>
@@ -153,22 +150,24 @@
         </div>
     </header>
 
-    <!-- Main Content (scrollable container) -->
-    <main class="max-w-3xl mx-auto px-6 py-8 top-margin-adjust">
-        <!-- AD BANNERS container -->
-        <div id="ad-banners-container"></div>
-        <!-- Dynamic sections container (ultimate solutions) -->
-        <div id="dynamic-sections-container"></div>
-    </main>
-
-    <!-- Footer (static, part of flow) -->
-    <footer class="py-12 bg-gray-50 mt-16 border-t border-gray-200">
-        <div class="max-w-6xl mx-auto px-4 text-center">
-            <span class="text-gray-500 font-bold tracking-widest text-sm title-underline">
-                @2026 ULTIMATE SOLUTION
-            </span>
+    <!-- Main Content (scrollable) - includes all content and footer naturally -->
+    <main>
+        <div class="max-w-3xl mx-auto px-6 py-8 top-margin-adjust">
+            <!-- AD BANNERS container -->
+            <div id="ad-banners-container"></div>
+            <!-- Dynamic sections container (ultimate solutions) -->
+            <div id="dynamic-sections-container"></div>
         </div>
-    </footer>
+
+        <!-- Footer - now inside main, will scroll with content, no sticky behavior -->
+        <footer class="py-12 bg-gray-50 mt-16 border-t border-gray-200">
+            <div class="max-w-6xl mx-auto px-4 text-center">
+                <span class="text-gray-500 font-bold tracking-widest text-sm title-underline">
+                    @2026 ULTIMATE SOLUTION
+                </span>
+            </div>
+        </footer>
+    </main>
 
     <!-- Custom Toast Container -->
     <div id="customToast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 z-50 toast-notification bg-gradient-to-r from-red-600 to-red-700 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-semibold text-base border border-red-400">
