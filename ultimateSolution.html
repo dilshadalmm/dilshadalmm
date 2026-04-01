@@ -58,6 +58,27 @@
             opacity: 1;
             visibility: visible;
         }
+        /* loading state subtle */
+        .loader {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 3rem 1rem;
+        }
+        .loader-dot {
+            width: 12px;
+            height: 12px;
+            background-color: #3182ce;
+            border-radius: 50%;
+            margin: 0 6px;
+            animation: pulse 1.2s infinite ease-in-out;
+        }
+        .loader-dot:nth-child(2) { animation-delay: 0.2s; }
+        .loader-dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -93,59 +114,8 @@
 
         <div class="text-center text-gray-300 text-xs mb-10 tracking-[0.5em] mt-4">-0-</div>
 
-        <!-- MECEE 2021 Section -->
-        <section class="mb-16" id="section-2021">
-            <h2 class="text-3xl font-extrabold text-gray-900 mb-4 tracking-tight leading-tight uppercase title-underline clickable-title" data-year="2021">
-                MECEE 2021 MBBS QUESTIONS
-            </h2>
-            <p class="text-lg text-gray-600 mb-3 font-normal opacity-90">
-                A comprehensive collection of 200 questions from the 2021 session.
-            </p>
-            <a href="#" class="link-decoration text-xl font-medium inline-block mb-6 download-link" data-year="2021">
-                Download MECEE 2021 MBBS Solutions
-            </a>
-            <div class="aspect-16-9 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm">
-                <img src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?q=80&w=1200&auto=format&fit=crop" 
-                     alt="Medical Entrance 2021" 
-                     class="w-full h-full object-cover">
-            </div>
-        </section>
-
-        <!-- MECEE 2022 Section -->
-        <section class="mb-16" id="section-2022">
-            <h2 class="text-3xl font-extrabold text-gray-900 mb-4 tracking-tight leading-tight uppercase title-underline clickable-title" data-year="2022">
-                MECEE 2022 MBBS QUESTIONS
-            </h2>
-            <p class="text-lg text-gray-600 mb-3 font-normal opacity-90">
-                Detailed analysis of the post-pandemic medical entrance trends.
-            </p>
-            <a href="#" class="link-decoration text-xl font-medium inline-block mb-6 download-link" data-year="2022">
-                Download MECEE 2022 MBBS Solutions
-            </a>
-            <div class="aspect-16-9 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm">
-                <img src="https://images.unsplash.com/photo-1581056771107-24ca5f033842?q=80&w=1200&auto=format&fit=crop" 
-                     alt="Medical Entrance 2022" 
-                     class="w-full h-full object-cover">
-            </div>
-        </section>
-
-        <!-- MECEE 2023 Section -->
-        <section class="mb-16" id="section-2023">
-            <h2 class="text-3xl font-extrabold text-gray-900 mb-4 tracking-tight leading-tight uppercase title-underline clickable-title" data-year="2023">
-                MECEE 2023 MBBS QUESTIONS
-            </h2>
-            <p class="text-lg text-gray-600 mb-3 font-normal opacity-90">
-                The latest patterns focusing on integrated clinical sciences.
-            </p>
-            <a href="#" class="link-decoration text-xl font-medium inline-block mb-6 download-link" data-year="2023">
-                Download MECEE 2023 MBBS Solutions
-            </a>
-            <div class="aspect-16-9 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm">
-                <img src="https://images.unsplash.com/photo-1579684385127-1ef15d508118?q=80&w=1200&auto=format&fit=crop" 
-                     alt="Medical Entrance 2023" 
-                     class="w-full h-full object-cover">
-            </div>
-        </section>
+        <!-- Dynamic sections will be injected here -->
+        <div id="dynamic-sections-container"></div>
 
     </main>
 
@@ -169,95 +139,202 @@
     <script>
         (function() {
             // ---------- CONSTANTS ----------
-            const BASE_URL = "https://dilshadalmm.github.io/dilshadalmm/quiz.html";
-            const COMMON_CLASSNAME = "COMMON ENTRANCE EXAM—UG";
-            const COMMON_SUBJECT = "PAST YEAR QUESTIONS SETS [YEAR WISE]";
-
+            const API_ENDPOINT = "https://dilshadalmm-yosv.onrender.com/api/ultimate-solutions";
+            const QUIZ_BASE_URL = "quiz.html";
+            
             // Helper: show toast notification with custom message (default "Comming Soon !!")
             function showToast(message = "Comming Soon !!") {
                 const toastEl = document.getElementById('customToast');
                 const messageSpan = document.getElementById('toastMessage');
                 if (!toastEl) return;
                 if (messageSpan) messageSpan.innerText = message;
-                // remove existing 'show' class and force reflow to restart animation
                 toastEl.classList.remove('show');
                 // Force reflow
                 void toastEl.offsetWidth;
                 toastEl.classList.add('show');
-                // Hide after 2.3 seconds
                 setTimeout(() => {
                     toastEl.classList.remove('show');
                 }, 2300);
             }
 
-            // Helper: redirect to external quiz page with year-based chapter
-            function redirectToQuizPage(year) {
-                const chapter = `MECEE ${year} MBBS QUESTIONS`;
-                // URL encode all parameters according to spec
-                const encodedClassName = encodeURIComponent(COMMON_CLASSNAME);
-                const encodedSubject = encodeURIComponent(COMMON_SUBJECT);
-                const encodedChapter = encodeURIComponent(chapter);
-                const finalUrl = `${BASE_URL}?className=${encodedClassName}&subject=${encodedSubject}&chapter=${encodedChapter}`;
-                // Redirect in the same tab
+            // Helper: redirect to quiz page with dynamic parameters
+            function redirectToQuiz(className, subject, chapter) {
+                // encode each parameter to ensure safety
+                const encodedClassName = encodeURIComponent(className || '');
+                const encodedSubject = encodeURIComponent(subject || '');
+                const encodedChapter = encodeURIComponent(chapter || '');
+                const finalUrl = `${QUIZ_BASE_URL}?className=${encodedClassName}&subject=${encodedSubject}&chapter=${encodedChapter}`;
                 window.location.href = finalUrl;
             }
 
-            // ---------- 1. MAKE SECTION TITLES CLICKABLE (REDIRECT) ----------
-            const allTitles = document.querySelectorAll('.clickable-title');
-            allTitles.forEach(title => {
-                title.addEventListener('click', (event) => {
-                    event.stopPropagation();
-                    const year = title.getAttribute('data-year');
-                    if (year) {
-                        redirectToQuizPage(year);
-                    } else {
-                        // fallback: extract year from text content if data-year missing (just safety)
-                        const text = title.innerText;
-                        const match = text.match(/\b(20\d{2})\b/);
-                        if (match && match[1]) {
-                            redirectToQuizPage(match[1]);
-                        } else {
-                            console.warn("Could not extract year from title", text);
-                        }
-                    }
-                });
-                // Add extra styling / accessibility hints
-                title.setAttribute('role', 'button');
-                title.setAttribute('tabindex', '0');
-                title.style.cursor = 'pointer';
-            });
+            // Create a single section element based on backend data
+            function createSectionElement(item) {
+                // Destructure fields with fallbacks to avoid UI break
+                const {
+                    titleText = "MECEE Question Set",
+                    subtleText = "Comprehensive collection of past questions.",
+                    downloadText = "Download Solutions",
+                    downloadLink = "#",
+                    imageUrl = "",
+                    className = "",
+                    subject = "",
+                    chapter = "",
+                    order = 0
+                } = item;
 
-            // ---------- 2. DOWNLOAD LINKS: SHOW "Comming Soon !!" IN CUSTOM CONTAINER ----------
-            const downloadLinks = document.querySelectorAll('.download-link');
-            downloadLinks.forEach(link => {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();      // completely prevent any default anchor behavior
+                // Create section container
+                const section = document.createElement('section');
+                section.className = "mb-16";
+                
+                // --- Title (h2) with required classes and click behavior ---
+                const titleEl = document.createElement('h2');
+                titleEl.textContent = titleText;
+                titleEl.className = "text-3xl font-extrabold text-gray-900 mb-4 tracking-tight leading-tight uppercase title-underline clickable-title";
+                titleEl.setAttribute('role', 'button');
+                titleEl.setAttribute('tabindex', '0');
+                // Store redirect data directly on element for event listener
+                titleEl.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    // Show the custom toast with exact required message
-                    showToast("Comming Soon !!");
+                    redirectToQuiz(className, subject, chapter);
                 });
-                // optional: keep href as "#" but we already prevent default, so no page jump.
-                // Also ensure pointer cursor is consistent.
-                link.style.cursor = 'pointer';
-            });
-
-            // Small improvement: if any image or other element accidentally triggers, ensure nothing breaks
-            // Also ensure that the header icons (search/menu) don't conflict — no need to modify them.
-            // Maintain all original styling, aspect ratios, shadows etc.
-
-            // Edge: ensure that for keyboard accessibility, titles can be triggered by Enter/Space
-            allTitles.forEach(title => {
-                title.addEventListener('keydown', (e) => {
+                titleEl.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        title.click();
+                        redirectToQuiz(className, subject, chapter);
                     }
                 });
+                
+                // --- Subtle description paragraph ---
+                const descEl = document.createElement('p');
+                descEl.textContent = subtleText;
+                descEl.className = "text-lg text-gray-600 mb-3 font-normal opacity-90";
+                
+                // --- Download link (toast behavior) ---
+                const downloadLinkEl = document.createElement('a');
+                downloadLinkEl.textContent = downloadText;
+                downloadLinkEl.className = "link-decoration text-xl font-medium inline-block mb-6 download-link";
+                downloadLinkEl.href = "javascript:void(0)";  // prevent any accidental navigation
+                downloadLinkEl.style.cursor = "pointer";
+                downloadLinkEl.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    showToast("Comming Soon !!");   // exact toast message as original
+                });
+                
+                // --- Image container (16:9) ---
+                const imageContainer = document.createElement('div');
+                imageContainer.className = "aspect-16-9 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm";
+                
+                const img = document.createElement('img');
+                // Use imageUrl from backend; if empty or missing, provide a neutral placeholder
+                if (imageUrl && imageUrl.trim() !== "") {
+                    img.src = imageUrl;
+                } else {
+                    // Placeholder image that matches the style and theme (medical / study related)
+                    img.src = "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=1200&auto=format&fit=crop";
+                }
+                img.alt = titleText;
+                img.className = "w-full h-full object-cover";
+                img.loading = "lazy";
+                // fallback in case image fails to load
+                img.onerror = function() {
+                    if (!this.src.includes('placeholder-medical')) {
+                        this.src = "https://images.unsplash.com/photo-1581091226033-d5c48150dbaa?q=80&w=1200&auto=format&fit=crop";
+                    }
+                };
+                imageContainer.appendChild(img);
+                
+                // Append all children to section
+                section.appendChild(titleEl);
+                section.appendChild(descEl);
+                section.appendChild(downloadLinkEl);
+                section.appendChild(imageContainer);
+                
+                return section;
+            }
+            
+            // Show loading indicator inside container
+            function showLoading(container) {
+                container.innerHTML = '';
+                const loaderWrapper = document.createElement('div');
+                loaderWrapper.className = 'loader';
+                for (let i = 0; i < 3; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = 'loader-dot';
+                    loaderWrapper.appendChild(dot);
+                }
+                container.appendChild(loaderWrapper);
+            }
+            
+            // Show error message gracefully (no UI break)
+            function showError(container, errorMsg = "Failed to load sections. Please try again later.") {
+                container.innerHTML = '';
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'text-center py-12 px-4 bg-gray-50 rounded-xl border border-gray-200';
+                errorDiv.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto text-red-400 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <p class="text-gray-700 font-medium">${errorMsg}</p>
+                    <button id="retrySectionsBtn" class="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-5 py-2 rounded-lg transition-colors shadow-sm">Retry</button>
+                `;
+                container.appendChild(errorDiv);
+                const retryBtn = document.getElementById('retrySectionsBtn');
+                if (retryBtn) {
+                    retryBtn.addEventListener('click', () => {
+                        fetchAndRenderSections(container);
+                    });
+                }
+            }
+            
+            // Main fetch & render logic
+            async function fetchAndRenderSections(container) {
+                showLoading(container);
+                try {
+                    const response = await fetch(API_ENDPOINT);
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    const result = await response.json();
+                    // Validate backend response structure: expecting { success: true, data: [] }
+                    if (!result || result.success !== true || !Array.isArray(result.data)) {
+                        console.warn("Unexpected API response format", result);
+                        throw new Error("Invalid data format from server");
+                    }
+                    
+                    let sectionsData = result.data;
+                    // Sort sections by "order" field (ascending)
+                    sectionsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+                    
+                    if (sectionsData.length === 0) {
+                        container.innerHTML = '';
+                        const emptyMsg = document.createElement('div');
+                        emptyMsg.className = 'text-center py-12 text-gray-500 text-lg';
+                        emptyMsg.innerText = 'No question sections available at the moment.';
+                        container.appendChild(emptyMsg);
+                        return;
+                    }
+                    
+                    // Clear loading / existing content
+                    container.innerHTML = '';
+                    // Loop through sorted data and build each section
+                    sectionsData.forEach(item => {
+                        const sectionEl = createSectionElement(item);
+                        container.appendChild(sectionEl);
+                    });
+                    
+                } catch (err) {
+                    console.error("Error fetching ultimate-solutions:", err);
+                    showError(container, "Unable to load MECEE sections. Check your connection or try again.");
+                }
+            }
+            
+            // Wait for DOM fully loaded, then initialize dynamic sections
+            document.addEventListener('DOMContentLoaded', () => {
+                const sectionsContainer = document.getElementById('dynamic-sections-container');
+                if (!sectionsContainer) return;
+                fetchAndRenderSections(sectionsContainer);
             });
-
-            // Optional: preload graceful behavior for download links — just a friendly reminder.
-            // All existing brand images, text, footer, icons, background remain unchanged.
-            console.log("Ultimate Solution UI ready — section titles redirect to quiz, download links show custom toast.");
         })();
     </script>
 </body>
