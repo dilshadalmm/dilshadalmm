@@ -1211,6 +1211,49 @@ app.get('/api/chapters', async (req, res) => {
     }
 });
 
+// ---- API Endpoint: Ad Banners ----
+app.get('/api/ad-banners', async (req, res) => {
+    try {
+        if (!db) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database not initialized'
+            });
+        }
+
+        // Read brandName from query parameters
+        const brandName = req.query.brandName;
+        if (!brandName) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required query parameter: brandName'
+            });
+        }
+
+        // Fetch all banner documents
+        const snapshot = await db.collection('ad_banner').get();
+
+        // Filter documents by brandName
+        const banners = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(doc => doc.brandName === brandName)
+            .sort((a, b) => a.order - b.order); // optional: sort by order field
+
+        res.json({
+            success: true,
+            data: banners
+        });
+
+    } catch (error) {
+        console.error('Error fetching ad banners:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch ad banners'
+        });
+    }
+});
+
+
 // ---- API Endpoint: Ultimate Solutions ----
 app.get('/api/ultimate-solutions', async (req, res) => {
     try {
