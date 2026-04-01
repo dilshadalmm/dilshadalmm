@@ -8,6 +8,14 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Creepster&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* ===== HIDE SCROLLBAR TECHNIQUE (copied from questionpage) ===== */
+        html, body {
+            height: 100%;
+            overflow: hidden !important;  /* Prevent body scroll, main will scroll */
+            margin: 0;
+            padding: 0;
+        }
+
         body {
             font-family: 'Montserrat', sans-serif;
             background-color: #ffffff;
@@ -20,17 +28,24 @@
             user-select: none;
             touch-action: pan-y pinch-zoom;
 
-            /* Hide scrollbar */
-            overflow: auto;               /* keep scrolling enabled */
-            scrollbar-width: none;        /* Firefox */
-            -ms-overflow-style: none;     /* IE 10+ */
+            /* Flex layout to make main scrollable */
+            display: flex;
+            flex-direction: column;
         }
 
-        body::-webkit-scrollbar {
-            width: 0;                     /* Chrome, Safari, Edge */
-            height: 0;
+        /* Main content scrollable container - hide scrollbar */
+        main {
+            flex: 1;
+            overflow-y: auto;            /* enables scrolling */
+            overflow-x: hidden;
+            -ms-overflow-style: none;    /* IE and Edge */
+            scrollbar-width: none;       /* Firefox */
+        }
+        main::-webkit-scrollbar {
+            display: none;               /* Chrome, Safari, Edge */
         }
 
+        /* Other existing styles */
         .header-shadow {
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
@@ -46,18 +61,15 @@
         .link-decoration:hover {
             color: #2c5282;
         }
-        /* Underline class for Titles and Footer text */
         .title-underline {
             text-decoration: underline;
             text-decoration-thickness: 2px;
             text-underline-offset: 6px;
         }
-        /* Strict 16:9 aspect ratio container */
         .aspect-16-9 {
             aspect-ratio: 16 / 9;
             width: 100%;
         }
-        /* Custom cursor for clickable titles */
         .clickable-title {
             cursor: pointer;
             transition: opacity 0.2s ease;
@@ -65,7 +77,6 @@
         .clickable-title:hover {
             opacity: 0.85;
         }
-        /* Custom toast container animation */
         .toast-notification {
             transition: opacity 0.25s ease-in-out, visibility 0.25s;
             opacity: 0;
@@ -76,7 +87,6 @@
             opacity: 1;
             visibility: visible;
         }
-        /* loading state subtle */
         .loader {
             display: flex;
             justify-content: center;
@@ -97,9 +107,8 @@
             0%, 100% { opacity: 0.3; transform: scale(0.8); }
             50% { opacity: 1; transform: scale(1.2); }
         }
-        /* ad banner specific blue background */
         .ad-banner-section {
-            background-color: #eff6ff; /* blue-50 */
+            background-color: #eff6ff;
             border-radius: 1rem;
             padding: 1.5rem;
             transition: box-shadow 0.2s ease;
@@ -107,25 +116,28 @@
         .ad-banner-section:hover {
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
-        /* remove default margin for main container */
         .top-margin-adjust {
-            margin-top: 0.5rem; /* half of previous typical margin (was 2rem) */
+            margin-top: 0.5rem;
+        }
+        /* Ensure header stays at top */
+        header {
+            flex-shrink: 0;
+        }
+        footer {
+            flex-shrink: 0;
         }
     </style>
 </head>
-<body class="antialiased">
+<body>
 
     <!-- Header Navigation -->
     <header class="header-shadow bg-white border-b border-gray-100 sticky top-0 z-50">
         <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-            <!-- Brand Section -->
             <div class="bg-black px-4 py-2 rounded-md">
                 <h1 id="brandHeaderText" class="brand-font text-white text-2xl tracking-wider whitespace-nowrap">
                     ULTIMATE SOLUTION
                 </h1>
             </div>
-
-            <!-- Icons -->
             <div class="flex items-center space-x-3">
                 <div class="p-2 text-blue-500 bg-blue-50 rounded-md cursor-pointer hover:bg-blue-100 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -141,19 +153,15 @@
         </div>
     </header>
 
-    <!-- Main Content -->
+    <!-- Main Content (scrollable container) -->
     <main class="max-w-3xl mx-auto px-6 py-8 top-margin-adjust">
-        <!-- Removed "-0-" element completely and reduced top margin via class -->
-
-        <!-- AD BANNERS: dynamic container (top of main content) -->
+        <!-- AD BANNERS container -->
         <div id="ad-banners-container"></div>
-
         <!-- Dynamic sections container (ultimate solutions) -->
         <div id="dynamic-sections-container"></div>
-
     </main>
 
-    <!-- Footer -->
+    <!-- Footer (static, part of flow) -->
     <footer class="py-12 bg-gray-50 mt-16 border-t border-gray-200">
         <div class="max-w-6xl mx-auto px-4 text-center">
             <span class="text-gray-500 font-bold tracking-widest text-sm title-underline">
@@ -162,7 +170,7 @@
         </div>
     </footer>
 
-    <!-- Custom Toast Container (for "Comming Soon !!" messages) -->
+    <!-- Custom Toast Container -->
     <div id="customToast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 md:left-auto md:right-6 md:translate-x-0 z-50 toast-notification bg-gradient-to-r from-red-600 to-red-700 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-semibold text-base border border-red-400">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -178,13 +186,10 @@
             const ULTIMATE_ENDPOINT = `${API_BASE}/api/ultimate-solutions`;
             const QUIZ_BASE_URL = "quiz.html";
             
-            // Extract brand name from header and format as required (e.g., "ULTIMATE_SOLUTION")
             const brandHeaderElem = document.getElementById('brandHeaderText');
             let rawBrand = brandHeaderElem ? brandHeaderElem.innerText.trim() : "ULTIMATE SOLUTION";
-            // Convert to uppercase and replace spaces with underscores to match backend pattern
             const brandNameForFilter = rawBrand.toUpperCase().replace(/\s+/g, '_');
             
-            // Helper: show toast notification
             function showToast(message = "Comming Soon !!") {
                 const toastEl = document.getElementById('customToast');
                 const messageSpan = document.getElementById('toastMessage');
@@ -198,7 +203,6 @@
                 }, 2300);
             }
             
-            // Redirect to quiz page with dynamic parameters
             function redirectToQuiz(className, subject, chapter) {
                 const encodedClassName = encodeURIComponent(className || '');
                 const encodedSubject = encodeURIComponent(subject || '');
@@ -207,7 +211,7 @@
                 window.location.href = finalUrl;
             }
             
-            // ========== AD BANNERS: create section with blue background ==========
+            // ========== AD BANNERS ==========
             function createAdBannerSection(item) {
                 const {
                     titleText = "Special Offer",
@@ -217,16 +221,13 @@
                     order = 0
                 } = item;
                 
-                // section wrapper with blue background & same spacing as other sections
                 const section = document.createElement('section');
-                section.className = "mb-16 ad-banner-section";   // blue background defined in CSS
+                section.className = "mb-16 ad-banner-section";
                 
-                // Title (same font size & style as existing titles, but no clickable redirect)
                 const titleEl = document.createElement('h2');
                 titleEl.textContent = titleText;
                 titleEl.className = "text-3xl font-extrabold text-gray-900 mb-4 tracking-tight leading-tight uppercase title-underline";
                 
-                // Image container (16:9)
                 const imageContainer = document.createElement('div');
                 imageContainer.className = "aspect-16-9 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-sm mb-6";
                 const img = document.createElement('img');
@@ -241,15 +242,12 @@
                 };
                 imageContainer.appendChild(img);
                 
-                // Link (styled like download links)
                 const linkEl = document.createElement('a');
                 linkEl.textContent = linkText;
                 linkEl.className = "link-decoration text-xl font-medium inline-block";
                 linkEl.href = linkAddress && linkAddress !== "#" ? linkAddress : "javascript:void(0)";
                 linkEl.target = "_blank";
                 linkEl.rel = "noopener noreferrer";
-                // If linkAddress is empty or invalid, fallback to toast? but spec says navigate to linkAddress.
-                // We'll let it open as is; if "#" stays, it does nothing.
                 if (!linkAddress || linkAddress === "#") {
                     linkEl.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -260,14 +258,11 @@
                 section.appendChild(titleEl);
                 section.appendChild(imageContainer);
                 section.appendChild(linkEl);
-                
                 return section;
             }
             
-            // Render ad banners into container
             async function renderAdBanners(container) {
                 if (!container) return;
-                // Show loading placeholder inside ad container
                 container.innerHTML = '';
                 const loaderDiv = document.createElement('div');
                 loaderDiv.className = 'loader';
@@ -279,12 +274,9 @@
                 container.appendChild(loaderDiv);
                 
                 try {
-                    // Fetch banners with brandName as query parameter (backend filtering)
                     const url = `${AD_BANNERS_ENDPOINT}?brandName=${encodeURIComponent(brandNameForFilter)}`;
                     const response = await fetch(url);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const result = await response.json();
                     if (!result || result.success !== true || !Array.isArray(result.data)) {
                         console.warn("Ad banners: unexpected response format", result);
@@ -292,15 +284,12 @@
                         return;
                     }
                     
-                    let banners = result.data;
-                    // filter again by brandName (client-side safety) in case backend returns all
-                    banners = banners.filter(b => b.brandName === brandNameForFilter);
-                    // sort by order
+                    let banners = result.data.filter(b => b.brandName === brandNameForFilter);
                     banners.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
                     
                     if (banners.length === 0) {
                         container.innerHTML = '';
-                        return; // no banners, keep empty
+                        return;
                     }
                     
                     container.innerHTML = '';
@@ -310,12 +299,11 @@
                     });
                 } catch (err) {
                     console.error("Failed to load ad banners:", err);
-                    // On error, remove loader and leave empty (do not break page)
                     container.innerHTML = '';
                 }
             }
             
-            // ========== ULTIMATE SOLUTIONS (existing logic) ==========
+            // ========== ULTIMATE SOLUTIONS ==========
             function createSectionElement(item) {
                 const {
                     titleText = "MECEE Question Set",
@@ -420,9 +408,7 @@
                 showLoading(container);
                 try {
                     const response = await fetch(ULTIMATE_ENDPOINT);
-                    if (!response.ok) {
-                        throw new Error(`HTTP ${response.status}`);
-                    }
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const result = await response.json();
                     if (!result || result.success !== true || !Array.isArray(result.data)) {
                         console.warn("Ultimate solutions: invalid format", result);
@@ -451,17 +437,13 @@
                 }
             }
             
-            // Initialize both sections: ad banners on top, then ultimate solutions
+            // Initialize both containers
             document.addEventListener('DOMContentLoaded', () => {
                 const adContainer = document.getElementById('ad-banners-container');
                 const ultimateContainer = document.getElementById('dynamic-sections-container');
                 
-                if (adContainer) {
-                    renderAdBanners(adContainer).catch(e => console.warn("Ad banners minor error:", e));
-                }
-                if (ultimateContainer) {
-                    fetchAndRenderUltimateSolutions(ultimateContainer).catch(e => console.warn("Ultimate sections error:", e));
-                }
+                if (adContainer) renderAdBanners(adContainer).catch(e => console.warn(e));
+                if (ultimateContainer) fetchAndRenderUltimateSolutions(ultimateContainer).catch(e => console.warn(e));
             });
         })();
     </script>
