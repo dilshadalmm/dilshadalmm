@@ -12,19 +12,25 @@
             font-family: 'Montserrat', sans-serif;
             background-color: #ffffff;
             color: #1a202c;
-            /* Disable text selection and zoom */
             -webkit-touch-callout: none;
             -webkit-user-select: none;
             -khtml-user-select: none;
             -moz-user-select: none;
             -ms-user-select: none;
             user-select: none;
-            touch-action: pan-y pinch-zoom; /* allow vertical pan but prevent double-tap zoom? Actually we set user-scalable=no in meta */
+            touch-action: pan-y pinch-zoom;
+
+            /* Hide scrollbar */
+            overflow: auto;               /* keep scrolling enabled */
+            scrollbar-width: none;        /* Firefox */
+            -ms-overflow-style: none;     /* IE 10+ */
         }
-        /* Ensure images and interactive elements don't get selected */
-        img, a, button, div, section {
-            -webkit-tap-highlight-color: transparent;
+
+        body::-webkit-scrollbar {
+            width: 0;                     /* Chrome, Safari, Edge */
+            height: 0;
         }
+
         .header-shadow {
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
         }
