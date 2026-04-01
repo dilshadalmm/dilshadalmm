@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>MECEE MBBS Questions - Ultimate Solution</title>
     <!-- Montserrat and Creepster Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&family=Creepster&display=swap" rel="stylesheet">
@@ -12,6 +12,18 @@
             font-family: 'Montserrat', sans-serif;
             background-color: #ffffff;
             color: #1a202c;
+            /* Disable text selection and zoom */
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            touch-action: pan-y pinch-zoom; /* allow vertical pan but prevent double-tap zoom? Actually we set user-scalable=no in meta */
+        }
+        /* Ensure images and interactive elements don't get selected */
+        img, a, button, div, section {
+            -webkit-tap-highlight-color: transparent;
         }
         .header-shadow {
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
@@ -89,6 +101,10 @@
         .ad-banner-section:hover {
             box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         }
+        /* remove default margin for main container */
+        .top-margin-adjust {
+            margin-top: 0.5rem; /* half of previous typical margin (was 2rem) */
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -120,9 +136,8 @@
     </header>
 
     <!-- Main Content -->
-    <main class="max-w-3xl mx-auto px-6 py-8">
-
-        <div class="text-center text-gray-300 text-xs mb-10 tracking-[0.5em] mt-4">-0-</div>
+    <main class="max-w-3xl mx-auto px-6 py-8 top-margin-adjust">
+        <!-- Removed "-0-" element completely and reduced top margin via class -->
 
         <!-- AD BANNERS: dynamic container (top of main content) -->
         <div id="ad-banners-container"></div>
