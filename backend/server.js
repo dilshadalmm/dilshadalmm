@@ -1211,6 +1211,40 @@ app.get('/api/chapters', async (req, res) => {
     }
 });
 
+// ---- API Endpoint: Ultimate Solutions ----
+app.get('/api/ultimate-solutions', async (req, res) => {
+    try {
+        if (!db) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database not initialized'
+            });
+        }
+
+        const snapshot = await db
+            .collection('ultimateSolution')
+            .orderBy('order')
+            .get();
+
+        const data = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        res.json({
+            success: true,
+            data
+        });
+
+    } catch (error) {
+        console.error('Error fetching ultimate solutions:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch ultimate solutions'
+        });
+    }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
