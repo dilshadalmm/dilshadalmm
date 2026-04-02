@@ -587,6 +587,82 @@ app.post('/api/ingest', async (req, res) => {
     }
 });
 
+// ==================== QUIZ API COUNTERS (DAILY + GLOBAL) ====================
+// These counters increment automatically on every request to /api/quiz
+// Your existing /api/quiz route remains unchanged.
+
+// Helper: get today's date as YYYY-MM-DD (UTC)
+function getTodayString() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// Middleware: increments both daily and global counters atomically
+app.use('/api/quiz', async (req, res, next) => {
+  if (!db) {
+    // Firestore not available – still allow the request but log a warning
+    console.warn('Firestore not initialized – counters not updated');
+    return next();
+  }
+
+  const today = getTodayString();
+  const dailyCounterRef = db.collection('quizApiStats').doc(`daily_${today}`);
+  const globalCounterRef = db.collection('quizApiStats').doc('global');
+
+  try {
+    // Run both increments in a single batch for atomicity (optional)
+    // But since they are independent documents, two separate writes are fine.
+    // We'll use Promise.all for better performance.
+    await Promise.all([
+      dailyCounterRef.set(
+        { count: admin.firestore.FieldValue.increment(1), date: today },
+        { merge: true }
+      ),
+      globalCounterRef.set(
+        { totalCalls: admin.firestore.FieldValue.increment(1) },
+        { merge: true }
+      )
+    ]);
+  } catch (err) {
+    console.error('Failed to increment quiz counters:', err);
+    // Do NOT block the quiz request – just log the error
+  }
+
+  next();
+});
+
+// Endpoint: get today's count (or a specific date)
+app.get('/api/quiz/daily', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not initialized' });
+    }
+    const { date } = req.query;
+    const targetDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : getTodayString();
+    const doc = await db.collection('quizApiStats').doc(`daily_${targetDate}`).get();
+    const count = doc.exists ? doc.data().count : 0;
+    res.json({ success: true, date: targetDate, count });
+  } catch (err) {
+    console.error('Error fetching daily count:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch daily count' });
+  }
+});
+
+// Endpoint: get global total (all-time)
+app.get('/api/quiz/global', async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database not initialized' });
+    }
+    const doc = await db.collection('quizApiStats').doc('global').get();
+    const totalCalls = doc.exists ? doc.data().totalCalls : 0;
+    res.json({ success: true, totalCalls });
+  } catch (err) {
+    console.error('Error fetching global count:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch global count' });
+  }
+});
+            
+
 // ---- API Endpoint: Quiz (Ordered Pagination) ----
 app.get('/api/quiz', async (req, res) => {
     try {
@@ -1288,80 +1364,6 @@ app.get('/api/ultimate-solutions', async (req, res) => {
     }
 });
 
-// ==================== QUIZ API COUNTERS (DAILY + GLOBAL) ====================
-// These counters increment automatically on every request to /api/quiz
-// Your existing /api/quiz route remains unchanged.
-
-// Helper: get today's date as YYYY-MM-DD (UTC)
-function getTodayString() {
-  return new Date().toISOString().split('T')[0];
-}
-
-// Middleware: increments both daily and global counters atomically
-app.use('/api/quiz', async (req, res, next) => {
-  if (!db) {
-    // Firestore not available – still allow the request but log a warning
-    console.warn('Firestore not initialized – counters not updated');
-    return next();
-  }
-
-  const today = getTodayString();
-  const dailyCounterRef = db.collection('quizApiStats').doc(`daily_${today}`);
-  const globalCounterRef = db.collection('quizApiStats').doc('global');
-
-  try {
-    // Run both increments in a single batch for atomicity (optional)
-    // But since they are independent documents, two separate writes are fine.
-    // We'll use Promise.all for better performance.
-    await Promise.all([
-      dailyCounterRef.set(
-        { count: admin.firestore.FieldValue.increment(1), date: today },
-        { merge: true }
-      ),
-      globalCounterRef.set(
-        { totalCalls: admin.firestore.FieldValue.increment(1) },
-        { merge: true }
-      )
-    ]);
-  } catch (err) {
-    console.error('Failed to increment quiz counters:', err);
-    // Do NOT block the quiz request – just log the error
-  }
-
-  next();
-});
-
-// Endpoint: get today's count (or a specific date)
-app.get('/api/quiz/daily', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ success: false, error: 'Database not initialized' });
-    }
-    const { date } = req.query;
-    const targetDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : getTodayString();
-    const doc = await db.collection('quizApiStats').doc(`daily_${targetDate}`).get();
-    const count = doc.exists ? doc.data().count : 0;
-    res.json({ success: true, date: targetDate, count });
-  } catch (err) {
-    console.error('Error fetching daily count:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch daily count' });
-  }
-});
-
-// Endpoint: get global total (all-time)
-app.get('/api/quiz/global', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ success: false, error: 'Database not initialized' });
-    }
-    const doc = await db.collection('quizApiStats').doc('global').get();
-    const totalCalls = doc.exists ? doc.data().totalCalls : 0;
-    res.json({ success: true, totalCalls });
-  } catch (err) {
-    console.error('Error fetching global count:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch global count' });
-  }
-});
 
 app.get('/health', (req, res) => res.send('Active'));
 
