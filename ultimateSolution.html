@@ -364,6 +364,13 @@
                 };
                 imageContainer.appendChild(img);
                 
+                // NEW: Make the entire thumbnail image container clickable, redirecting exactly as title does
+                // No UI changes (no cursor pointer, no extra styling) - only interactive behavior added.
+                imageContainer.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    redirectToQuiz(className, subject, chapter);
+                });
+                
                 section.appendChild(titleEl);
                 section.appendChild(descEl);
                 section.appendChild(downloadLinkEl);
