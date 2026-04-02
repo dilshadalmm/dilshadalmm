@@ -587,79 +587,155 @@ app.post('/api/ingest', async (req, res) => {
     }
 });
 
-// ==================== QUIZ API COUNTERS (DAILY + GLOBAL) ====================
-// These counters increment automatically on every request to /api/quiz
-// Your existing /api/quiz route remains unchanged.
+// ==================== UNIQUE CHAPTER VIEW COUNTER ====================
+// Counts each user-chapter combination only once per day
+// No frontend changes required – works with existing /api/quiz calls
 
 // Helper: get today's date as YYYY-MM-DD (UTC)
 function getTodayString() {
-  return new Date().toISOString().split('T')[0];
+    return new Date().toISOString().split('T')[0];
 }
 
-// Middleware: increments both daily and global counters atomically
+// Helper: get client IP address
+function getClientIp(req) {
+    const xForwardedFor = req.headers['x-forwarded-for'];
+    if (xForwardedFor) {
+        return xForwardedFor.split(',')[0].trim();
+    }
+    return req.socket.remoteAddress || req.ip;
+}
+
+// Middleware: tracks unique chapter views per user per day
 app.use('/api/quiz', async (req, res, next) => {
-  if (!db) {
-    // Firestore not available – still allow the request but log a warning
-    console.warn('Firestore not initialized – counters not updated');
-    return next();
-  }
+    if (!db) {
+        console.warn('Firestore not initialized – counters not updated');
+        return next();
+    }
 
-  const today = getTodayString();
-  const dailyCounterRef = db.collection('quizApiStats').doc(`daily_${today}`);
-  const globalCounterRef = db.collection('quizApiStats').doc('global');
-
-  try {
-    // Run both increments in a single batch for atomicity (optional)
-    // But since they are independent documents, two separate writes are fine.
-    // We'll use Promise.all for better performance.
-    await Promise.all([
-      dailyCounterRef.set(
-        { count: admin.firestore.FieldValue.increment(1), date: today },
-        { merge: true }
-      ),
-      globalCounterRef.set(
-        { totalCalls: admin.firestore.FieldValue.increment(1) },
-        { merge: true }
-      )
-    ]);
-  } catch (err) {
-    console.error('Failed to increment quiz counters:', err);
-    // Do NOT block the quiz request – just log the error
-  }
-
-  next();
+    // Get user identifier (IP address)
+    const userIp = getClientIp(req);
+    
+    // Get chapter information from query parameters
+    const className = req.query.className;
+    const subject = req.query.subject;
+    const chapter = req.query.chapter;
+    
+    // Only track if we have complete chapter info
+    if (className && subject && chapter) {
+        const today = getTodayString();
+        
+        // Create a unique key: date|ip|class|subject|chapter
+        const sessionKey = `${today}|${userIp}|${className}|${subject}|${chapter}`;
+        const sessionRef = db.collection('chapterViews').doc(sessionKey);
+        
+        try {
+            // Check if this user already viewed this chapter today
+            const sessionDoc = await sessionRef.get();
+            
+            if (!sessionDoc.exists) {
+                // First time – record the view and increment counters
+                await sessionRef.set({
+                    userIp,
+                    className,
+                    subject,
+                    chapter,
+                    firstViewed: admin.firestore.FieldValue.serverTimestamp(),
+                    date: today
+                });
+                
+                // Increment daily counter
+                const dailyCounterRef = db.collection('quizApiStats').doc(`daily_${today}`);
+                await dailyCounterRef.set(
+                    { count: admin.firestore.FieldValue.increment(1), date: today },
+                    { merge: true }
+                );
+                
+                // Increment global counter
+                const globalCounterRef = db.collection('quizApiStats').doc('global');
+                await globalCounterRef.set(
+                    { totalUniqueChapterViews: admin.firestore.FieldValue.increment(1) },
+                    { merge: true }
+                );
+                
+                console.log(`✅ New unique chapter view: ${className} - ${subject} - ${chapter} (IP: ${userIp})`);
+            } else {
+                console.log(`⏭️ Duplicate chapter view ignored: ${className} - ${subject} - ${chapter} (IP: ${userIp})`);
+            }
+        } catch (err) {
+            console.error('Failed to track chapter view:', err);
+            // Don't block the quiz request
+        }
+    }
+    
+    next();
 });
 
-// Endpoint: get today's count (or a specific date)
+// Endpoint: get daily unique chapter views
 app.get('/api/quiz/daily', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ success: false, error: 'Database not initialized' });
+    try {
+        if (!db) {
+            return res.status(500).json({ success: false, error: 'Database not initialized' });
+        }
+        const { date } = req.query;
+        const targetDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : getTodayString();
+        const doc = await db.collection('quizApiStats').doc(`daily_${targetDate}`).get();
+        const count = doc.exists ? doc.data().count : 0;
+        res.json({ success: true, date: targetDate, uniqueChapterViews: count });
+    } catch (err) {
+        console.error('Error fetching daily count:', err);
+        res.status(500).json({ success: false, error: 'Failed to fetch daily count' });
     }
-    const { date } = req.query;
-    const targetDate = (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) ? date : getTodayString();
-    const doc = await db.collection('quizApiStats').doc(`daily_${targetDate}`).get();
-    const count = doc.exists ? doc.data().count : 0;
-    res.json({ success: true, date: targetDate, count });
-  } catch (err) {
-    console.error('Error fetching daily count:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch daily count' });
-  }
 });
 
-// Endpoint: get global total (all-time)
+// Endpoint: get global total unique chapter views
 app.get('/api/quiz/global', async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ success: false, error: 'Database not initialized' });
+    try {
+        if (!db) {
+            return res.status(500).json({ success: false, error: 'Database not initialized' });
+        }
+        const doc = await db.collection('quizApiStats').doc('global').get();
+        const totalUniqueChapterViews = doc.exists ? doc.data().totalUniqueChapterViews : 0;
+        res.json({ success: true, totalUniqueChapterViews });
+    } catch (err) {
+        console.error('Error fetching global count:', err);
+        res.status(500).json({ success: false, error: 'Failed to fetch global count' });
     }
-    const doc = await db.collection('quizApiStats').doc('global').get();
-    const totalCalls = doc.exists ? doc.data().totalCalls : 0;
-    res.json({ success: true, totalCalls });
-  } catch (err) {
-    console.error('Error fetching global count:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch global count' });
-  }
+});
+
+// Optional: Get stats for a specific chapter
+app.get('/api/quiz/chapter-stats', async (req, res) => {
+    try {
+        if (!db) {
+            return res.status(500).json({ success: false, error: 'Database not initialized' });
+        }
+        const { class: className, subject, chapter, date } = req.query;
+        
+        if (!className || !subject || !chapter) {
+            return res.status(400).json({ success: false, error: 'class, subject, and chapter are required' });
+        }
+        
+        const targetDate = date || getTodayString();
+        const querySnapshot = await db.collection('chapterViews')
+            .where('className', '==', className)
+            .where('subject', '==', subject)
+            .where('chapter', '==', chapter)
+            .where('date', '==', targetDate)
+            .get();
+        
+        const uniqueViews = querySnapshot.size;
+        
+        res.json({ 
+            success: true, 
+            className, 
+            subject, 
+            chapter, 
+            date: targetDate,
+            uniqueViews 
+        });
+    } catch (err) {
+        console.error('Error fetching chapter stats:', err);
+        res.status(500).json({ success: false, error: 'Failed to fetch chapter stats' });
+    }
 });
             
 
