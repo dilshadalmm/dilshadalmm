@@ -1543,6 +1543,16 @@ cloudinary.config({
     api_secret: process.env.CLOUDINARY_API_SECRET
 });
 
+// Configure multer for memory storage (files not saved to disk)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Only image files are allowed'), false);
+    }
+});
+
 // ==================== USER REGISTRATION & SYNC (with profile image upload) ====================
 // Endpoint: POST /api/auth/register
 // Content-Type: multipart/form-data
@@ -1695,16 +1705,6 @@ app.post('/api/auth/register', upload.single('profileImage'), async (req, res) =
             success: false,
             error: 'Internal server error'
         });
-    }
-});
-
-// Configure multer for memory storage (files not saved to disk)
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) cb(null, true);
-        else cb(new Error('Only image files are allowed'), false);
     }
 });
 
