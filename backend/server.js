@@ -1533,6 +1533,181 @@ app.get('/api/notes', async (req, res) => {
   }
 });
 
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2;
+
+// Configure Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// ==================== USER REGISTRATION & SYNC (with profile image upload) ====================
+// Endpoint: POST /api/auth/register
+// Content-Type: multipart/form-data
+// Fields:
+//   - idToken (string, required) – Firebase ID token
+//   - userName (string, optional) – display name
+//   - profileImage (file, optional) – image file (jpg, png, etc.)
+app.post('/api/auth/register', upload.single('profileImage'), async (req, res) => {
+    try {
+        const { idToken, userName } = req.body;
+        const profileImageFile = req.file;
+
+        // 1. Validate required fields
+        if (!idToken || typeof idToken !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing or invalid idToken'
+            });
+        }
+
+        if (!admin.apps.length || !db) {
+            console.error('Firebase Admin or Firestore not initialized');
+            return res.status(500).json({
+                success: false,
+                error: 'Authentication service unavailable'
+            });
+        }
+
+        // 2. Verify Firebase ID token
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(idToken);
+        } catch (verifyError) {
+            console.error('Token verification failed:', verifyError.message);
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid or expired token'
+            });
+        }
+
+        const uid = decodedToken.uid;
+        const email = decodedToken.email || '';
+        const emailVerified = decodedToken.email_verified || false;
+        const existingDisplayName = decodedToken.name || '';
+
+        // 3. Upload profile image to Cloudinary (if provided)
+        let profileImageUrl = null;
+        if (profileImageFile) {
+            try {
+                // Upload buffer to Cloudinary
+                const result = await new Promise((resolve, reject) => {
+                    const uploadStream = cloudinary.uploader.upload_stream(
+                        {
+                            folder: `profile_images/${uid}`,
+                            public_id: `profile_${uid}`,
+                            overwrite: true,
+                            transformation: [{ width: 500, height: 500, crop: 'limit' }]
+                        },
+                        (error, result) => {
+                            if (error) reject(error);
+                            else resolve(result);
+                        }
+                    );
+                    uploadStream.end(profileImageFile.buffer);
+                });
+                profileImageUrl = result.secure_url;
+            } catch (uploadError) {
+                console.error('Cloudinary upload failed:', uploadError);
+                return res.status(500).json({
+                    success: false,
+                    error: 'Failed to upload profile image'
+                });
+            }
+        }
+
+        // 4. Prepare user data for Firestore
+        const userRef = db.collection('users').doc(uid);
+        const userSnap = await userRef.get();
+
+        // Determine final display name: prefer provided userName, then from token, fallback to email
+        const finalDisplayName = userName || existingDisplayName || email.split('@')[0];
+
+        const baseUserData = {
+            uid,
+            email,
+            emailVerified,
+            displayName: finalDisplayName,
+            photoURL: profileImageUrl || null,
+            lastLogin: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        let isNewUser = false;
+        if (!userSnap.exists) {
+            // Create new user document
+            const newUser = {
+                ...baseUserData,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                role: 'user',
+                isActive: true,
+                // You can add more default fields here
+            };
+            await userRef.set(newUser);
+            isNewUser = true;
+            console.log(`✅ New user created in Firestore: ${uid} (${email})`);
+        } else {
+            // Update existing user
+            const updateData = {
+                ...baseUserData,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            await userRef.update(updateData);
+            console.log(`🔄 Existing user updated: ${uid}`);
+        }
+
+        // 5. (Optional) Update Firebase Auth user profile with new name and photo
+        try {
+            await admin.auth().updateUser(uid, {
+                displayName: finalDisplayName,
+                photoURL: profileImageUrl || undefined
+            });
+            console.log(`📝 Updated Firebase Auth profile for ${uid}`);
+        } catch (authUpdateError) {
+            console.warn('Could not update Auth profile:', authUpdateError.message);
+            // Non‑critical – continue
+        }
+
+        // 6. Fetch the final user document to return
+        const finalUserDoc = await userRef.get();
+        const userData = finalUserDoc.data();
+
+        return res.status(isNewUser ? 201 : 200).json({
+            success: true,
+            message: isNewUser ? 'User registered and synced' : 'User profile updated',
+            user: {
+                uid: userData.uid,
+                email: userData.email,
+                emailVerified: userData.emailVerified,
+                displayName: userData.displayName,
+                photoURL: userData.photoURL,
+                role: userData.role,
+                isActive: userData.isActive,
+                createdAt: userData.createdAt,
+                lastLogin: userData.lastLogin
+            }
+        });
+
+    } catch (error) {
+        console.error('Unexpected error in /api/auth/register:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
+// Configure multer for memory storage (files not saved to disk)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Only image files are allowed'), false);
+    }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
