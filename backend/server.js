@@ -1440,6 +1440,98 @@ app.get('/api/ultimate-solutions', async (req, res) => {
     }
 });
 
+// ==================== NOTES ENDPOINT ====================
+// GET /api/notes?className=...&subject=...&chapter=...
+// Returns all matching notes with their full sections subcollection
+app.get('/api/notes', async (req, res) => {
+  try {
+    const { className, subject, chapter } = req.query;
+
+    // Validate required parameters
+    if (!className || !subject || !chapter) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required query parameters: className, subject, chapter'
+      });
+    }
+
+    if (!db) {
+      console.error('Firestore not initialized');
+      return res.status(500).json({
+        success: false,
+        error: 'Database service unavailable'
+      });
+    }
+
+    // Query notes collection for matching metadata
+    const notesSnapshot = await db.collection('notes')
+      .where('className', '==', className)
+      .where('subject', '==', subject)
+      .where('chapter', '==', chapter)
+      .get();
+
+    if (notesSnapshot.empty) {
+      return res.json({
+        success: true,
+        data: []  // No notes found
+      });
+    }
+
+    // For each matching note, fetch its sections subcollection
+    const notesData = [];
+    for (const noteDoc of notesSnapshot.docs) {
+      const note = noteDoc.data();
+      const noteId = noteDoc.id;
+
+      // Fetch sections, ordered by 'order' ascending
+      const sectionsSnapshot = await noteDoc.ref.collection('sections')
+        .orderBy('order')        // assuming each section has an 'order' field
+        .get();
+
+      const sections = [];
+      sectionsSnapshot.forEach(sectionDoc => {
+        const sectionData = sectionDoc.data();
+        sections.push({
+          sectionId: sectionDoc.id,
+          heading: sectionData.heading || '',
+          subtle: sectionData.subtle || null,
+          content: sectionData.content || [],
+          imageUrl: sectionData.imageUrl || [],
+          order: sectionData.order || 0,
+          createdAt: sectionData.createdAt || null
+        });
+      });
+
+      // Build the note object (include all note fields, optionally omit internal fields)
+      notesData.push({
+        noteId: noteId,
+        titleText: note.titleText || '',
+        subtleText: note.subtleText || '',
+        className: note.className,
+        subject: note.subject,
+        chapter: note.chapter,
+        order: note.order || 0,
+        authorId: note.authorId || '',
+        createdAt: note.createdAt || null,
+        updatedAt: note.updatedAt || null,
+        tags: note.tags || [],
+        sections: sections
+      });
+    }
+
+    res.json({
+      success: true,
+      data: notesData
+    });
+
+  } catch (error) {
+    console.error('Error in /api/notes:', error);
+    res.status(500).json({
+      success: false,
+      error: 'An internal server error occurred'
+    });
+  }
+});
 
 app.get('/health', (req, res) => res.send('Active'));
 
