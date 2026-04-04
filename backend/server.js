@@ -1826,6 +1826,767 @@ app.post('/api/auth/register', upload.single('profileImage'), async (req, res) =
     }
 });
 
+// POST /classes - Create a new class
+app.post('/classes', async (req, res) => {
+  try {
+    // 1. Validate request body
+    const { name, description } = req.body;
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: name (must be a non-empty string)'
+      });
+    }
+
+    // 2. Verify Firebase ID token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+    const uid = decodedToken.uid;
+
+    // 3. Fetch user document from Firestore
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database service unavailable' });
+    }
+    const userRef = db.collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, error: 'User document not found' });
+    }
+    const userData = userDoc.data();
+
+    // 4. Check isActive
+    if (userData.isActive !== true) {
+      return res.status(403).json({ success: false, error: 'Account is not active' });
+    }
+
+    // 5. Check classLimit
+    const currentLimit = userData.classLimit ?? 0;
+    if (currentLimit <= 0) {
+      return res.status(403).json({ success: false, error: 'Class creation limit reached' });
+    }
+
+    // 6. Generate unique classId
+    const classId = db.collection('classes').doc().id;
+
+    // 7. Prepare new class document
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const newClass = {
+      classId,
+      name: name.trim(),
+      description: description && typeof description === 'string' ? description.trim() : null,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      isDeleted: false
+    };
+
+    // 8. Transaction: create class and update user atomically
+    await db.runTransaction(async (transaction) => {
+      // Re‑read user inside transaction to ensure latest classLimit
+      const freshUser = await transaction.get(userRef);
+      if (!freshUser.exists) throw new Error('User disappeared');
+      const freshData = freshUser.data();
+      if (freshData.classLimit <= 0) {
+        throw new Error('Class limit already exhausted');
+      }
+
+      // Create class document
+      const classRef = db.collection('classes').doc(classId);
+      transaction.set(classRef, newClass);
+
+      // Update user: append classId to permittedClassIds, decrement classLimit
+      transaction.update(userRef, {
+        permittedClassIds: admin.firestore.FieldValue.arrayUnion(classId),
+        classLimit: admin.firestore.FieldValue.increment(-1)
+      });
+    });
+
+    // 9. Create audit log entry (non‑critical – log error but don't fail request)
+    try {
+      await db.collection('auditLogs').add({
+        action: 'create_class',
+        classId,
+        performedBy: uid,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (auditErr) {
+      console.error('Failed to write audit log for class creation:', auditErr);
+    }
+
+    // 10. Prepare response (remaining limit = original limit - 1)
+    const remainingLimit = currentLimit - 1;
+    // Convert serverTimestamp placeholders to actual dates for the response
+    const responseClass = {
+      ...newClass,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({
+      success: true,
+      remainingClassLimit: remainingLimit,
+      class: responseClass
+    });
+
+  } catch (error) {
+    console.error('POST /classes error:', error);
+    if (error.message === 'Class limit already exhausted') {
+      return res.status(403).json({ success: false, error: 'Class creation limit reached' });
+    }
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// POST /subjects - Create a new subject under an existing class
+app.post('/subjects', async (req, res) => {
+  try {
+    // 1. Validate request body
+    const { classId, name, description } = req.body;
+    if (!classId || typeof classId !== 'string' || classId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: classId (must be a non-empty string)'
+      });
+    }
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: name (must be a non-empty string)'
+      });
+    }
+
+    // 2. Verify Firebase ID token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+    const uid = decodedToken.uid;
+
+    // 3. Database check
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database service unavailable' });
+    }
+
+    const userRef = db.collection('users').doc(uid);
+    let userDoc;
+    try {
+      userDoc = await userRef.get();
+    } catch (err) {
+      console.error('Failed to fetch user:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch user data' });
+    }
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, error: 'User document not found' });
+    }
+    const userData = userDoc.data();
+
+    // 4. Check isActive
+    if (userData.isActive !== true) {
+      return res.status(403).json({ success: false, error: 'Account is not active' });
+    }
+
+    // 5. Verify class permission: classId must be in permittedClassIds
+    const permittedClassIds = userData.permittedClassIds || [];
+    if (!Array.isArray(permittedClassIds) || !permittedClassIds.includes(classId)) {
+      return res.status(403).json({
+        success: false,
+        error: `Access denied: you are not permitted to add subjects to classId "${classId}"`
+      });
+    }
+
+    // 6. Check subjectLimit for this class
+    const subjectLimits = userData.subjectLimit || {}; // object: { [classId]: number }
+    let currentLimit = subjectLimits[classId];
+    if (currentLimit === undefined || currentLimit === null) {
+      // If limit not set, treat as 0 (cannot create)
+      currentLimit = 0;
+    }
+    if (currentLimit <= 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'Subject creation limit reached for this class'
+      });
+    }
+
+    // 7. Generate unique subjectId
+    const subjectId = db.collection('subjects').doc().id;
+
+    // 8. Prepare new subject document
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const newSubject = {
+      subjectId,
+      classId,
+      name: name.trim(),
+      description: description && typeof description === 'string' ? description.trim() : null,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      isDeleted: false
+    };
+
+    // 9. Transaction: create subject and decrement subjectLimit[classId]
+    await db.runTransaction(async (transaction) => {
+      // Re-read user inside transaction
+      const freshUser = await transaction.get(userRef);
+      if (!freshUser.exists) throw new Error('User disappeared');
+      const freshData = freshUser.data();
+      const freshLimits = freshData.subjectLimit || {};
+      const freshLimit = freshLimits[classId];
+      if (freshLimit === undefined || freshLimit <= 0) {
+        throw new Error('Subject limit already exhausted');
+      }
+
+      // Create subject document
+      const subjectRef = db.collection('subjects').doc(subjectId);
+      transaction.set(subjectRef, newSubject);
+
+      // Update user: decrement subjectLimit[classId] by 1
+      const updatedLimits = { ...freshLimits };
+      updatedLimits[classId] = freshLimit - 1;
+      transaction.update(userRef, { subjectLimit: updatedLimits });
+    });
+
+    // 10. Create audit log entry (non‑critical)
+    try {
+      await db.collection('auditLogs').add({
+        action: 'create_subject',
+        classId,
+        subjectId,
+        performedBy: uid,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (auditErr) {
+      console.error('Failed to write audit log for subject creation:', auditErr);
+    }
+
+    // 11. Prepare response
+    const remainingLimit = currentLimit - 1;
+    const responseSubject = {
+      ...newSubject,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({
+      success: true,
+      remainingSubjectLimit: remainingLimit,
+      subject: responseSubject
+    });
+
+  } catch (error) {
+    console.error('POST /subjects error:', error);
+    if (error.message === 'Subject limit already exhausted') {
+      return res.status(403).json({ success: false, error: 'Subject creation limit reached' });
+    }
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// POST /chapters - Create a new chapter under an existing subject
+app.post('/chapters', async (req, res) => {
+  try {
+    // 1. Validate request body
+    const { classId, subjectId, name, description } = req.body;
+    if (!classId || typeof classId !== 'string' || classId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: classId (must be a non-empty string)'
+      });
+    }
+    if (!subjectId || typeof subjectId !== 'string' || subjectId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: subjectId (must be a non-empty string)'
+      });
+    }
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid field: name (must be a non-empty string)'
+      });
+    }
+
+    // 2. Verify Firebase ID token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+    const uid = decodedToken.uid;
+
+    // 3. Database availability
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database service unavailable' });
+    }
+
+    const userRef = db.collection('users').doc(uid);
+    let userDoc;
+    try {
+      userDoc = await userRef.get();
+    } catch (err) {
+      console.error('Failed to fetch user:', err);
+      return res.status(500).json({ success: false, error: 'Failed to fetch user data' });
+    }
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, error: 'User document not found' });
+    }
+    const userData = userDoc.data();
+
+    // 4. Check isActive
+    if (userData.isActive !== true) {
+      return res.status(403).json({ success: false, error: 'Account is not active' });
+    }
+
+    // 5. Verify class permission: classId must be in permittedClassIds
+    const permittedClassIds = userData.permittedClassIds || [];
+    if (!Array.isArray(permittedClassIds) || !permittedClassIds.includes(classId)) {
+      return res.status(403).json({
+        success: false,
+        error: `Access denied: you are not permitted to add chapters to classId "${classId}"`
+      });
+    }
+
+    // 6. Verify subject exists and belongs to the class
+    const subjectRef = db.collection('subjects').doc(subjectId);
+    const subjectDoc = await subjectRef.get();
+    if (!subjectDoc.exists) {
+      return res.status(404).json({ success: false, error: 'Subject not found' });
+    }
+    const subjectData = subjectDoc.data();
+    if (subjectData.classId !== classId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Subject does not belong to the specified class'
+      });
+    }
+
+    // 7. Check chapterLimit for this subject
+    // Structure: user.chapterLimit[classId][subjectId] (number)
+    const chapterLimits = userData.chapterLimit || {}; // { classId: { subjectId: number } }
+    const limitForClass = chapterLimits[classId] || {};
+    let currentLimit = limitForClass[subjectId];
+    if (currentLimit === undefined || currentLimit === null) {
+      currentLimit = 0;
+    }
+    if (currentLimit <= 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'Chapter creation limit reached for this subject'
+      });
+    }
+
+    // 8. Generate unique chapterId
+    const chapterId = db.collection('chapters').doc().id;
+
+    // 9. Prepare new chapter document
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const newChapter = {
+      chapterId,
+      classId,
+      subjectId,
+      name: name.trim(),
+      description: description && typeof description === 'string' ? description.trim() : null,
+      createdBy: uid,
+      createdAt: now,
+      updatedAt: now,
+      isDeleted: false
+    };
+
+    // 10. Transaction: create chapter and decrement chapterLimit[classId][subjectId]
+    await db.runTransaction(async (transaction) => {
+      // Re-read user inside transaction
+      const freshUser = await transaction.get(userRef);
+      if (!freshUser.exists) throw new Error('User disappeared');
+      const freshData = freshUser.data();
+      const freshLimits = freshData.chapterLimit || {};
+      const freshClassLimits = freshLimits[classId] || {};
+      const freshLimit = freshClassLimits[subjectId];
+      if (freshLimit === undefined || freshLimit <= 0) {
+        throw new Error('Chapter limit already exhausted');
+      }
+
+      // Create chapter document
+      const chapterRef = db.collection('chapters').doc(chapterId);
+      transaction.set(chapterRef, newChapter);
+
+      // Update user: decrement chapterLimit[classId][subjectId] by 1
+      const updatedClassLimits = { ...freshClassLimits };
+      updatedClassLimits[subjectId] = freshLimit - 1;
+      const updatedLimits = { ...freshLimits };
+      updatedLimits[classId] = updatedClassLimits;
+      transaction.update(userRef, { chapterLimit: updatedLimits });
+    });
+
+    // 11. Create audit log entry (non‑critical)
+    try {
+      await db.collection('auditLogs').add({
+        action: 'create_chapter',
+        classId,
+        subjectId,
+        chapterId,
+        performedBy: uid,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (auditErr) {
+      console.error('Failed to write audit log for chapter creation:', auditErr);
+    }
+
+    // 12. Prepare response
+    const remainingLimit = currentLimit - 1;
+    const responseChapter = {
+      ...newChapter,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({
+      success: true,
+      remainingChapterLimit: remainingLimit,
+      chapter: responseChapter
+    });
+
+  } catch (error) {
+    console.error('POST /chapters error:', error);
+    if (error.message === 'Chapter limit already exhausted') {
+      return res.status(403).json({ success: false, error: 'Chapter creation limit reached' });
+    }
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+
+// POST /lessons - Create a new lesson under a chapter
+app.post('/lessons', async (req, res) => {
+  try {
+    // 1. Validate request body
+    const {
+      classId,
+      subjectId,
+      chapterId,
+      lessonOrder,
+      videoUrl,
+      thumbnailUrl,
+      imageUrl,
+      lessonName,
+      lessonDescription,
+      pdfLinkAddress,
+      pdfLinkText
+    } = req.body;
+
+    if (!classId || typeof classId !== 'string' || classId.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid field: classId' });
+    }
+    if (!subjectId || typeof subjectId !== 'string' || subjectId.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid field: subjectId' });
+    }
+    if (!chapterId || typeof chapterId !== 'string' || chapterId.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid field: chapterId' });
+    }
+    if (lessonOrder === undefined || typeof lessonOrder !== 'number' || !Number.isInteger(lessonOrder) || lessonOrder < 1) {
+      return res.status(400).json({ success: false, error: 'lessonOrder must be a positive integer' });
+    }
+    if (!lessonName || typeof lessonName !== 'string' || lessonName.trim() === '') {
+      return res.status(400).json({ success: false, error: 'Missing or invalid field: lessonName' });
+    }
+
+    // Optional fields: allow null or string
+    const sanitizedVideoUrl = videoUrl && typeof videoUrl === 'string' ? videoUrl.trim() : null;
+    const sanitizedThumbnailUrl = thumbnailUrl && typeof thumbnailUrl === 'string' ? thumbnailUrl.trim() : null;
+    const sanitizedImageUrl = imageUrl && typeof imageUrl === 'string' ? imageUrl.trim() : null;
+    const sanitizedLessonDescription = lessonDescription && typeof lessonDescription === 'string' ? lessonDescription.trim() : null;
+    const sanitizedPdfLinkAddress = pdfLinkAddress && typeof pdfLinkAddress === 'string' ? pdfLinkAddress.trim() : null;
+    const sanitizedPdfLinkText = pdfLinkText && typeof pdfLinkText === 'string' ? pdfLinkText.trim() : null;
+
+    // 2. Verify Firebase ID token
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+    const uid = decodedToken.uid;
+
+    // 3. Database availability
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database service unavailable' });
+    }
+
+    const userRef = db.collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, error: 'User document not found' });
+    }
+    const userData = userDoc.data();
+
+    // 4. Check isActive
+    if (userData.isActive !== true) {
+      return res.status(403).json({ success: false, error: 'Account is not active' });
+    }
+
+    // 5. Verify class permission
+    const permittedClassIds = userData.permittedClassIds || [];
+    if (!Array.isArray(permittedClassIds) || !permittedClassIds.includes(classId)) {
+      return res.status(403).json({
+        success: false,
+        error: `Access denied: you are not permitted to add lessons to classId "${classId}"`
+      });
+    }
+
+    // 6. Verify subject exists and belongs to class
+    const subjectRef = db.collection('subjects').doc(subjectId);
+    const subjectDoc = await subjectRef.get();
+    if (!subjectDoc.exists) {
+      return res.status(404).json({ success: false, error: 'Subject not found' });
+    }
+    const subjectData = subjectDoc.data();
+    if (subjectData.classId !== classId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Subject does not belong to the specified class'
+      });
+    }
+
+    // 7. Verify chapter exists and belongs to class+subject
+    const chapterRef = db.collection('chapters').doc(chapterId);
+    const chapterDoc = await chapterRef.get();
+    if (!chapterDoc.exists) {
+      return res.status(404).json({ success: false, error: 'Chapter not found' });
+    }
+    const chapterData = chapterDoc.data();
+    if (chapterData.classId !== classId || chapterData.subjectId !== subjectId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Chapter does not belong to the specified class and subject'
+      });
+    }
+
+    // 8. Validate lessonOrder uniqueness within the same chapter
+    const existingLessonQuery = await db.collection('lessons')
+      .where('chapterId', '==', chapterId)
+      .where('lessonOrder', '==', lessonOrder)
+      .where('isDeleted', '==', false)
+      .limit(1)
+      .get();
+
+    if (!existingLessonQuery.empty) {
+      return res.status(400).json({
+        success: false,
+        error: `lessonOrder ${lessonOrder} already exists in this chapter`
+      });
+    }
+
+    // 9. Generate unique lessonId
+    const lessonId = db.collection('lessons').doc().id;
+
+    // 10. Prepare new lesson document
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const newLesson = {
+      lessonId,
+      classId,
+      subjectId,
+      chapterId,
+      lessonOrder,
+      videoUrl: sanitizedVideoUrl,
+      thumbnailUrl: sanitizedThumbnailUrl,
+      imageUrl: sanitizedImageUrl,
+      lessonName: lessonName.trim(),
+      lessonDescription: sanitizedLessonDescription,
+      pdfLinkAddress: sanitizedPdfLinkAddress,
+      pdfLinkText: sanitizedPdfLinkText,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: uid,
+      isDeleted: false
+    };
+
+    // Create lesson document (no transaction needed because no user limit update)
+    const lessonRef = db.collection('lessons').doc(lessonId);
+    await lessonRef.set(newLesson);
+
+    // 11. Create audit log entry (non‑critical)
+    try {
+      await db.collection('auditLogs').add({
+        action: 'create_lesson',
+        classId,
+        subjectId,
+        chapterId,
+        lessonId,
+        performedBy: uid,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (auditErr) {
+      console.error('Failed to write audit log for lesson creation:', auditErr);
+    }
+
+    // 12. Return response with actual timestamps replaced
+    const responseLesson = {
+      ...newLesson,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    return res.status(201).json({
+      success: true,
+      lesson: responseLesson
+    });
+
+  } catch (error) {
+    console.error('POST /lessons error:', error);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// GET /user - Get current user profile with login timestamp update
+app.get('/user', async (req, res) => {
+  try {
+    // 1. Verify Firebase ID token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, error: 'Missing or invalid Authorization header' });
+    }
+    const idToken = authHeader.split('Bearer ')[1];
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+    const uid = decodedToken.uid;
+
+    // 2. Database check
+    if (!db) {
+      return res.status(500).json({ success: false, error: 'Database service unavailable' });
+    }
+
+    const userRef = db.collection('users').doc(uid);
+    const userDoc = await userRef.get();
+    if (!userDoc.exists) {
+      return res.status(404).json({ success: false, error: 'User document not found' });
+    }
+
+    const userData = userDoc.data();
+
+    // 3. Check user status
+    if (userData.isActive !== true) {
+      return res.status(403).json({ success: false, error: 'Account is not active' });
+    }
+
+    // 4. Update lastLoginAt and updatedAt
+    const nowTimestamp = admin.firestore.FieldValue.serverTimestamp();
+    await userRef.update({
+      lastLoginAt: nowTimestamp,
+      updatedAt: nowTimestamp
+    });
+
+    // 5. Prepare response user object (using current data + new timestamps as ISO strings)
+    const responseUser = {
+      userId: userData.userId || uid,           // fallback to uid if userId field missing
+      uid: userData.uid || uid,
+      role: userData.role || 'user',
+      displayName: userData.displayName || '',
+      email: userData.email || '',
+      emailVerified: userData.emailVerified || false,
+      isActive: userData.isActive,
+      photoUrl: userData.photoURL || userData.photoUrl || null,
+      createdAt: userData.createdAt ? (userData.createdAt.toDate ? userData.createdAt.toDate().toISOString() : userData.createdAt) : null,
+      updatedAt: new Date().toISOString(),      // current time for response
+      lastLoginAt: new Date().toISOString(),    // current time for response
+      classLimit: userData.classLimit ?? 0,
+      subjectLimit: userData.subjectLimit || {},
+      chapterLimit: userData.chapterLimit || {},
+      permittedClassIds: userData.permittedClassIds || []
+    };
+
+    return res.status(200).json({
+      success: true,
+      user: responseUser
+    });
+
+  } catch (error) {
+    console.error('GET /user error:', error);
+    return res.status(500).json({ success: false, error: 'Internal server error' });
+  }
+});
+
+// ========== ADD THESE ENDPOINTS TO YOUR EXISTING server.js ==========
+
+// GET /subjects?classId=xxx - List subjects for a class
+app.get('/subjects', async (req, res) => {
+    try {
+        const { classId } = req.query;
+        if (!classId) return res.status(400).json({ success: false, error: 'classId required' });
+        const snapshot = await db.collection('subjects').where('classId', '==', classId).where('isDeleted', '==', false).get();
+        const subjects = snapshot.docs.map(doc => ({ subjectId: doc.id, ...doc.data() }));
+        res.json({ success: true, subjects });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// GET /chapters?classId=xxx&subjectId=yyy - List chapters
+app.get('/chapters', async (req, res) => {
+    try {
+        const { classId, subjectId } = req.query;
+        if (!classId || !subjectId) return res.status(400).json({ success: false, error: 'classId and subjectId required' });
+        const snapshot = await db.collection('chapters').where('classId', '==', classId).where('subjectId', '==', subjectId).where('isDeleted', '==', false).get();
+        const chapters = snapshot.docs.map(doc => ({ chapterId: doc.id, ...doc.data() }));
+        res.json({ success: true, chapters });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Image upload endpoints (thumbnail & lesson image)
+const multerMem = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5*1024*1024 } });
+app.post('/upload/thumbnail', multerMem.single('image'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file' });
+        const result = await new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream({ folder: 'lesson_thumbnails' }, (err, result) => err ? reject(err) : resolve(result));
+            stream.end(req.file.buffer);
+        });
+        res.json({ success: true, url: result.secure_url });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+app.post('/upload/image', multerMem.single('image'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file' });
+        const result = await new Promise((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream({ folder: 'lesson_images' }, (err, result) => err ? reject(err) : resolve(result));
+            stream.end(req.file.buffer);
+        });
+        res.json({ success: true, url: result.secure_url });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
