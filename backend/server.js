@@ -27,6 +27,162 @@ try {
 }
 const db = firebaseInitialized ? admin.firestore() : null;
 
+// ==================== SESSION MANAGEMENT ====================
+// Add this after Firestore initialization (after `const db = ...`)
+
+/**
+ * POST /auth/session
+ * Creates or updates the active session for a user.
+ * Expects: Authorization: Bearer <Firebase ID token>
+ * Returns: { success: true, sessionId: string }
+ */
+app.post('/auth/session', async (req, res) => {
+    try {
+        // 1. Extract and verify Firebase token
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                error: 'Missing or invalid authorization token'
+            });
+        }
+        const idToken = authHeader.split(' ')[1];
+
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(idToken);
+        } catch (err) {
+            console.error('Token verification failed:', err.message);
+            return res.status(401).json({
+                success: false,
+                error: 'Invalid or expired token'
+            });
+        }
+
+        const uid = decodedToken.uid;
+
+        // 2. Generate new session ID
+        const newSessionId = crypto.randomUUID(); // secure random
+
+        // 3. Update Firestore user document
+        const userRef = db.collection('users').doc(uid);
+        await userRef.set({
+            activeSessionId: newSessionId,
+            lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        // 4. Return sessionId to frontend
+        return res.json({
+            success: true,
+            sessionId: newSessionId
+        });
+    } catch (error) {
+        console.error('Error in /auth/session:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+});
+
+/**
+ * Middleware: verifySession
+ * Validates Firebase token and checks sessionId against Firestore.
+ * On success, attaches user object to req.user.
+ * On failure, returns appropriate error response.
+ */
+async function verifySession(req, res, next) {
+    try {
+        // 1. Get token from Authorization header
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({
+                success: false,
+                error: 'Unauthorized'
+            });
+        }
+        const idToken = authHeader.split(' ')[1];
+
+        // 2. Get sessionId from x-session-id header
+        const sessionId = req.headers['x-session-id'];
+        if (!sessionId) {
+            return res.status(401).json({
+                success: false,
+                error: 'Unauthorized'
+            });
+        }
+
+        // 3. Verify Firebase token
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(idToken);
+        } catch (err) {
+            console.error('Token verification failed:', err.message);
+            return res.status(401).json({
+                success: false,
+                error: 'Unauthorized'
+            });
+        }
+
+        const uid = decodedToken.uid;
+
+        // 4. Fetch user document from Firestore
+        if (!db) {
+            throw new Error('Firestore not initialized');
+        }
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(403).json({
+                success: false,
+                error: 'Session expired. Please login again.'
+            });
+        }
+
+        const userData = userDoc.data();
+        const activeSessionId = userData.activeSessionId;
+
+        // 5. Compare session IDs
+        if (!activeSessionId || activeSessionId !== sessionId) {
+            return res.status(403).json({
+                success: false,
+                error: 'Session expired. Please login again.'
+            });
+        }
+
+        // 6. Attach user info to request for downstream use
+        req.user = {
+            uid,
+            email: decodedToken.email,
+            ...userData
+        };
+
+        next();
+    } catch (error) {
+        console.error('Session verification error:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error'
+        });
+    }
+}
+
+/**
+ * Example protected endpoint using verifySession middleware
+ * GET /api/protected
+ */
+app.get('/api/protected', verifySession, (req, res) => {
+    res.json({
+        success: true,
+        message: 'You have accessed a protected endpoint',
+        user: {
+            uid: req.user.uid,
+            email: req.user.email
+        }
+    });
+});
+
+// ==================== END SESSION MANAGEMENT ====================
+
 // ---- Hashing & Normalization Functions ----
 function normalizeText(text) {
     if (!text || typeof text !== 'string') return '';
