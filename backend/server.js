@@ -145,6 +145,78 @@ function updateCacheForNewMapping(className, subject, chapter) {
     metadataCache.chaptersByClassSubject.get(key).add(chapter);
 }
 
+
+// ==================== REUSABLE USER ACCESS HELPER ====================
+/**
+ * Verifies the Firebase ID token from the Authorization header,
+ * fetches the user document from Firestore, and checks if the user
+ * has permission to access the requested class.
+ *
+ * @param {Object} req - Express request object (must have headers.authorization)
+ * @param {string} requestedClass - The class name to check (e.g., "MBBS", "Class 10")
+ * @returns {Promise<Object>} - Returns user object on success (contains uid, email, permittedClass, etc.)
+ * @throws {Object} - Throws an object with statusCode and message for the endpoint to handle
+ */
+async function checkUserAccess(req, requestedClass) {
+    // 1. Extract token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        throw { statusCode: 401, message: 'Missing or invalid authorization token' };
+    }
+    const idToken = authHeader.split(' ')[1];
+
+    // 2. Verify the ID token using Firebase Admin SDK
+    let decodedToken;
+    try {
+        decodedToken = await admin.auth().verifyIdToken(idToken);
+    } catch (err) {
+        console.error('Token verification failed:', err.message);
+        throw { statusCode: 401, message: 'Invalid or expired token' };
+    }
+
+    const uid = decodedToken.uid;
+
+    // 3. Fetch user document from Firestore
+    if (!db) {
+        throw { statusCode: 500, message: 'Database service unavailable' };
+    }
+    const userDoc = await db.collection('users').doc(uid).get();
+    if (!userDoc.exists) {
+        throw { statusCode: 403, message: 'User account not found' };
+    }
+
+    const userData = userDoc.data();
+    const permittedClasses = userData.permittedClass; // Expecting an array, e.g., ["MBBS", "BDS"]
+
+    // 4. Validate requestedClass parameter
+    if (!requestedClass) {
+        throw { statusCode: 400, message: 'Missing class parameter' };
+    }
+
+    // 5. Check if permittedClasses exists and is a non‑empty array
+    if (!Array.isArray(permittedClasses) || permittedClasses.length === 0) {
+        throw { statusCode: 403, message: 'No class permissions assigned to this user' };
+    }
+
+    // 6. Verify the requested class is in the permitted list
+    if (!permittedClasses.includes(requestedClass)) {
+        throw { statusCode: 403, message: `Access denied: you are not permitted to access "${requestedClass}"` };
+    }
+
+    // 7. Access granted – return user data (include uid, email, and other profile fields)
+    return {
+        uid,
+        email: decodedToken.email,
+        emailVerified: decodedToken.email_verified,
+        displayName: userData.displayName || decodedToken.name || '',
+        photoURL: userData.photoURL || null,
+        permittedClass: permittedClasses,
+        role: userData.role || 'user',
+        isActive: userData.isActive !== false,
+        ...userData  // include any other fields from Firestore
+    };
+}
+
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
@@ -1404,11 +1476,19 @@ app.get('/api/ad-banners', async (req, res) => {
         });
     }
 });
-
-
-// ---- API Endpoint: Ultimate Solutions ----
+// ---- API Endpoint: Ultimate Solutions (with class‑only 7‑day feed OR exact filter) ----
 app.get('/api/ultimate-solutions', async (req, res) => {
     try {
+        const { className, subject, chapter } = req.query;
+
+        // Validate required className
+        if (!className) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required query parameter: className'
+            });
+        }
+
         if (!db) {
             return res.status(500).json({
                 success: false,
@@ -1416,11 +1496,47 @@ app.get('/api/ultimate-solutions', async (req, res) => {
             });
         }
 
-        const snapshot = await db
-            .collection('ultimateSolution')
-            .orderBy('order')
-            .get();
+        // 1. Verify user access for the requested class
+        try {
+            await checkUserAccess(req, className);
+        } catch (authError) {
+            return res.status(authError.statusCode || 403).json({
+                success: false,
+                error: authError.message || 'Access denied'
+            });
+        }
 
+        let snapshot;
+        const collectionRef = db.collection('ultimateSolution');
+
+        // 2. Determine query type
+        if (subject && chapter) {
+            // Exact match by className, subject, chapter
+            snapshot = await collectionRef
+                .where('className', '==', className)
+                .where('subject', '==', subject)
+                .where('chapter', '==', chapter)
+                .get();
+        } else if (!subject && !chapter) {
+            // Only className provided → fetch documents from last 7 days
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            const sevenDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(sevenDaysAgo);
+
+            snapshot = await collectionRef
+                .where('className', '==', className)
+                .where('createdAt', '>=', sevenDaysAgoTimestamp)
+                .orderBy('createdAt', 'desc')
+                .get();
+        } else {
+            // Invalid combination: missing either subject or chapter
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid parameters. Provide either only "className" or all three: className, subject, chapter.'
+            });
+        }
+
+        // 3. Format response
         const data = snapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
@@ -1428,7 +1544,8 @@ app.get('/api/ultimate-solutions', async (req, res) => {
 
         res.json({
             success: true,
-            data
+            data,
+            count: data.length
         });
 
     } catch (error) {
@@ -1439,6 +1556,7 @@ app.get('/api/ultimate-solutions', async (req, res) => {
         });
     }
 });
+
 
 // ==================== NOTES ENDPOINT ====================
 // GET /api/notes?className=...&subject=...&chapter=...
