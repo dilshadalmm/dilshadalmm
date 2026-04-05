@@ -217,57 +217,65 @@ async function checkUserAccess(req, requestedClass) {
     };
 }
 
-// ==================== GLOBAL REQUEST QUEUE (for specific GET endpoints) ====================
-const REQUEST_QUEUE = [];
-let IS_PROCESSING = false;
-const QUEUE_BATCH_SIZE = 50;
+// ==================== PER-ENDPOINT QUEUE FACTORY ====================
+function createEndpointQueue(batchSize = 50, timeoutMs = 5000) {
+    const queue = [];
+    let isProcessing = false;
 
-function enqueueRequest(req, res, handler) {
-    const { query } = req;
-    const authToken = req.headers.authorization;
-    
-    REQUEST_QUEUE.push({
-        req: { query, authToken },
-        res,
-        handler,
-        timestamp: Date.now()
-    });
-    
-    if (!IS_PROCESSING) processQueue();
-}
-
-async function processQueue() {
-    if (IS_PROCESSING) return;
-    IS_PROCESSING = true;
-    
-    while (REQUEST_QUEUE.length > 0) {
-        const batch = REQUEST_QUEUE.splice(0, QUEUE_BATCH_SIZE);
-        
-        await Promise.allSettled(batch.map(async (item) => {
-            try {
-                const fakeReq = {
-                    query: item.req.query,
-                    headers: { authorization: item.req.authToken }
-                };
-                await item.handler(fakeReq, item.res);
-            } catch (err) {
-                console.error('Queue handler error:', err);
-                if (!item.res.headersSent) {
-                    item.res.status(500).json({
-                        success: false,
-                        error: 'Queue processing failed'
-                    });
-                }
-            }
-        }));
+    function enqueue(req, res, handler) {
+        const { query } = req;
+        const authToken = req.headers.authorization;
+        queue.push({
+            req: { query, authToken },
+            res,
+            handler,
+            timestamp: Date.now()
+        });
+        if (!isProcessing) processQueue();
     }
-    
-    IS_PROCESSING = false;
+
+    async function processQueue() {
+        if (isProcessing) return;
+        isProcessing = true;
+
+        while (queue.length > 0) {
+            const batch = queue.splice(0, batchSize);
+
+            await Promise.allSettled(batch.map(async (item) => {
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+                );
+
+                try {
+                    const fakeReq = {
+                        query: item.req.query,
+                        headers: { authorization: item.req.authToken }
+                    };
+                    await Promise.race([item.handler(fakeReq, item.res), timeoutPromise]);
+                } catch (err) {
+                    console.error(`Queue handler error (${item.handler.name}):`, err.message);
+                    if (!item.res.headersSent) {
+                        item.res.status(504).json({
+                            success: false,
+                            error: 'Request timed out. Please try again.'
+                        });
+                    }
+                }
+            }));
+        }
+
+        isProcessing = false;
+    }
+
+    return { enqueue };
 }
 
-// ==================== HANDLERS (original logic extracted) ====================
+// Create separate queues for each endpoint
+const chaptersQueue = createEndpointQueue(50, 5000);
+const subjectsQueue = createEndpointQueue(50, 5000);
+const ultimateSolutionsQueue = createEndpointQueue(50, 5000);
 
-// GET /api/chapters handler
+// ==================== HANDLERS ====================
 async function chaptersHandler(req, res) {
     try {
         const { class: className, subject } = req.query;
@@ -287,7 +295,6 @@ async function chaptersHandler(req, res) {
     }
 }
 
-// GET /api/subjects handler
 async function subjectsHandler(req, res) {
     try {
         const { class: className } = req.query;
@@ -306,7 +313,6 @@ async function subjectsHandler(req, res) {
     }
 }
 
-// GET /api/ultimate-solutions handler
 async function ultimateSolutionsHandler(req, res) {
     try {
         const { className, subject, chapter } = req.query;
@@ -381,13 +387,10 @@ async function ultimateSolutionsHandler(req, res) {
 }
 
 // ==================== QUEUE-ENABLED ENDPOINTS ====================
-// Replace your existing /api/chapters, /api/subjects, /api/ultimate-solutions with these:
-
-app.get('/api/chapters', (req, res) => enqueueRequest(req, res, chaptersHandler));
-app.get('/api/subjects', (req, res) => enqueueRequest(req, res, subjectsHandler));
-app.get('/api/ultimate-solutions', (req, res) => enqueueRequest(req, res, ultimateSolutionsHandler));
-
-
+app.get('/api/chapters', (req, res) => chaptersQueue.enqueue(req, res, chaptersHandler));
+app.get('/api/subjects', (req, res) => subjectsQueue.enqueue(req, res, subjectsHandler));
+app.get('/api/ultimate-solutions', (req, res) => ultimateSolutionsQueue.enqueue(req, res, ultimateSolutionsHandler));
+        
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
