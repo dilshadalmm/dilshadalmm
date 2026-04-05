@@ -217,6 +217,177 @@ async function checkUserAccess(req, requestedClass) {
     };
 }
 
+// ==================== GLOBAL REQUEST QUEUE (for specific GET endpoints) ====================
+const REQUEST_QUEUE = [];
+let IS_PROCESSING = false;
+const QUEUE_BATCH_SIZE = 50;
+
+function enqueueRequest(req, res, handler) {
+    const { query } = req;
+    const authToken = req.headers.authorization;
+    
+    REQUEST_QUEUE.push({
+        req: { query, authToken },
+        res,
+        handler,
+        timestamp: Date.now()
+    });
+    
+    if (!IS_PROCESSING) processQueue();
+}
+
+async function processQueue() {
+    if (IS_PROCESSING) return;
+    IS_PROCESSING = true;
+    
+    while (REQUEST_QUEUE.length > 0) {
+        const batch = REQUEST_QUEUE.splice(0, QUEUE_BATCH_SIZE);
+        
+        await Promise.allSettled(batch.map(async (item) => {
+            try {
+                const fakeReq = {
+                    query: item.req.query,
+                    headers: { authorization: item.req.authToken }
+                };
+                await item.handler(fakeReq, item.res);
+            } catch (err) {
+                console.error('Queue handler error:', err);
+                if (!item.res.headersSent) {
+                    item.res.status(500).json({
+                        success: false,
+                        error: 'Queue processing failed'
+                    });
+                }
+            }
+        }));
+    }
+    
+    IS_PROCESSING = false;
+}
+
+// ==================== HANDLERS (original logic extracted) ====================
+
+// GET /api/chapters handler
+async function chaptersHandler(req, res) {
+    try {
+        const { class: className, subject } = req.query;
+        if (!className || !subject) {
+            return res.status(400).json({
+                success: false,
+                error: 'class and subject parameters are required'
+            });
+        }
+        const key = `${className}|${subject}`;
+        const chaptersSet = metadataCache.chaptersByClassSubject.get(key) || new Set();
+        const chapters = Array.from(chaptersSet).sort();
+        res.json({ success: true, chapters });
+    } catch (error) {
+        console.error('Error fetching chapters:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch chapters' });
+    }
+}
+
+// GET /api/subjects handler
+async function subjectsHandler(req, res) {
+    try {
+        const { class: className } = req.query;
+        if (!className) {
+            return res.status(400).json({
+                success: false,
+                error: 'class parameter is required'
+            });
+        }
+        const subjectsSet = metadataCache.subjectsByClass.get(className) || new Set();
+        const subjects = Array.from(subjectsSet).sort();
+        res.json({ success: true, subjects });
+    } catch (error) {
+        console.error('Error fetching subjects:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch subjects' });
+    }
+}
+
+// GET /api/ultimate-solutions handler
+async function ultimateSolutionsHandler(req, res) {
+    try {
+        const { className, subject, chapter } = req.query;
+
+        if (!className) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required query parameter: className'
+            });
+        }
+
+        if (!db) {
+            return res.status(500).json({
+                success: false,
+                error: 'Database not initialized'
+            });
+        }
+
+        // Verify user access for the requested class
+        try {
+            await checkUserAccess(req, className);
+        } catch (authError) {
+            return res.status(authError.statusCode || 403).json({
+                success: false,
+                error: authError.message || 'Access denied'
+            });
+        }
+
+        let snapshot;
+        const collectionRef = db.collection('ultimateSolution');
+
+        if (subject && chapter) {
+            snapshot = await collectionRef
+                .where('className', '==', className)
+                .where('subject', '==', subject)
+                .where('chapter', '==', chapter)
+                .get();
+        } else if (!subject && !chapter) {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+            const sevenDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(sevenDaysAgo);
+
+            snapshot = await collectionRef
+                .where('className', '==', className)
+                .where('createdAt', '>=', sevenDaysAgoTimestamp)
+                .orderBy('createdAt', 'desc')
+                .get();
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid parameters. Provide either only "className" or all three: className, subject, chapter.'
+            });
+        }
+
+        const data = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        res.json({
+            success: true,
+            data,
+            count: data.length
+        });
+    } catch (error) {
+        console.error('Error fetching ultimate solutions:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch ultimate solutions'
+        });
+    }
+}
+
+// ==================== QUEUE-ENABLED ENDPOINTS ====================
+// Replace your existing /api/chapters, /api/subjects, /api/ultimate-solutions with these:
+
+app.get('/api/chapters', (req, res) => enqueueRequest(req, res, chaptersHandler));
+app.get('/api/subjects', (req, res) => enqueueRequest(req, res, subjectsHandler));
+app.get('/api/ultimate-solutions', (req, res) => enqueueRequest(req, res, ultimateSolutionsHandler));
+
+
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
@@ -1404,37 +1575,6 @@ app.get('/api/classes', async (req, res) => {
     }
 });
 
-app.get('/api/subjects', async (req, res) => {
-    try {
-        const { class: className } = req.query;
-        if (!className) {
-            return res.status(400).json({ success: false, error: 'class parameter is required' });
-        }
-        const subjectsSet = metadataCache.subjectsByClass.get(className) || new Set();
-        const subjects = Array.from(subjectsSet).sort();
-        res.json({ success: true, subjects });
-    } catch (error) {
-        console.error('Error fetching subjects:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch subjects' });
-    }
-});
-
-app.get('/api/chapters', async (req, res) => {
-    try {
-        const { class: className, subject } = req.query;
-        if (!className || !subject) {
-            return res.status(400).json({ success: false, error: 'class and subject parameters are required' });
-        }
-        const key = `${className}|${subject}`;
-        const chaptersSet = metadataCache.chaptersByClassSubject.get(key) || new Set();
-        const chapters = Array.from(chaptersSet).sort();
-        res.json({ success: true, chapters });
-    } catch (error) {
-        console.error('Error fetching chapters:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch chapters' });
-    }
-});
-
 // ---- API Endpoint: Ad Banners ----
 app.get('/api/ad-banners', async (req, res) => {
     try {
@@ -1476,87 +1616,6 @@ app.get('/api/ad-banners', async (req, res) => {
         });
     }
 });
-// ---- API Endpoint: Ultimate Solutions (with class‑only 7‑day feed OR exact filter) ----
-app.get('/api/ultimate-solutions', async (req, res) => {
-    try {
-        const { className, subject, chapter } = req.query;
-
-        // Validate required className
-        if (!className) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing required query parameter: className'
-            });
-        }
-
-        if (!db) {
-            return res.status(500).json({
-                success: false,
-                error: 'Database not initialized'
-            });
-        }
-
-        // 1. Verify user access for the requested class
-        try {
-            await checkUserAccess(req, className);
-        } catch (authError) {
-            return res.status(authError.statusCode || 403).json({
-                success: false,
-                error: authError.message || 'Access denied'
-            });
-        }
-
-        let snapshot;
-        const collectionRef = db.collection('ultimateSolution');
-
-        // 2. Determine query type
-        if (subject && chapter) {
-            // Exact match by className, subject, chapter
-            snapshot = await collectionRef
-                .where('className', '==', className)
-                .where('subject', '==', subject)
-                .where('chapter', '==', chapter)
-                .get();
-        } else if (!subject && !chapter) {
-            // Only className provided → fetch documents from last 7 days
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-            const sevenDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(sevenDaysAgo);
-
-            snapshot = await collectionRef
-                .where('className', '==', className)
-                .where('createdAt', '>=', sevenDaysAgoTimestamp)
-                .orderBy('createdAt', 'desc')
-                .get();
-        } else {
-            // Invalid combination: missing either subject or chapter
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid parameters. Provide either only "className" or all three: className, subject, chapter.'
-            });
-        }
-
-        // 3. Format response
-        const data = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-
-        res.json({
-            success: true,
-            data,
-            count: data.length
-        });
-
-    } catch (error) {
-        console.error('Error fetching ultimate solutions:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch ultimate solutions'
-        });
-    }
-});
-
 
 // ==================== NOTES ENDPOINT ====================
 // GET /api/notes?className=...&subject=...&chapter=...
