@@ -3101,8 +3101,8 @@ app.post('/create-course', async (req, res) => {
     const userDoc = usersQuery.docs[0];
     const userData = userDoc.data();
 
-    // 5. Fetch role and status
-    const { role, status } = userData;
+    // 5. Fetch role, status, and courseLimit
+    const { role, status, courseLimit } = userData;
     if (!role || !status) {
       return res.status(403).json({ error: 'User role or status missing' });
     }
@@ -3112,12 +3112,39 @@ app.post('/create-course', async (req, res) => {
       return res.status(403).json({ error: 'Unauthorized: Only approved admins can create courses' });
     }
 
-    // 7. Generate unique courseId (using Firestore auto-ID + timestamp fallback)
-    const courseId = db.collection('courses').doc().id; // Firestore unique ID
+    // 7. Check courseLimit (must be a number > 0)
+    if (typeof courseLimit !== 'number' || courseLimit <= 0) {
+      return res.status(403).json({ error: 'Course limit reached or invalid. Cannot create more courses.' });
+    }
+
+    // 8. Generate a unique courseCode
+    let courseCode;
+    let codeExists = true;
+    let attempts = 0;
+    const maxAttempts = 10;
+
+    while (codeExists && attempts < maxAttempts) {
+      // Generate random number (e.g., between 1000 and 9999)
+      const randomNum = Math.floor(1000 + Math.random() * 9000);
+      courseCode = `COURSE${randomNum}`;
+
+      // Check if courseCode already exists in the courses collection
+      const existingCourse = await db.collection('courses').where('courseCode', '==', courseCode).limit(1).get();
+      codeExists = !existingCourse.empty;
+      attempts++;
+    }
+
+    if (codeExists) {
+      return res.status(500).json({ error: 'Failed to generate a unique course code after multiple attempts' });
+    }
+
+    // 9. Generate unique courseId and prepare course object
+    const courseId = db.collection('courses').doc().id;
     const now = new Date().toISOString();
 
     const newCourse = {
       courseId,
+      courseCode,
       courseName,
       courseDescription,
       createdBy: userUId,
@@ -3127,10 +3154,16 @@ app.post('/create-course', async (req, res) => {
       status: 'active'
     };
 
-    // Create course document
+    // 10. Create course document
     await db.collection('courses').doc(courseId).set(newCourse);
 
-    // Return success response
+    // 11. Update user document: decrement courseLimit, add courseCode to array
+    await userDoc.ref.update({
+      courseLimit: admin.firestore.FieldValue.increment(-1),
+      courseCodes: admin.firestore.FieldValue.arrayUnion(courseCode)
+    });
+
+    // 12. Return success response
     return res.status(201).json({
       message: 'Course created successfully',
       course: newCourse
