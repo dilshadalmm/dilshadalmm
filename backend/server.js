@@ -3068,7 +3068,79 @@ app.post('/school_admin/login', async (req, res) => {
     }
 });
 // ==================== END SCHOOL ADMIN LOGIN ====================
-    
+
+// ========================= CREATE COURSE ENDPOINT ===========================
+
+app.post('/create-course', async (req, res) => {
+  try {
+    // 1. Validate Firebase initialization
+    if (!firebaseInitialized || !db) {
+      return res.status(500).json({ error: 'Firebase not initialized' });
+    }
+
+    // 2. Extract request body
+    const { tokenId, courseName, courseDescription } = req.body;
+    if (!tokenId || !courseName || !courseDescription) {
+      return res.status(400).json({ error: 'Missing required fields: tokenId, courseName, courseDescription' });
+    }
+
+    // 3. Verify token and extract UserUId
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(tokenId);
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid or expired token', details: err.message });
+    }
+    const userUId = decodedToken.uid;
+
+    // 4. Query users collection by UserUId
+    const usersQuery = await db.collection('users').where('userUId', '==', userUId).limit(1).get();
+    if (usersQuery.empty) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const userDoc = usersQuery.docs[0];
+    const userData = userDoc.data();
+
+    // 5. Fetch role and status
+    const { role, status } = userData;
+    if (!role || !status) {
+      return res.status(403).json({ error: 'User role or status missing' });
+    }
+
+    // 6. Verify role = 'admin' and status = 'approved'
+    if (role !== 'admin' || status !== 'approved') {
+      return res.status(403).json({ error: 'Unauthorized: Only approved admins can create courses' });
+    }
+
+    // 7. Generate unique courseId (using Firestore auto-ID + timestamp fallback)
+    const courseId = db.collection('courses').doc().id; // Firestore unique ID
+    const now = new Date().toISOString();
+
+    const newCourse = {
+      courseId,
+      courseName,
+      courseDescription,
+      createdBy: userUId,
+      createdAt: now,
+      updatedBy: userUId,
+      updatedAt: now,
+      status: 'active'
+    };
+
+    // Create course document
+    await db.collection('courses').doc(courseId).set(newCourse);
+
+    // Return success response
+    return res.status(201).json({
+      message: 'Course created successfully',
+      course: newCourse
+    });
+  } catch (error) {
+    console.error('Error creating course:', error);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
