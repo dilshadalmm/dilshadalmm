@@ -145,6 +145,7 @@ function updateCacheForNewMapping(className, subject, chapter) {
     metadataCache.chaptersByClassSubject.get(key).add(chapter);
 }
 
+
 // ==================== REUSABLE COURSE ACCESS HELPER ====================
 /**
  * Verifies Firebase ID token, fetches user document, and checks if the user
@@ -278,6 +279,7 @@ function createEndpointQueue(batchSize = 50, timeoutMs = 5000) {
 const subjectsQueue = createEndpointQueue(50, 5000);
 const chaptersQueue = createEndpointQueue(50, 5000);
 const lessonsQueue = createEndpointQueue(50, 5000);
+const recentLessonsQueue = createEndpointQueue(50, 5000);
 
 // ==================== HANDLERS ====================
 /**
@@ -297,7 +299,7 @@ async function subjectsHandler(req, res) {
         // Verify user access to this course
         await verifyUserAndCourseAccess(req, courseCode);
 
-        // ✅ Check that the course exists and is active by querying the 'courseCode' field
+        // Check that the course exists and is active by querying the 'courseCode' field
         const courseQuery = await db.collection('courses')
             .where('courseCode', '==', courseCode)
             .limit(1)
@@ -341,7 +343,8 @@ async function subjectsHandler(req, res) {
 
 /**
  * GET /api/chapters?courseCode=XXX&subjectId=YYY
- * Returns list of active chapters for the given course and subject.
+ * Returns list of active chapters for the given course and subject,
+ * sorted by createdAt descending (latest first).
  */
 async function chaptersHandler(req, res) {
     try {
@@ -367,18 +370,18 @@ async function chaptersHandler(req, res) {
             });
         }
 
-        // Fetch active chapters
+        // Fetch active chapters sorted by createdAt descending (latest first)
         const chaptersSnapshot = await db.collection('chapters')
             .where('courseCode', '==', courseCode)
             .where('subjectId', '==', subjectId)
             .where('status', '==', 'active')
-            .orderBy('order', 'asc')
+            .orderBy('createdAt', 'desc')
             .get();
 
         const chapters = chaptersSnapshot.docs.map(doc => ({
             chapterId: doc.id,
             chapterName: doc.data().chapterName || doc.data().name,
-            order: doc.data().order,
+            createdAt: doc.data().createdAt,
             ...doc.data()
         }));
 
@@ -394,7 +397,8 @@ async function chaptersHandler(req, res) {
 
 /**
  * GET /api/lessons?courseCode=XXX&subjectId=YYY&chapterId=ZZZ
- * Returns list of active lessons for the given course, subject, and chapter.
+ * Returns list of active lessons for the given course, subject, and chapter,
+ * sorted by createdAt descending (latest first).
  */
 async function lessonsHandler(req, res) {
     try {
@@ -421,13 +425,13 @@ async function lessonsHandler(req, res) {
             });
         }
 
-        // Fetch active lessons
+        // Fetch active lessons sorted by createdAt descending (latest first)
         const lessonsSnapshot = await db.collection('lessons')
             .where('courseCode', '==', courseCode)
             .where('subjectId', '==', subjectId)
             .where('chapterId', '==', chapterId)
             .where('status', '==', 'active')
-            .orderBy('order', 'asc')
+            .orderBy('createdAt', 'desc')
             .get();
 
         const lessons = lessonsSnapshot.docs.map(doc => ({
@@ -440,7 +444,6 @@ async function lessonsHandler(req, res) {
             videoUrl: doc.data().videoUrl,
             thumbnailUrl: doc.data().thumbnailUrl,
             createdAt: doc.data().createdAt,
-            order: doc.data().order,
             ...doc.data()
         }));
 
@@ -454,13 +457,67 @@ async function lessonsHandler(req, res) {
     }
 }
 
+/**
+ * GET /api/recent-lessons?courseCode=XXX
+ * Returns active lessons from the last 7 days for the given course,
+ * sorted by createdAt descending (latest first).
+ */
+async function recentLessonsHandler(req, res) {
+    try {
+        const { courseCode } = req.query;
+        if (!courseCode) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required query parameter: courseCode'
+            });
+        }
+
+        // Verify user access to this course
+        await verifyUserAndCourseAccess(req, courseCode);
+
+        // Calculate date 7 days ago
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(sevenDaysAgo);
+
+        // Fetch lessons from last 7 days, active, for this course, sorted by createdAt desc
+        const lessonsSnapshot = await db.collection('lessons')
+            .where('courseCode', '==', courseCode)
+            .where('status', '==', 'active')
+            .where('createdAt', '>=', sevenDaysAgoTimestamp)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        const lessons = lessonsSnapshot.docs.map(doc => ({
+            lessonId: doc.id,
+            lessonName: doc.data().lessonName,
+            lessonDescription: doc.data().lessonDescription,
+            linkAddress: doc.data().linkAddress,
+            linkText: doc.data().linkText,
+            imageUrl: doc.data().imageUrl,
+            videoUrl: doc.data().videoUrl,
+            thumbnailUrl: doc.data().thumbnailUrl,
+            createdAt: doc.data().createdAt,
+            ...doc.data()
+        }));
+
+        res.json({ success: true, lessons, count: lessons.length });
+    } catch (error) {
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ success: false, error: error.message });
+        }
+        console.error('Error fetching recent lessons:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch recent lessons' });
+    }
+}
+
 // ==================== QUEUE-ENABLED ENDPOINTS ====================
 app.get('/api/subjects', (req, res) => subjectsQueue.enqueue(req, res, subjectsHandler));
 app.get('/api/chapters', (req, res) => chaptersQueue.enqueue(req, res, chaptersHandler));
 app.get('/api/lessons', (req, res) => lessonsQueue.enqueue(req, res, lessonsHandler));
-// If you must keep the old path for backwards compatibility, uncomment the next line:
-// app.get('/api/ultimate-solutions', (req, res) => lessonsQueue.enqueue(req, res, lessonsHandler));
- 
+app.get('/api/recent-lessons', (req, res) => recentLessonsQueue.enqueue(req, res, recentLessonsHandler));
+
+
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
