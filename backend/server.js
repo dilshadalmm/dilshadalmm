@@ -145,27 +145,25 @@ function updateCacheForNewMapping(className, subject, chapter) {
     metadataCache.chaptersByClassSubject.get(key).add(chapter);
 }
 
-
-// ==================== REUSABLE USER ACCESS HELPER ====================
+// ==================== REUSABLE COURSE ACCESS HELPER ====================
 /**
- * Verifies the Firebase ID token from the Authorization header,
- * fetches the user document from Firestore, and checks if the user
- * has permission to access the requested class.
+ * Verifies Firebase ID token, fetches user document, and checks if the user
+ * has permission to access the given courseCode.
  *
  * @param {Object} req - Express request object (must have headers.authorization)
- * @param {string} requestedClass - The class name to check (e.g., "MBBS", "Class 10")
- * @returns {Promise<Object>} - Returns user object on success (contains uid, email, permittedClass, etc.)
- * @throws {Object} - Throws an object with statusCode and message for the endpoint to handle
+ * @param {string} courseCode - The course code to check (e.g., "CS101")
+ * @returns {Promise<Object>} - Returns user object on success (contains uid, email, permittedCourse, etc.)
+ * @throws {Object} - Throws an object with statusCode and message
  */
-async function checkUserAccess(req, requestedClass) {
-    // 1. Extract token from Authorization header
+async function verifyUserAndCourseAccess(req, courseCode) {
+    // 1. Extract token
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         throw { statusCode: 401, message: 'Missing or invalid authorization token' };
     }
     const idToken = authHeader.split(' ')[1];
 
-    // 2. Verify the ID token using Firebase Admin SDK
+    // 2. Verify token with Firebase Admin
     let decodedToken;
     try {
         decodedToken = await admin.auth().verifyIdToken(idToken);
@@ -186,38 +184,44 @@ async function checkUserAccess(req, requestedClass) {
     }
 
     const userData = userDoc.data();
-    const permittedClasses = userData.permittedClass; // Expecting an array, e.g., ["MBBS", "BDS"]
 
-    // 4. Validate requestedClass parameter
-    if (!requestedClass) {
-        throw { statusCode: 400, message: 'Missing class parameter' };
+    // 4. Check user status and email verification
+    if (userData.status !== 'approved') {
+        throw { statusCode: 403, message: 'Account not approved' };
+    }
+    if (userData.emailVerified !== true) {
+        throw { statusCode: 403, message: 'Email not verified' };
     }
 
-    // 5. Check if permittedClasses exists and is a non‑empty array
-    if (!Array.isArray(permittedClasses) || permittedClasses.length === 0) {
-        throw { statusCode: 403, message: 'No class permissions assigned to this user' };
+    // 5. Validate courseCode parameter
+    if (!courseCode) {
+        throw { statusCode: 400, message: 'Missing courseCode parameter' };
     }
 
-    // 6. Verify the requested class is in the permitted list
-    if (!permittedClasses.includes(requestedClass)) {
-        throw { statusCode: 403, message: `Access denied: you are not permitted to access "${requestedClass}"` };
+    // 6. Check permittedCourse array
+    const permittedCourses = userData.permittedCourse;
+    if (!Array.isArray(permittedCourses) || permittedCourses.length === 0) {
+        throw { statusCode: 403, message: 'No course permissions assigned' };
+    }
+    if (!permittedCourses.includes(courseCode)) {
+        throw { statusCode: 403, message: `Access denied: course "${courseCode}" not permitted` };
     }
 
-    // 7. Access granted – return user data (include uid, email, and other profile fields)
+    // 7. Return user data (include relevant fields)
     return {
         uid,
         email: decodedToken.email,
         emailVerified: decodedToken.email_verified,
         displayName: userData.displayName || decodedToken.name || '',
         photoURL: userData.photoURL || null,
-        permittedClass: permittedClasses,
+        permittedCourse: permittedCourses,
         role: userData.role || 'user',
-        isActive: userData.isActive !== false,
-        ...userData  // include any other fields from Firestore
+        status: userData.status,
+        ...userData
     };
 }
 
-// ==================== PER-ENDPOINT QUEUE FACTORY ====================
+// ==================== PER-ENDPOINT QUEUE FACTORY (unchanged) ====================
 function createEndpointQueue(batchSize = 50, timeoutMs = 5000) {
     const queue = [];
     let isProcessing = false;
@@ -253,7 +257,7 @@ function createEndpointQueue(batchSize = 50, timeoutMs = 5000) {
                     };
                     await Promise.race([item.handler(fakeReq, item.res), timeoutPromise]);
                 } catch (err) {
-                    console.error(`Queue handler error (${item.handler.name}):`, err.message);
+                    console.error(`Queue handler error:`, err.message);
                     if (!item.res.headersSent) {
                         item.res.status(504).json({
                             success: false,
@@ -271,126 +275,183 @@ function createEndpointQueue(batchSize = 50, timeoutMs = 5000) {
 }
 
 // Create separate queues for each endpoint
-const chaptersQueue = createEndpointQueue(50, 5000);
 const subjectsQueue = createEndpointQueue(50, 5000);
-const ultimateSolutionsQueue = createEndpointQueue(50, 5000);
+const chaptersQueue = createEndpointQueue(50, 5000);
+const lessonsQueue = createEndpointQueue(50, 5000);
 
 // ==================== HANDLERS ====================
-async function chaptersHandler(req, res) {
-    try {
-        const { class: className, subject } = req.query;
-        if (!className || !subject) {
-            return res.status(400).json({
-                success: false,
-                error: 'class and subject parameters are required'
-            });
-        }
-        const key = `${className}|${subject}`;
-        const chaptersSet = metadataCache.chaptersByClassSubject.get(key) || new Set();
-        const chapters = Array.from(chaptersSet).sort();
-        res.json({ success: true, chapters });
-    } catch (error) {
-        console.error('Error fetching chapters:', error);
-        res.status(500).json({ success: false, error: 'Failed to fetch chapters' });
-    }
-}
-
+/**
+ * GET /api/subjects?courseCode=XXX
+ * Returns list of active subjects for the given course.
+ */
 async function subjectsHandler(req, res) {
     try {
-        const { class: className } = req.query;
-        if (!className) {
+        const { courseCode } = req.query;
+        if (!courseCode) {
             return res.status(400).json({
                 success: false,
-                error: 'class parameter is required'
+                error: 'Missing required query parameter: courseCode'
             });
         }
-        const subjectsSet = metadataCache.subjectsByClass.get(className) || new Set();
-        const subjects = Array.from(subjectsSet).sort();
+
+        // Verify user access to this course
+        await verifyUserAndCourseAccess(req, courseCode);
+
+        // Check that the course exists and is active
+        const courseDoc = await db.collection('courses').doc(courseCode).get();
+        if (!courseDoc.exists || courseDoc.data().status !== 'active') {
+            return res.status(404).json({
+                success: false,
+                error: 'Course not found or inactive'
+            });
+        }
+
+        // Fetch active subjects for this course
+        const subjectsSnapshot = await db.collection('subjects')
+            .where('courseCode', '==', courseCode)
+            .where('status', '==', 'active')
+            .get();
+
+        const subjects = subjectsSnapshot.docs.map(doc => ({
+            subjectId: doc.id,
+            subjectName: doc.data().subjectName || doc.data().name, // adjust field name as needed
+            ...doc.data()
+        }));
+
         res.json({ success: true, subjects });
     } catch (error) {
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ success: false, error: error.message });
+        }
         console.error('Error fetching subjects:', error);
         res.status(500).json({ success: false, error: 'Failed to fetch subjects' });
     }
 }
 
-async function ultimateSolutionsHandler(req, res) {
+/**
+ * GET /api/chapters?courseCode=XXX&subjectId=YYY
+ * Returns list of active chapters for the given course and subject.
+ */
+async function chaptersHandler(req, res) {
     try {
-        const { className, subject, chapter } = req.query;
-
-        if (!className) {
+        const { courseCode, subjectId } = req.query;
+        if (!courseCode || !subjectId) {
             return res.status(400).json({
                 success: false,
-                error: 'Missing required query parameter: className'
+                error: 'Missing required query parameters: courseCode and subjectId'
             });
         }
 
-        if (!db) {
-            return res.status(500).json({
+        // Verify user access
+        await verifyUserAndCourseAccess(req, courseCode);
+
+        // Verify that the subject exists, is active, and belongs to the course
+        const subjectDoc = await db.collection('subjects').doc(subjectId).get();
+        if (!subjectDoc.exists ||
+            subjectDoc.data().status !== 'active' ||
+            subjectDoc.data().courseCode !== courseCode) {
+            return res.status(404).json({
                 success: false,
-                error: 'Database not initialized'
+                error: 'Subject not found or inactive for this course'
             });
         }
 
-        // Verify user access for the requested class
-        try {
-            await checkUserAccess(req, className);
-        } catch (authError) {
-            return res.status(authError.statusCode || 403).json({
-                success: false,
-                error: authError.message || 'Access denied'
-            });
-        }
+        // Fetch active chapters
+        const chaptersSnapshot = await db.collection('chapters')
+            .where('courseCode', '==', courseCode)
+            .where('subjectId', '==', subjectId)
+            .where('status', '==', 'active')
+            .orderBy('order', 'asc') // optional ordering
+            .get();
 
-        let snapshot;
-        const collectionRef = db.collection('ultimateSolution');
-
-        if (subject && chapter) {
-            snapshot = await collectionRef
-                .where('className', '==', className)
-                .where('subject', '==', subject)
-                .where('chapter', '==', chapter)
-                .get();
-        } else if (!subject && !chapter) {
-            const sevenDaysAgo = new Date();
-            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-            const sevenDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(sevenDaysAgo);
-
-            snapshot = await collectionRef
-                .where('className', '==', className)
-                .where('createdAt', '>=', sevenDaysAgoTimestamp)
-                .orderBy('createdAt', 'desc')
-                .get();
-        } else {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid parameters. Provide either only "className" or all three: className, subject, chapter.'
-            });
-        }
-
-        const data = snapshot.docs.map(doc => ({
-            id: doc.id,
+        const chapters = chaptersSnapshot.docs.map(doc => ({
+            chapterId: doc.id,
+            chapterName: doc.data().chapterName || doc.data().name,
+            order: doc.data().order,
             ...doc.data()
         }));
 
-        res.json({
-            success: true,
-            data,
-            count: data.length
-        });
+        res.json({ success: true, chapters });
     } catch (error) {
-        console.error('Error fetching ultimate solutions:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to fetch ultimate solutions'
-        });
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ success: false, error: error.message });
+        }
+        console.error('Error fetching chapters:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch chapters' });
+    }
+}
+
+/**
+ * GET /api/lessons?courseCode=XXX&subjectId=YYY&chapterId=ZZZ
+ * Returns list of active lessons for the given course, subject, and chapter.
+ * (Replaces the old ultimate-solutions endpoint)
+ */
+async function lessonsHandler(req, res) {
+    try {
+        const { courseCode, subjectId, chapterId } = req.query;
+        if (!courseCode || !subjectId || !chapterId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required query parameters: courseCode, subjectId, chapterId'
+            });
+        }
+
+        // Verify user access
+        await verifyUserAndCourseAccess(req, courseCode);
+
+        // (Optional) Verify that the chapter exists and belongs to the subject/course
+        const chapterDoc = await db.collection('chapters').doc(chapterId).get();
+        if (!chapterDoc.exists ||
+            chapterDoc.data().status !== 'active' ||
+            chapterDoc.data().courseCode !== courseCode ||
+            chapterDoc.data().subjectId !== subjectId) {
+            return res.status(404).json({
+                success: false,
+                error: 'Chapter not found or inactive for this course/subject'
+            });
+        }
+
+        // Fetch active lessons
+        const lessonsSnapshot = await db.collection('lessons')
+            .where('courseCode', '==', courseCode)
+            .where('subjectId', '==', subjectId)
+            .where('chapterId', '==', chapterId)
+            .where('status', '==', 'active')
+            .orderBy('order', 'asc')
+            .get();
+
+        const lessons = lessonsSnapshot.docs.map(doc => ({
+            lessonId: doc.id,
+            lessonName: doc.data().lessonName,
+            lessonDescription: doc.data().lessonDescription,
+            linkAddress: doc.data().linkAddress,
+            linkText: doc.data().linkText,
+            imageUrl: doc.data().imageUrl,
+            videoUrl: doc.data().videoUrl,
+            thumbnailUrl: doc.data().thumbnailUrl,
+            createdAt: doc.data().createdAt,
+            order: doc.data().order,
+            ...doc.data()
+        }));
+
+        res.json({ success: true, lessons, count: lessons.length });
+    } catch (error) {
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ success: false, error: error.message });
+        }
+        console.error('Error fetching lessons:', error);
+        res.status(500).json({ success: false, error: 'Failed to fetch lessons' });
     }
 }
 
 // ==================== QUEUE-ENABLED ENDPOINTS ====================
-app.get('/api/chapters', (req, res) => chaptersQueue.enqueue(req, res, chaptersHandler));
 app.get('/api/subjects', (req, res) => subjectsQueue.enqueue(req, res, subjectsHandler));
-app.get('/api/ultimate-solutions', (req, res) => ultimateSolutionsQueue.enqueue(req, res, ultimateSolutionsHandler));
-        
+app.get('/api/chapters', (req, res) => chaptersQueue.enqueue(req, res, chaptersHandler));
+app.get('/api/lessons', (req, res) => lessonsQueue.enqueue(req, res, lessonsHandler));
+// If you must keep the old path for backwards compatibility, uncomment the next line:
+// app.get('/api/ultimate-solutions', (req, res) => lessonsQueue.enqueue(req, res, lessonsHandler));
+
+
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
