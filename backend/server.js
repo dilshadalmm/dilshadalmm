@@ -221,7 +221,7 @@ async function verifyUserAndCourseAccess(req, courseCode) {
     };
 }
 
-// ==================== PER-ENDPOINT QUEUE FACTORY (unchanged) ====================
+// ==================== PER-ENDPOINT QUEUE FACTORY ====================
 function createEndpointQueue(batchSize = 50, timeoutMs = 5000) {
     const queue = [];
     let isProcessing = false;
@@ -297,12 +297,23 @@ async function subjectsHandler(req, res) {
         // Verify user access to this course
         await verifyUserAndCourseAccess(req, courseCode);
 
-        // Check that the course exists and is active
-        const courseDoc = await db.collection('courses').doc(courseCode).get();
-        if (!courseDoc.exists || courseDoc.data().status !== 'active') {
+        // ✅ Check that the course exists and is active by querying the 'courseCode' field
+        const courseQuery = await db.collection('courses')
+            .where('courseCode', '==', courseCode)
+            .limit(1)
+            .get();
+
+        if (courseQuery.empty) {
             return res.status(404).json({
                 success: false,
-                error: 'Course not found or inactive'
+                error: 'Course not found'
+            });
+        }
+        const courseDoc = courseQuery.docs[0];
+        if (courseDoc.data().status !== 'active') {
+            return res.status(404).json({
+                success: false,
+                error: 'Course is not active'
             });
         }
 
@@ -314,7 +325,7 @@ async function subjectsHandler(req, res) {
 
         const subjects = subjectsSnapshot.docs.map(doc => ({
             subjectId: doc.id,
-            subjectName: doc.data().subjectName || doc.data().name, // adjust field name as needed
+            subjectName: doc.data().subjectName || doc.data().name,
             ...doc.data()
         }));
 
@@ -361,7 +372,7 @@ async function chaptersHandler(req, res) {
             .where('courseCode', '==', courseCode)
             .where('subjectId', '==', subjectId)
             .where('status', '==', 'active')
-            .orderBy('order', 'asc') // optional ordering
+            .orderBy('order', 'asc')
             .get();
 
         const chapters = chaptersSnapshot.docs.map(doc => ({
@@ -384,7 +395,6 @@ async function chaptersHandler(req, res) {
 /**
  * GET /api/lessons?courseCode=XXX&subjectId=YYY&chapterId=ZZZ
  * Returns list of active lessons for the given course, subject, and chapter.
- * (Replaces the old ultimate-solutions endpoint)
  */
 async function lessonsHandler(req, res) {
     try {
@@ -399,7 +409,7 @@ async function lessonsHandler(req, res) {
         // Verify user access
         await verifyUserAndCourseAccess(req, courseCode);
 
-        // (Optional) Verify that the chapter exists and belongs to the subject/course
+        // Verify that the chapter exists and belongs to the subject/course
         const chapterDoc = await db.collection('chapters').doc(chapterId).get();
         if (!chapterDoc.exists ||
             chapterDoc.data().status !== 'active' ||
@@ -450,8 +460,7 @@ app.get('/api/chapters', (req, res) => chaptersQueue.enqueue(req, res, chaptersH
 app.get('/api/lessons', (req, res) => lessonsQueue.enqueue(req, res, lessonsHandler));
 // If you must keep the old path for backwards compatibility, uncomment the next line:
 // app.get('/api/ultimate-solutions', (req, res) => lessonsQueue.enqueue(req, res, lessonsHandler));
-
-
+ 
 // ---- Configuration Constants ----
 const BATCH_SIZE = 20;
 const MAX_CONCURRENT_BATCHES = 5;
