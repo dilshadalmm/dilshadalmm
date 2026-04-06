@@ -3124,6 +3124,62 @@ app.get('/get-user-courses', async (req, res) => {
   }
 });
 
+// =========================ENDPOINT TO FETCH ACTIVE SUBJECTS ==========================
+
+app.post('/get-active-subjects', async (req, res) => {
+    try {
+        const { tokenId, courseCode } = req.body;
+
+        if (!tokenId || !courseCode) {
+            return res.status(400).json({ error: 'Missing required fields: tokenId, courseCode' });
+        }
+
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ error: 'Firebase Admin not initialized' });
+        }
+
+        // 2. Verify tokenId and extract userUId
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(tokenId);
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        const userUid = decodedToken.uid;
+
+        // (Optional but good practice: verify user exists / role? Not required by spec, but we can fetch if needed)
+        // For now just proceed to subject filtering.
+
+        // 4. Filter subject documents by provided courseCode
+        // 5. Verify those subject documents have status:active
+        const subjectsQuery = await db.collection('subjects')
+            .where('courseCode', '==', courseCode)
+            .where('status', '==', 'active')
+            .get();
+
+        if (subjectsQuery.empty) {
+            return res.status(200).json({ subjects: [] }); // no active subjects found
+        }
+
+        // 6. Respond with subjectName and subjectId
+        const subjects = [];
+        subjectsQuery.forEach(doc => {
+            const data = doc.data();
+            subjects.push({
+                subjectId: data.subjectId || doc.id,
+                subjectName: data.subjectName || data.name || 'Untitled'
+            });
+        });
+
+        return res.status(200).json({ subjects });
+
+    } catch (error) {
+        console.error('Error fetching active subjects:', error);
+        return res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
+
+
 
 // ========================= CREATE COURSE ENDPOINT ===========================
 
@@ -3320,6 +3376,114 @@ app.post('/create-subject', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
+//============================= CREATE CHAPTER =============================
+app.post('/create-chapter', async (req, res) => {
+    try {
+        // 1. Check Firebase initialization
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ error: 'Firebase Admin not initialized' });
+        }
+
+        // 2. Extract request body
+        const { tokenId, courseCode, subjectID, chapterName, chapterDescription } = req.body;
+        if (!tokenId || !courseCode || !subjectID || !chapterName || !chapterDescription) {
+            return res.status(400).json({ error: 'Missing required fields: tokenId, courseCode, subjectID, chapterName, chapterDescription' });
+        }
+
+        // 3. Verify token and extract UserUId
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(tokenId);
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        const userUid = decodedToken.uid;
+
+        // 4. Filter users collection by UserUId
+        const userQuery = await db.collection('users')
+            .where('uid', '==', userUid)
+            .limit(1)
+            .get();
+
+        if (userQuery.empty) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        const userDoc = userQuery.docs[0];
+        const userData = userDoc.data();
+
+        // 5. Fetch role, status, chapterLimit
+        const { role, status, chapterLimit } = userData;
+        if (!role || !status || chapterLimit === undefined) {
+            return res.status(400).json({ error: 'User document missing required fields (role, status, chapterLimit)' });
+        }
+
+        // 6. Verify role, status, and chapterLimit
+        if (role !== 'admin') {
+            return res.status(403).json({ error: 'Access denied: insufficient role' });
+        }
+        if (status !== 'approved') {
+            return res.status(403).json({ error: 'Account not approved' });
+        }
+        if (typeof chapterLimit !== 'number' || chapterLimit <= 0) {
+            return res.status(403).json({ error: 'Chapter limit reached or invalid' });
+        }
+
+        // 7. Verify courseCode exists and is active (filtered query)
+        const courseQuery = await db.collection('courses')
+            .where('courseCode', '==', courseCode)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
+
+        if (courseQuery.empty) {
+            return res.status(404).json({ error: 'Course not found or inactive' });
+        }
+
+        // 8. Verify subjectId exists and is active (filtered query)
+        const subjectQuery = await db.collection('subjects')
+            .where('subjectId', '==', subjectID)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
+
+        if (subjectQuery.empty) {
+            return res.status(404).json({ error: 'Subject not found or inactive' });
+        }
+
+        // 9. Generate unique chapterId
+        const chapterId = crypto.randomUUID();
+
+        // 10. Create chapter document
+        const newChapter = {
+            chapterId,
+            chapterName,
+            chapterDescription,
+            courseCode,
+            subjectId: subjectID,
+            createdBy: userUid,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedBy: userUid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'active'
+        };
+
+        await db.collection('chapters').doc(chapterId).set(newChapter);
+
+        // 11. Return success response
+        res.status(201).json({
+            message: 'Chapter created successfully',
+            chapterId,
+            chapterName,
+            courseCode,
+            subjectId: subjectID
+        });
+
+    } catch (error) {
+        console.error('Error in /create-chapter:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 
 
 app.get('/health', (req, res) => res.send('Active'));
