@@ -3179,6 +3179,66 @@ app.post('/get-active-subjects', async (req, res) => {
     }
 });
 
+//========================== ENDPOINT TO FETCH ACTIVE CHAPTERS ==================
+
+app.post('/get-active-chapters', async (req, res) => {
+    try {
+        const { tokenId, courseCode, subjectId } = req.body;
+
+        if (!tokenId || !courseCode || !subjectId) {
+            return res.status(400).json({ error: 'Missing required fields: tokenId, courseCode, subjectId' });
+        }
+
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ error: 'Firebase Admin not initialized' });
+        }
+
+        // Verify tokenId and extract userUId
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(tokenId);
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        const userUid = decodedToken.uid;
+
+        // Filter user document by userUId and verify status is 'active'
+        const userQuery = await db.collection('users').where('uid', '==', userUid).limit(1).get();
+        if (userQuery.empty) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        const userData = userQuery.docs[0].data();
+        if (userData.status !== 'active') {
+            return res.status(403).json({ error: 'Access denied: user account is not active' });
+        }
+
+        // Filter chapters by courseCode, subjectId, and status:active
+        const chaptersQuery = await db.collection('chapters')
+            .where('courseCode', '==', courseCode)
+            .where('subjectId', '==', subjectId)
+            .where('status', '==', 'active')
+            .get();
+
+        if (chaptersQuery.empty) {
+            return res.status(200).json({ chapters: [] });
+        }
+
+        const chapters = [];
+        chaptersQuery.forEach(doc => {
+            const data = doc.data();
+            chapters.push({
+                chapterId: data.chapterId || doc.id,
+                chapterName: data.chapterName || 'Untitled'
+            });
+        });
+
+        return res.status(200).json({ chapters });
+
+    } catch (error) {
+        console.error('Error fetching active chapters:', error);
+        return res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
 
 
 // ========================= CREATE COURSE ENDPOINT ===========================
@@ -3484,6 +3544,125 @@ app.post('/create-chapter', async (req, res) => {
     }
 });
 
+
+//=============================== CREATE LECTURES ENDPOINT =================================
+
+app.post('/create-lesson', async (req, res) => {
+    try {
+        const { tokenId, courseCode, subjectId, chapterId, lessonData } = req.body;
+
+        // Validate required fields
+        if (!tokenId || !courseCode || !subjectId || !chapterId || !lessonData) {
+            return res.status(400).json({ error: 'Missing required fields: tokenId, courseCode, subjectId, chapterId, lessonData' });
+        }
+
+        // Validate lessonData required fields
+        const { lessonName, lessonDescription, order } = lessonData;
+        if (!lessonName || !lessonDescription || order === undefined) {
+            return res.status(400).json({ error: 'Lesson data must include lessonName, lessonDescription, and order' });
+        }
+
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ error: 'Firebase Admin not initialized' });
+        }
+
+        // Verify tokenId and extract userUId
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(tokenId);
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        const userUid = decodedToken.uid;
+
+        // Filter user: status active, role admin
+        const userQuery = await db.collection('users')
+            .where('uid', '==', userUid)
+            .where('status', '==', 'active')
+            .where('role', '==', 'admin')
+            .limit(1)
+            .get();
+
+        if (userQuery.empty) {
+            return res.status(403).json({ error: 'Access denied: Admin account not found or inactive' });
+        }
+
+        // Verify course belongs to user (createdBy === userUid) and status active
+        const courseQuery = await db.collection('courses')
+            .where('courseCode', '==', courseCode)
+            .where('createdBy', '==', userUid)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
+
+        if (courseQuery.empty) {
+            return res.status(404).json({ error: 'Course not found, inactive, or not owned by you' });
+        }
+
+        // Verify subject belongs to user and status active
+        const subjectQuery = await db.collection('subjects')
+            .where('subjectId', '==', subjectId)
+            .where('createdBy', '==', userUid)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
+
+        if (subjectQuery.empty) {
+            return res.status(404).json({ error: 'Subject not found, inactive, or not owned by you' });
+        }
+
+        // Verify chapter belongs to user and status active
+        const chapterQuery = await db.collection('chapters')
+            .where('chapterId', '==', chapterId)
+            .where('createdBy', '==', userUid)
+            .where('status', '==', 'active')
+            .limit(1)
+            .get();
+
+        if (chapterQuery.empty) {
+            return res.status(404).json({ error: 'Chapter not found, inactive, or not owned by you' });
+        }
+
+        // Generate unique lessonId
+        const lessonId = `les_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+
+        const now = admin.firestore.Timestamp.now();
+
+        // Prepare lesson document
+        const newLesson = {
+            lessonId,
+            lessonName,
+            lessonDescription,
+            linkAddress: lessonData.linkAddress || '',
+            linkText: lessonData.linkText || '',
+            imageUrl: lessonData.imageUrl || '',
+            videoUrl: lessonData.videoUrl || '',
+            thumbnailUrl: lessonData.thumbnailUrl || '',
+            createdBy: userUid,
+            createdAt: now,
+            updatedBy: userUid,
+            updatedAt: now,
+            status: 'active',
+            order: parseInt(order, 10),
+            courseCode,
+            subjectId,
+            chapterId
+        };
+
+        // Create lesson document
+        await db.collection('lessons').doc(lessonId).set(newLesson);
+
+        return res.status(201).json({
+            message: 'Lesson created successfully',
+            lessonId,
+            lesson: newLesson
+        });
+
+    } catch (error) {
+        console.error('Error creating lesson:', error);
+        return res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
 
 
 app.get('/health', (req, res) => res.send('Active'));
