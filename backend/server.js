@@ -3069,6 +3069,62 @@ app.post('/school_admin/login', async (req, res) => {
 });
 // ==================== END SCHOOL ADMIN LOGIN ====================
 
+// ====================== ENDPOINT TO FETCH ACTIVE COURSES ======================
+
+app.get('/get-user-courses', async (req, res) => {
+  try {
+    // 1. Validate Firebase initialization
+    if (!firebaseInitialized || !db) {
+      return res.status(500).json({ error: 'Firebase not initialized' });
+    }
+
+    // 2. Extract tokenId from query params or body (assuming query for GET)
+    const { tokenId } = req.query; // or req.body if POST, but GET is more RESTful
+    if (!tokenId) {
+      return res.status(400).json({ error: 'Missing tokenId' });
+    }
+
+    // 3. Verify token and extract userUId
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(tokenId);
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid or expired token', details: err.message });
+    }
+    const userUId = decodedToken.uid;
+
+    // 4. Query courses where createdBy == userUId and status == 'active'
+    const coursesSnapshot = await db.collection('courses')
+      .where('createdBy', '==', userUId)
+      .where('status', '==', 'active')
+      .get();
+
+    if (coursesSnapshot.empty) {
+      return res.status(200).json({ courses: [] }); // Return empty array, not an error
+    }
+
+    // 5. Build response array with courseCode and courseName
+    const coursesList = [];
+    coursesSnapshot.forEach(doc => {
+      const data = doc.data();
+      coursesList.push({
+        courseCode: data.courseCode,
+        courseName: data.courseName
+      });
+    });
+
+    // 6. Return success response
+    return res.status(200).json({
+      message: 'Courses retrieved successfully',
+      courses: coursesList
+    });
+  } catch (error) {
+    console.error('Error fetching user courses:', error);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
+
 // ========================= CREATE COURSE ENDPOINT ===========================
 
 app.post('/create-course', async (req, res) => {
@@ -3173,6 +3229,98 @@ app.post('/create-course', async (req, res) => {
     return res.status(500).json({ error: 'Internal server error', details: error.message });
   }
 });
+
+//============================CREATE SUBJECT ENDPOINT===============================
+app.post('/create-subject', async (req, res) => {
+  try {
+    // 1. Validate Firebase initialization
+    if (!firebaseInitialized || !db) {
+      return res.status(500).json({ error: 'Firebase not initialized' });
+    }
+
+    // 2. Extract request body
+    const { tokenId, courseCode, subjectName, subjectDescription } = req.body;
+    if (!tokenId || !courseCode || !subjectName || !subjectDescription) {
+      return res.status(400).json({ error: 'Missing required fields: tokenId, courseCode, subjectName, subjectDescription' });
+    }
+
+    // 3. Verify token and extract userUId
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(tokenId);
+    } catch (err) {
+      return res.status(401).json({ error: 'Invalid or expired token', details: err.message });
+    }
+    const userUId = decodedToken.uid;
+
+    // 4. Query users collection by userUId
+    const usersQuery = await db.collection('users').where('userUId', '==', userUId).limit(1).get();
+    if (usersQuery.empty) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    const userDoc = usersQuery.docs[0];
+    const userData = userDoc.data();
+
+    // 5. Fetch role, status, and subjectLimit
+    const { role, status, subjectLimit } = userData;
+    if (!role || !status) {
+      return res.status(403).json({ error: 'User role or status missing' });
+    }
+
+    // 6. Verify role = 'admin', status = 'approved', and subjectLimit > 0
+    if (role !== 'admin' || status !== 'approved') {
+      return res.status(403).json({ error: 'Unauthorized: Only approved admins can create subjects' });
+    }
+    if (typeof subjectLimit !== 'number' || subjectLimit <= 0) {
+      return res.status(403).json({ error: 'Subject limit reached or invalid. Cannot create more subjects.' });
+    }
+
+    // 7. Verify that the course with given courseCode exists and is active
+    const courseQuery = await db.collection('courses').where('courseCode', '==', courseCode).limit(1).get();
+    if (courseQuery.empty) {
+      return res.status(404).json({ error: 'Course not found' });
+    }
+    const courseDoc = courseQuery.docs[0];
+    const courseData = courseDoc.data();
+    if (courseData.status !== 'active') {
+      return res.status(403).json({ error: 'Course is not active. Cannot create subject under this course.' });
+    }
+
+    // 8. Generate unique subjectId (Firestore auto-ID)
+    const subjectId = db.collection('subjects').doc().id;
+    const now = new Date().toISOString();
+
+    const newSubject = {
+      subjectId,
+      subjectName,
+      subjectDescription,
+      courseCode,
+      createdBy: userUId,
+      createdAt: now,
+      updatedBy: userUId,
+      updatedAt: now,
+      status: 'active'
+    };
+
+    // 9. Create subject document
+    await db.collection('subjects').doc(subjectId).set(newSubject);
+
+    // 10. Decrement user's subjectLimit by 1
+    await userDoc.ref.update({
+      subjectLimit: admin.firestore.FieldValue.increment(-1)
+    });
+
+    // 11. Return success response
+    return res.status(201).json({
+      message: 'Subject created successfully',
+      subject: newSubject
+    });
+  } catch (error) {
+    console.error('Error creating subject:', error);
+    return res.status(500).json({ error: 'Internal server error', details: error.message });
+  }
+});
+
 
 app.get('/health', (req, res) => res.send('Active'));
 
