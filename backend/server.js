@@ -2649,6 +2649,329 @@ app.post('/upload/image', multerMem.single('image'), async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+/**
+ * POST /api/register-school
+ * Registers a new school and its admin user in a single atomic transaction.
+ * Implements retry logic for schoolId collisions, phone uniqueness, and slug uniqueness.
+ */
+app.post('/api/register-school', async (req, res) => {
+  // -------------------------------
+  // Helper: generate random schoolId (SCH-XXXXXX)
+  // -------------------------------
+  const generateSchoolId = () => {
+    const randomNum = Math.floor(100000 + Math.random() * 900000);
+    return `SCH-${randomNum}`;
+  };
+
+  // -------------------------------
+  // Helper: generate base slug from school name
+  // -------------------------------
+  const generateBaseSlug = (name) => {
+    return name
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "")      // remove special characters
+      .replace(/\s+/g, "-");         // replace spaces with hyphens
+  };
+
+  // -------------------------------
+  // Helper: generate random numeric suffix (4 digits)
+  // -------------------------------
+  const randomSuffix = () => Math.floor(1000 + Math.random() * 9000).toString();
+
+  try {
+    // -------------------------------
+    // 1. Extract and validate request body
+    // -------------------------------
+    const {
+      tokenId,
+      schoolName,
+      iemisCode,
+      userName,
+      email: frontendEmail,
+      phoneNumber,
+      schoolAddress,
+      schoolLogo
+    } = req.body;
+
+    const missingFields = [];
+    if (!tokenId) missingFields.push('tokenId');
+    if (!schoolName) missingFields.push('schoolName');
+    if (!userName) missingFields.push('userName');
+    if (!frontendEmail) missingFields.push('email');
+    if (!phoneNumber) missingFields.push('phoneNumber');
+    if (!schoolAddress) missingFields.push('schoolAddress');
+
+    if (missingFields.length) {
+      return res.status(400).json({
+        success: false,
+        message: `Missing required fields: ${missingFields.join(', ')}`
+      });
+    }
+
+    // Trim and sanitize
+    const trimmedSchoolName = schoolName.trim();
+    const trimmedUserName = userName.trim();
+    // FIX 1: Safer phone normalization – prevent crash on undefined/null
+    const normalizedPhone = String(phoneNumber || "").replace(/\D/g, "");
+    const trimmedAddress = schoolAddress.trim();
+
+    // Field validations
+    if (trimmedSchoolName.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'School name must be at least 3 characters long'
+      });
+    }
+    if (trimmedUserName.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'User name must be at least 3 characters long'
+      });
+    }
+    const emailRegex = /^[^\s@]+@([^\s@]+\.)+[^\s@]+$/;
+    if (!emailRegex.test(frontendEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+    // Updated validation: normalized phone must be numeric and length 7–15
+    const phoneRegex = /^\d{7,15}$/;
+    if (!phoneRegex.test(normalizedPhone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must contain only digits (7-15 characters) after normalization'
+      });
+    }
+
+    // Optional IEMIS code validation (if provided)
+    if (iemisCode && iemisCode.trim() !== '') {
+      const iemisRegex = /^\d{5,15}$/;
+      if (!iemisRegex.test(iemisCode.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'IEMIS code must be numeric and 5-15 digits long'
+        });
+      }
+    }
+
+    // -------------------------------
+    // 2. Verify Firebase token and extract email (normalized to lowercase)
+    // -------------------------------
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(tokenId);
+    } catch (err) {
+      console.error('Token verification failed:', err.message);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid or expired token'
+      });
+    }
+
+    const userUid = decodedToken.uid;
+    const tokenEmail = decodedToken.email?.toLowerCase();
+    if (!tokenEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token does not contain an email address'
+      });
+    }
+
+    // -------------------------------
+    // 3. Extract client IP address (improved)
+    // -------------------------------
+    const ipAddress =
+      req.headers['x-forwarded-for']?.split(',')[0] ||
+      req.connection?.remoteAddress ||
+      req.socket?.remoteAddress ||
+      null;
+
+    // -------------------------------
+    // 4. Generate base slug from school name
+    // -------------------------------
+    let baseSlug = generateBaseSlug(trimmedSchoolName);
+
+    // FIX 2: Prevent empty or too-short slug
+    let safeBaseSlug = baseSlug;
+    if (!safeBaseSlug || safeBaseSlug.length < 3) {
+      safeBaseSlug = `school-${randomSuffix()}`;
+    }
+
+    // -------------------------------
+    // 5. Retry loop for schoolId generation (max 5 attempts)
+    //    Each iteration generates a new schoolId and runs the transaction.
+    // -------------------------------
+    const MAX_RETRIES = 5;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const newSchoolId = generateSchoolId();
+      const schoolRef = db.collection('schools').doc(newSchoolId);
+      const userRef = db.collection('users').doc(userUid);
+      // Use normalized phone number for the phone_numbers collection document ID
+      const phoneNumberRef = db.collection('phone_numbers').doc(normalizedPhone);
+
+      try {
+        // Run atomic transaction
+        const result = await db.runTransaction(async (transaction) => {
+          // 5a. Check if user already exists
+          const userDoc = await transaction.get(userRef);
+          if (userDoc.exists) {
+            throw new Error('USER_ALREADY_EXISTS');
+          }
+
+          // 5b. Check if phone number already registered
+          const phoneDoc = await transaction.get(phoneNumberRef);
+          if (phoneDoc.exists) {
+            throw new Error('PHONE_ALREADY_EXISTS');
+          }
+
+          // 5c. Check if schoolId already exists (collision)
+          const schoolDoc = await transaction.get(schoolRef);
+          if (schoolDoc.exists) {
+            throw new Error('SCHOOL_ID_COLLISION');
+          }
+
+          // 5d. Generate a unique schoolSlug (with suffix if needed)
+          let finalSlug = safeBaseSlug;
+          let slugUnique = false;
+          let slugAttempts = 0;
+          const MAX_SLUG_ATTEMPTS = 10;
+
+          while (!slugUnique && slugAttempts < MAX_SLUG_ATTEMPTS) {
+            // Query for existing slug (requires an index on schools.schoolSlug)
+            const slugQuery = db.collection('schools').where('schoolSlug', '==', finalSlug);
+            const slugSnapshot = await transaction.get(slugQuery);
+            if (slugSnapshot.empty) {
+              slugUnique = true;
+            } else {
+              // Slug exists, append random suffix
+              finalSlug = `${safeBaseSlug}-${randomSuffix()}`;
+              slugAttempts++;
+            }
+          }
+          if (!slugUnique) {
+            throw new Error('SLUG_GENERATION_FAILED');
+          }
+
+          // 5e. Prepare timestamps
+          const now = admin.firestore.FieldValue.serverTimestamp();
+
+          // 5f. Create user document (store normalized phone number)
+          const userData = {
+            userUid,
+            schoolId: newSchoolId,
+            email: tokenEmail,
+            phoneNumber: normalizedPhone,
+            userName: trimmedUserName,
+            role: 'school_admin',
+            status: 'active',
+            createdAt: now,
+            updatedAt: now,
+            lastLoginAt: null,
+            ipAddress: ipAddress || null
+          };
+
+          // 5g. Create school document (store normalized phone number)
+          const schoolData = {
+            schoolId: newSchoolId,
+            schoolSlug: finalSlug,
+            ownerUid: userUid,
+            schoolName: trimmedSchoolName,
+            schoolAddress: trimmedAddress,
+            iemisCode: iemisCode && iemisCode.trim() !== '' ? iemisCode.trim() : null,
+            schoolLogo: schoolLogo || null,
+            email: tokenEmail,
+            phoneNumber: normalizedPhone,
+            status: 'pending',
+            createdAt: now,
+            updatedAt: now
+          };
+
+          // 5h. Create phone number uniqueness record
+          const phoneData = {
+            userUid,
+            createdAt: now
+          };
+
+          // Write all documents atomically
+          transaction.set(userRef, userData);
+          transaction.set(schoolRef, schoolData);
+          transaction.set(phoneNumberRef, phoneData);
+
+          return { schoolId: newSchoolId, schoolSlug: finalSlug, userUid };
+        });
+
+        // Transaction succeeded – return success response
+        return res.status(200).json({
+          success: true,
+          message: 'Registration Successful',
+          data: {
+            schoolId: result.schoolId,
+            schoolSlug: result.schoolSlug,
+            userUid: result.userUid
+          }
+        });
+
+      } catch (error) {
+        lastError = error;
+        // If collision, continue retry loop (only for SCHOOL_ID_COLLISION)
+        if (error.message === 'SCHOOL_ID_COLLISION') {
+          console.log(`SchoolId collision for ${newSchoolId}, retry ${attempt}/${MAX_RETRIES}`);
+          continue; // retry with a new schoolId
+        }
+        // For other errors, break out of retry loop and handle immediately
+        break;
+      }
+    }
+
+    // If we exit the loop, handle the last error
+    if (lastError) {
+      console.error('Transaction failed:', lastError);
+      switch (lastError.message) {
+        case 'USER_ALREADY_EXISTS':
+          return res.status(409).json({
+            success: false,
+            message: 'User already registered'
+          });
+        case 'PHONE_ALREADY_EXISTS':
+          return res.status(409).json({
+            success: false,
+            message: 'Phone number already registered'
+          });
+        case 'SLUG_GENERATION_FAILED':
+          return res.status(500).json({
+            success: false,
+            message: 'Unable to generate unique school slug'
+          });
+        default:
+          return res.status(500).json({
+            success: false,
+            message: 'Internal server error during registration'
+          });
+      }
+    } else {
+      // Exhausted retries without success (all were SCHOOL_ID_COLLISION)
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to generate a unique school ID after multiple attempts'
+      });
+    }
+
+  } catch (error) {
+    // Catch any unexpected errors outside the retry loop
+    console.error('Unexpected error in /api/register-school:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+    
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
