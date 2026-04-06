@@ -2970,7 +2970,104 @@ app.post('/api/register-school', async (req, res) => {
     });
   }
 });
+// ==================== SCHOOL ADMIN LOGIN ENDPOINT ====================
+app.post('/school_admin/login', async (req, res) => {
+    const { tokenId } = req.body;
 
+    // Validate request body
+    if (!tokenId || typeof tokenId !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid tokenId' });
+    }
+
+    // Check Firebase is initialized
+    if (!firebaseInitialized || !db) {
+        console.error('Firebase not initialized');
+        return res.status(500).json({ error: 'Server configuration error' });
+    }
+
+    try {
+        // 1. Verify Firebase ID token and extract uid
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(tokenId);
+        } catch (authError) {
+            console.error(`Token verification failed: ${authError.message}`);
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+
+        const uid = decodedToken.uid;
+
+        // 2. Use Firestore transaction for atomic reads (user + school)
+        const result = await db.runTransaction(async (transaction) => {
+            // Fetch user document
+            const userRef = db.collection('users').doc(uid);
+            const userDoc = await transaction.get(userRef);
+            
+            if (!userDoc.exists) {
+                throw new Error('USER_NOT_FOUND');
+            }
+            
+            const userData = userDoc.data();
+            // Check: status === 'active' AND role === 'school_admin'
+            if (userData.status !== 'active' || userData.role !== 'school_admin') {
+                throw new Error('UNAUTHORIZED_ROLE_OR_STATUS');
+            }
+
+            // Fetch school document where ownerUid === uid
+            const schoolsQuery = db.collection('schools')
+                .where('ownerUid', '==', uid)
+                .limit(1);
+            const schoolsSnapshot = await transaction.get(schoolsQuery);
+            
+            if (schoolsSnapshot.empty) {
+                throw new Error('SCHOOL_NOT_FOUND');
+            }
+            
+            const schoolDoc = schoolsSnapshot.docs[0];
+            const schoolData = schoolDoc.data();
+            
+            // Check: status === 'approved'
+            if (schoolData.status !== 'approved') {
+                throw new Error('SCHOOL_NOT_APPROVED');
+            }
+            
+            // Extract required fields
+            return {
+                schoolName: schoolData.schoolName || '',
+                email: schoolData.email || '',
+                phoneNumber: schoolData.phoneNumber || '',
+                address: schoolData.address || '',
+                iemisCode: schoolData.iemisCode || '',
+                schoolLogo: schoolData.schoolLogo || ''
+            };
+        });
+
+        // 3. Successful login
+        console.log(`School admin logged in: ${uid}`);
+        return res.status(200).json(result);
+
+    } catch (error) {
+        // Map internal error messages to HTTP status codes
+        switch (error.message) {
+            case 'USER_NOT_FOUND':
+                console.error(`User document missing for uid: ${error.uid || 'unknown'}`);
+                return res.status(403).json({ error: 'User not found' });
+            case 'UNAUTHORIZED_ROLE_OR_STATUS':
+                console.error(`Unauthorized access attempt - role/status invalid`);
+                return res.status(403).json({ error: 'Account not active or not a school admin' });
+            case 'SCHOOL_NOT_FOUND':
+                console.error(`No school found for ownerUid: ${error.uid || 'unknown'}`);
+                return res.status(403).json({ error: 'No associated school found' });
+            case 'SCHOOL_NOT_APPROVED':
+                console.error(`School not approved for ownerUid: ${error.uid || 'unknown'}`);
+                return res.status(403).json({ error: 'School is not approved yet' });
+            default:
+                console.error(`Unexpected error during school_admin login:`, error);
+                return res.status(500).json({ error: 'Internal server error' });
+        }
+    }
+});
+// ==================== END SCHOOL ADMIN LOGIN ====================
     
 app.get('/health', (req, res) => res.send('Active'));
 
