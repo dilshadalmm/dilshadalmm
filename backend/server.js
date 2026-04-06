@@ -3202,14 +3202,14 @@ app.post('/get-active-chapters', async (req, res) => {
         }
         const userUid = decodedToken.uid;
 
-        // Filter user document by userUId and verify status is 'active'
+        // Filter user document by userUId and verify status is 'approved'
         const userQuery = await db.collection('users').where('uid', '==', userUid).limit(1).get();
         if (userQuery.empty) {
             return res.status(404).json({ error: 'User not found' });
         }
         const userData = userQuery.docs[0].data();
-        if (userData.status !== 'active') {
-            return res.status(403).json({ error: 'Access denied: user account is not active' });
+        if (userData.status !== 'approved') {
+            return res.status(403).json({ error: 'Access denied: user account is not approved' });
         }
 
         // Filter chapters by courseCode, subjectId, and status:active
@@ -3547,6 +3547,7 @@ app.post('/create-chapter', async (req, res) => {
 
 //=============================== CREATE LECTURES ENDPOINT =================================
 
+
 app.post('/create-lesson', async (req, res) => {
     try {
         const { tokenId, courseCode, subjectId, chapterId, lessonData } = req.body;
@@ -3575,16 +3576,16 @@ app.post('/create-lesson', async (req, res) => {
         }
         const userUid = decodedToken.uid;
 
-        // Filter user: status active, role admin
+        // Filter user: status approved, role admin
         const userQuery = await db.collection('users')
             .where('uid', '==', userUid)
-            .where('status', '==', 'active')
+            .where('status', '==', 'approved')
             .where('role', '==', 'admin')
             .limit(1)
             .get();
 
         if (userQuery.empty) {
-            return res.status(403).json({ error: 'Access denied: Admin account not found or inactive' });
+            return res.status(403).json({ error: 'Access denied: Admin account not found or not approved' });
         }
 
         // Verify course belongs to user (createdBy === userUid) and status active
@@ -3663,7 +3664,6 @@ app.post('/create-lesson', async (req, res) => {
         return res.status(500).json({ error: 'Internal server error', details: error.message });
     }
 });
-
 
 app.get('/health', (req, res) => res.send('Active'));
 
