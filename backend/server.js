@@ -3792,6 +3792,92 @@ app.post('/create-lesson', async (req, res) => {
     }
 });
 
+//========================== NEW ENROLLMENT ENDPOINT ====================
+
+app.post('/enroll-student', async (req, res) => {
+    try {
+        const { tokenId, email, courseCode, expiredAt } = req.body;
+
+        // Validate required fields
+        if (!tokenId || !email || !courseCode || !expiredAt) {
+            return res.status(400).json({ error: 'Missing required fields: tokenId, email, courseCode, expiredAt' });
+        }
+
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ error: 'Firebase Admin not initialized' });
+        }
+
+        // Verify tokenId and extract userUId
+        let decodedToken;
+        try {
+            decodedToken = await admin.auth().verifyIdToken(tokenId);
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+        const adminUid = decodedToken.uid;
+
+        // Filter admin user by uid, role admin, status approved
+        const adminQuery = await db.collection('users')
+            .where('uid', '==', adminUid)
+            .where('role', '==', 'admin')
+            .where('status', '==', 'approved')
+            .limit(1)
+            .get();
+
+        if (adminQuery.empty) {
+            return res.status(403).json({ error: 'Access denied: Admin not found or not approved' });
+        }
+
+        const adminData = adminQuery.docs[0].data();
+        const adminCourseCodes = adminData.courseCodes || [];
+
+        // Verify requested courseCode belongs to admin
+        if (!adminCourseCodes.includes(courseCode)) {
+            return res.status(403).json({ error: 'Course code not authorized for this admin' });
+        }
+
+        // Find student by email with emailVerified true
+        const studentQuery = await db.collection('users')
+            .where('email', '==', email)
+            .where('emailVerified', '==', true)
+            .limit(1)
+            .get();
+
+        if (studentQuery.empty) {
+            return res.status(404).json({ error: 'Student not found or email not verified' });
+        }
+
+        const studentDoc = studentQuery.docs[0];
+        const studentData = studentDoc.data();
+        const permittedCourse = studentData.permittedCourse || [];
+
+        // Check if course already permitted (optional, but we can still add)
+        // Use arrayUnion to avoid duplicates
+        const expireAtTimestamp = admin.firestore.Timestamp.fromDate(new Date(expiredAt));
+        const subscribedAtTimestamp = admin.firestore.Timestamp.now();
+
+        const updateData = {
+            permittedCourse: admin.firestore.FieldValue.arrayUnion(courseCode),
+            [`expireAt${courseCode}`]: expireAtTimestamp,
+            [`subscribedAt${courseCode}`]: subscribedAtTimestamp
+        };
+
+        await studentDoc.ref.update(updateData);
+
+        return res.status(200).json({
+            message: 'Student enrolled successfully',
+            email: email,
+            courseCode: courseCode,
+            expiredAt: expireAtTimestamp.toDate(),
+            subscribedAt: subscribedAtTimestamp.toDate()
+        });
+
+    } catch (error) {
+        console.error('Error enrolling student:', error);
+        return res.status(500).json({ error: 'Internal server error', details: error.message });
+    }
+});
+
 app.get('/health', (req, res) => res.send('Active'));
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
