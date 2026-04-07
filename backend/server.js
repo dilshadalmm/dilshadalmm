@@ -3196,6 +3196,94 @@ app.post('/school_admin/login', async (req, res) => {
 });
 // ==================== END SCHOOL ADMIN LOGIN ====================
 
+
+
+// --------------------------------------------------------------
+// 1. CHECK USER ROLE
+// --------------------------------------------------------------
+app.post('/api/auth/check-role', async (req, res) => {
+    try {
+        const { tokenId } = req.body;
+        if (!tokenId) {
+            return res.status(400).json({ success: false, error: 'Missing tokenId' });
+        }
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ success: false, error: 'Firebase not initialized' });
+        }
+
+        // Verify the Firebase ID token
+        const decodedToken = await admin.auth().verifyIdToken(tokenId);
+        const uid = decodedToken.uid;
+
+        // Fetch user document from Firestore
+        const userDoc = await db.collection('users').doc(uid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ success: false, error: 'User not found in database' });
+        }
+
+        const userData = userDoc.data();
+        const role = userData.role || 'user';   // default to 'user' if role field missing
+
+        return res.json({ success: true, role, uid });
+    } catch (error) {
+        console.error('Error in /api/auth/check-role:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// --------------------------------------------------------------
+// 2. GET USER-SPECIFIC COURSES (based on permittedCourse array)
+// --------------------------------------------------------------
+app.post('/api/auth/user-courses', async (req, res) => {
+    try {
+        const { tokenId, uid } = req.body;
+        if (!tokenId) {
+            return res.status(400).json({ success: false, error: 'Missing tokenId' });
+        }
+        if (!firebaseInitialized || !db) {
+            return res.status(500).json({ success: false, error: 'Firebase not initialized' });
+        }
+
+        // Verify the token (extract uid from token if not provided)
+        const decodedToken = await admin.auth().verifyIdToken(tokenId);
+        const userUid = uid || decodedToken.uid;
+
+        // Get user document
+        const userDoc = await db.collection('users').doc(userUid).get();
+        if (!userDoc.exists) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const userData = userDoc.data();
+        const permittedCourseCodes = userData.permittedCourse || [];   // array of course codes
+
+        if (!permittedCourseCodes.length) {
+            return res.json({ success: true, courses: [] });
+        }
+
+        // Query courses collection where courseCode is in permittedCourseCodes
+        const coursesSnapshot = await db.collection('courses')
+            .where('courseCode', 'in', permittedCourseCodes)
+            .get();
+
+        const courses = [];
+        coursesSnapshot.forEach(doc => {
+            const data = doc.data();
+            courses.push({
+                courseCode: data.courseCode,
+                courseName: data.courseName || data.courseCode   // fallback to code if name missing
+            });
+        });
+
+        return res.json({ success: true, courses });
+    } catch (error) {
+        console.error('Error in /api/auth/user-courses:', error);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+
+
 // ====================== ENDPOINT TO FETCH ACTIVE COURSES ======================
 
 app.get('/get-user-courses', async (req, res) => {
