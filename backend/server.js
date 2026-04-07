@@ -3993,6 +3993,12 @@ function consolidateSegments(segments) {
     return merged;
 }
 
+// Compute total watched time from merged segments
+function computeTotalFromSegments(segments) {
+    if (!segments || segments.length === 0) return 0;
+    return segments.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+}
+
 // Flush a cached session to Firestore
 async function flushSessionToFirestore(key) {
     const entry = sessionCache.get(key);
@@ -4051,59 +4057,79 @@ setInterval(async () => {
 }, 5 * 60 * 1000); // run every 5 minutes
 
 // ========================
-// Endpoint 1: Real-time Session Tracking
+// Endpoint 1: Real-time Session Tracking (with server-side validation)
 // ========================
 app.post('/track-session', async (req, res) => {
     try {
-        const { lessonId, userUId, createdAt, activityType, lessonDuration, event_segments, totalWatchedTime } = req.body;
+        const { lessonId, userUId, createdAt, activityType, lessonDuration, event_segments } = req.body;
 
-        // Validate required fields
-        if (!lessonId || !userUId || !createdAt || !activityType || totalWatchedTime === undefined) {
+        // Validate required fields (totalWatchedTime is ignored)
+        if (!lessonId || !userUId || !createdAt || !activityType) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
         const cacheKey = `${userUId}_${lessonId}_${createdAt}_${activityType}`;
         const now = Date.now();
-
-        // Merge incoming segments with existing
-        let mergedSegments = event_segments || [];
-        let mergedTotal = totalWatchedTime;
-
-        if (sessionCache.has(cacheKey)) {
-            const existing = sessionCache.get(cacheKey).data;
-            // Merge segments
-            const allSegments = [...(existing.event_segments || []), ...(event_segments || [])];
-            mergedSegments = consolidateSegments(allSegments);
-            // Sum totalWatchedTime
-            mergedTotal = existing.totalWatchedTime + totalWatchedTime;
+        const createdAtTimestamp = new Date(createdAt).getTime();
+        if (isNaN(createdAtTimestamp)) {
+            return res.status(400).json({ error: 'Invalid createdAt timestamp' });
         }
 
-        // Store/update cache entry
+        // Get existing cache entry if any
+        const existingEntry = sessionCache.get(cacheKey);
+        const existingSegments = existingEntry?.data?.event_segments || [];
+        const existingTotal = existingEntry?.data?.totalWatchedTime || 0;
+        const lastUpdateTime = existingEntry?.lastUpdated || createdAtTimestamp;
+
+        // Merge incoming segments with existing segments
+        const allSegments = [...existingSegments, ...(event_segments || [])];
+        const mergedSegments = consolidateSegments(allSegments);
+        
+        // Server-side recalculation of total watched time from merged segments
+        let verifiedTotal = computeTotalFromSegments(mergedSegments);
+        
+        // Calculate net increase since last update
+        let netIncrease = verifiedTotal - existingTotal;
+        if (netIncrease < 0) netIncrease = 0; // Should not happen, but safe guard
+        
+        // Physical possibility check: time elapsed since last update (or session start)
+        const elapsedSeconds = (now - lastUpdateTime) / 1000;
+        const tolerance = 1.0; // 1 second tolerance for network latency
+        
+        if (netIncrease > elapsedSeconds + tolerance) {
+            // Cheating detected: cap net increase to elapsed time
+            console.warn(`Cheat detected for ${cacheKey}: net increase ${netIncrease}s > elapsed ${elapsedSeconds}s. Capping.`);
+            netIncrease = elapsedSeconds;
+            verifiedTotal = existingTotal + netIncrease;
+            // Note: We keep mergedSegments as is (may not exactly match capped total, but total is corrected)
+        }
+        
+        // Update cache entry
         sessionCache.set(cacheKey, {
             data: {
                 lessonId,
                 userUId,
                 createdAt,
                 activityType,
-                lessonDuration, // needed for completion later? we store it for possible use
+                lessonDuration,
                 event_segments: mergedSegments,
-                totalWatchedTime: mergedTotal,
+                totalWatchedTime: verifiedTotal,
                 lastUpdated: now
             },
             lastUpdated: now,
             timer: null
         });
-
+        
         // Reset flush timer
         scheduleFlush(cacheKey, 61000);
-
+        
         // Optional: force flush flag (for pagehide/beforeunload)
         if (req.query.force === 'true') {
             await flushSessionToFirestore(cacheKey);
             return res.json({ status: 'flushed' });
         }
-
-        res.json({ status: 'cached', key: cacheKey });
+        
+        res.json({ status: 'cached', key: cacheKey, verifiedTotal });
     } catch (err) {
         console.error('Error in /track-session:', err);
         res.status(500).json({ error: 'Internal server error' });
@@ -4150,26 +4176,24 @@ app.get('/daily-completion', async (req, res) => {
             });
         }
 
-        // Fetch lesson duration for videoLesson (for threshold)
-        let lessonDuration = null;
+        // Fetch lesson videoDuration for videoLesson (for threshold)
+        let videoDuration = null;
         if (activityType === 'videoLesson') {
-            // Option 1: read from a 'lessons' collection. Assuming there is a lessons/{lessonId} doc with 'duration'
             try {
                 const lessonDoc = await db.collection('lessons').doc(lessonId).get();
                 if (lessonDoc.exists) {
-                    lessonDuration = lessonDoc.data().duration; // in seconds
+                    videoDuration = lessonDoc.data().videoDuration; // changed from duration to videoDuration
                 } else {
                     console.warn(`Lesson ${lessonId} not found, using fallback?`);
                 }
             } catch (err) {
-                console.error('Failed to fetch lesson duration:', err.message);
+                console.error('Failed to fetch lesson videoDuration:', err.message);
             }
         }
 
         // Fetch user names in batch
         const userIds = Array.from(userTimeMap.keys());
         const userNames = new Map();
-        // Firestore "in" query limit 10, handle in chunks if needed (simple for demo)
         const chunkSize = 10;
         for (let i = 0; i < userIds.length; i += chunkSize) {
             const chunk = userIds.slice(i, i + chunkSize);
@@ -4177,7 +4201,8 @@ app.get('/daily-completion', async (req, res) => {
                 .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
                 .get();
             usersSnapshot.forEach(doc => {
-                userNames.set(doc.id, doc.data().name || doc.id);
+                // Use userName field instead of name
+                userNames.set(doc.id, doc.data().userName || doc.id);
             });
         }
         // Fill missing names with userUId
@@ -4192,11 +4217,10 @@ app.get('/daily-completion', async (req, res) => {
         for (const [uid, totalTime] of userTimeMap.entries()) {
             let isComplete = false;
             if (activityType === 'videoLesson') {
-                if (lessonDuration && totalTime >= lessonDuration) isComplete = true;
-                else if (!lessonDuration) isComplete = false; // cannot determine, treat as incomplete
+                if (videoDuration && totalTime >= videoDuration) isComplete = true;
+                else if (!videoDuration) isComplete = false;
             } else {
-                // For noteLesson / questionLesson: define threshold as 1 (any activity counts as complete) or configurable
-                // Spec says "define completion threshold if needed". Here we assume >0 means complete.
+                // For noteLesson / questionLesson: any activity (>0) counts as complete
                 isComplete = totalTime > 0;
             }
 
@@ -4224,6 +4248,7 @@ app.get('/daily-completion', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
 
 
 app.get('/health', (req, res) => res.send('Active'));
