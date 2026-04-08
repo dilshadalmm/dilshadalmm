@@ -4249,6 +4249,163 @@ app.get('/daily-completion', async (req, res) => {
     }
 });
 
+//========================================== QUESTION PRACTICE TRACKING ENDPOINT ======================
+app.post('/practice/question/session', async (req, res) => {
+    try {
+        // 1. Validate Firebase Admin is ready
+        if (!firebaseInitialized || !db) {
+            return res.status(503).json({ error: 'Firestore service unavailable' });
+        }
+
+        const {
+            tokenId,
+            sessionId,
+            activityType,
+            startedAt,
+            endedAt,
+            questions
+        } = req.body;
+
+        // 2. Validate required fields
+        if (!tokenId || typeof tokenId !== 'string') {
+            return res.status(400).json({ error: 'tokenId is required and must be a string' });
+        }
+        if (!sessionId || typeof sessionId !== 'string') {
+            return res.status(400).json({ error: 'sessionId is required and must be a string' });
+        }
+        if (!Array.isArray(questions) || questions.length === 0) {
+            return res.status(400).json({ error: 'questions must be a non-empty array' });
+        }
+
+        // Validate each question has minimum required fields
+        for (const q of questions) {
+            if (!q.questionId || typeof q.questionId !== 'string') {
+                return res.status(400).json({ error: 'Each question must have a valid questionId' });
+            }
+            if (typeof q.isCorrect !== 'boolean') {
+                return res.status(400).json({ error: 'Each question must have isCorrect as boolean' });
+            }
+            if (typeof q.timeSpent !== 'number' || q.timeSpent < 0) {
+                return res.status(400).json({ error: 'Each question must have a non-negative timeSpent' });
+            }
+            // optional fields: topic, chapter, subject, difficultyLevel - but we'll require for performance
+            if (!q.topic || !q.chapter || !q.subject || !q.difficultyLevel) {
+                return res.status(400).json({ error: 'Each question must include topic, chapter, subject, difficultyLevel' });
+            }
+            const validDifficulties = ['easy', 'medium', 'hard'];
+            if (!validDifficulties.includes(q.difficultyLevel)) {
+                return res.status(400).json({ error: 'difficultyLevel must be easy, medium, or hard' });
+            }
+        }
+
+        // 3. Verify Firebase token and get userUid
+        let userUid;
+        try {
+            const decodedToken = await admin.auth().verifyIdToken(tokenId);
+            userUid = decodedToken.uid;
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+
+        // 4. Prepare session document data
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const sessionRef = db.collection('sessions').doc(sessionId);
+
+        // Build questions map as required
+        const questionsMap = {};
+        for (const q of questions) {
+            questionsMap[q.questionId] = {
+                isCorrect: q.isCorrect,
+                timeSpent: q.timeSpent,
+                topic: q.topic,
+                chapter: q.chapter,
+                subject: q.subject,
+                difficultyLevel: q.difficultyLevel,
+                attemptedAt: now
+            };
+        }
+
+        const sessionData = {
+            sessionId,
+            userId: userUid,
+            activityType: activityType || 'questionPractice',
+            startedAt: startedAt ? admin.firestore.Timestamp.fromDate(new Date(startedAt)) : now,
+            endedAt: endedAt ? admin.firestore.Timestamp.fromDate(new Date(endedAt)) : now,
+            totalQuestions: questions.length,
+            createdAt: now,
+            questions: questionsMap
+        };
+
+        // 5. Read existing question performance documents (to decide create/update)
+        const performanceRefs = questions.map(q => 
+            db.collection('questionPerformance').doc(userUid).collection('questions').doc(q.questionId)
+        );
+        const snapshots = await db.getAll(...performanceRefs);
+
+        // 6. Prepare batch writes
+        const batch = db.batch();
+
+        // Add session write
+        batch.set(sessionRef, sessionData);
+
+        // Prepare performance updates/creates
+        for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            const perfDoc = performanceRefs[i];
+            const snapshot = snapshots[i];
+
+            if (snapshot.exists) {
+                // Update existing document
+                const data = snapshot.data();
+                const newAttemptCount = (data.attemptCount || 0) + 1;
+                const newCorrectCount = (data.correctAttemptCount || 0) + (q.isCorrect ? 1 : 0);
+                const newIncorrectCount = (data.incorrectAttemptCount || 0) + (q.isCorrect ? 0 : 1);
+                const newAccuracy = newCorrectCount / newAttemptCount;
+                const newTotalTimeSpent = (data.totalTimeSpent || 0) + q.timeSpent;
+
+                batch.update(perfDoc, {
+                    attemptCount: newAttemptCount,
+                    correctAttemptCount: newCorrectCount,
+                    incorrectAttemptCount: newIncorrectCount,
+                    accuracy: newAccuracy,
+                    totalTimeSpent: newTotalTimeSpent,
+                    lastAttemptedAt: now
+                });
+            } else {
+                // Create new document
+                const newDocData = {
+                    questionId: q.questionId,
+                    attemptCount: 1,
+                    correctAttemptCount: q.isCorrect ? 1 : 0,
+                    incorrectAttemptCount: q.isCorrect ? 0 : 1,
+                    accuracy: q.isCorrect ? 1 : 0,
+                    totalTimeSpent: q.timeSpent,
+                    topic: q.topic,
+                    chapter: q.chapter,
+                    subject: q.subject,
+                    difficultyLevel: q.difficultyLevel,
+                    firstAttemptedAt: now,
+                    lastAttemptedAt: now,
+                    createdAt: now
+                };
+                batch.set(perfDoc, newDocData);
+            }
+        }
+
+        // 7. Commit batch
+        await batch.commit();
+
+        // 8. Return success response
+        return res.status(200).json({
+            success: true,
+            message: 'Session and performance recorded successfully'
+        });
+
+    } catch (error) {
+        console.error('Error in /practice/question/session:', error);
+        return res.status(500).json({ error: 'Internal server error' });
+    }
+});
 
 
 app.get('/health', (req, res) => res.send('Active'));
