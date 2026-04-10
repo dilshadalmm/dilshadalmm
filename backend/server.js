@@ -134,5 +134,113 @@ app.get('/tutors', async (req, res) => {
     }
 });
 
+//====================================================================================================
+
+// 6. Cursor-based pagination for posts
+
+app.get('/api/posts', async (req, res) => {
+    try {
+        if (!db) return res.status(500).json({ error: 'Firestore not initialized' });
+
+        // --- 1. Parse and validate limit ---
+        let limit = parseInt(req.query.limit) || 10;
+        if (limit < 1) limit = 10;
+        const MAX_LIMIT = 50;
+        limit = Math.min(limit, MAX_LIMIT);
+
+        // --- 2. Parse cursor safely ---
+        let cursor = null;
+        if (req.query.cursor) {
+            try {
+                const rawCursor = JSON.parse(req.query.cursor);
+                // Validate required fields
+                if (!rawCursor.createdAt || !rawCursor.id) {
+                    return res.status(400).json({ error: 'Invalid cursor: missing createdAt or id' });
+                }
+                // Convert createdAt to Firestore Timestamp
+                let timestamp;
+                if (rawCursor.createdAt._seconds !== undefined) {
+                    // Already serialized Firestore Timestamp format
+                    timestamp = new admin.firestore.Timestamp(
+                        rawCursor.createdAt._seconds,
+                        rawCursor.createdAt._nanoseconds || 0
+                    );
+                } else {
+                    // Attempt to parse as ISO string or timestamp number
+                    const date = new Date(rawCursor.createdAt);
+                    if (isNaN(date.getTime())) {
+                        return res.status(400).json({ error: 'Invalid cursor: createdAt is not a valid date' });
+                    }
+                    timestamp = admin.firestore.Timestamp.fromDate(date);
+                }
+                cursor = {
+                    createdAt: timestamp,
+                    id: rawCursor.id
+                };
+            } catch (e) {
+                return res.status(400).json({ error: 'Invalid cursor JSON' });
+            }
+        }
+
+        // --- 3. Build query ---
+        let query = db.collection('posts')
+            .orderBy('createdAt', 'desc')
+            .orderBy(admin.firestore.FieldPath.documentId());
+
+        if (cursor) {
+            query = query.startAfter(cursor.createdAt, cursor.id);
+        }
+
+        // Fetch one extra to determine hasMore
+        query = query.limit(limit + 1);
+
+        // --- 4. Execute query ---
+        const snapshot = await query.get();
+
+        // --- 5. Determine hasMore ---
+        const docs = snapshot.docs;
+        const hasMore = docs.length > limit;
+        const resultDocs = hasMore ? docs.slice(0, limit) : docs;
+
+        // --- 6. Format data ---
+        const data = resultDocs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        // --- 7. Build nextCursor ---
+        let nextCursor = null;
+        if (hasMore) {
+            const lastDoc = resultDocs[resultDocs.length - 1];
+            const lastData = lastDoc.data();
+            // Ensure createdAt is a Firestore Timestamp
+            const createdAt = lastData.createdAt;
+            if (!createdAt || !(createdAt instanceof admin.firestore.Timestamp)) {
+                throw new Error('Post document missing valid createdAt Timestamp');
+            }
+            nextCursor = {
+                createdAt: {
+                    _seconds: createdAt.seconds,
+                    _nanoseconds: createdAt.nanoseconds
+                },
+                id: lastDoc.id
+            };
+        }
+
+        // --- 8. Send response ---
+        res.json({
+            data,
+            nextCursor,
+            hasMore
+        });
+
+    } catch (err) {
+        console.error('Pagination error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+
 // Start server
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
