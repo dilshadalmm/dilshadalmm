@@ -60,7 +60,8 @@ app.get('/filter-posts', async (req, res) => {
         snapshot.forEach(doc => posts.push({ id: doc.id, ...doc.data() }));
         res.json(posts);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+    console.error('Filter posts error:', err.message); // This will print the index URL
+    res.status(500).json({ error: err.message });
     }
 });
 
