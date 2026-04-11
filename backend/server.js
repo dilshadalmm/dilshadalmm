@@ -415,21 +415,96 @@ createQueuedEndpoint({
   }
 });
 
-// Endpoint 6: Cursor-based pagination for posts
+//======================================================================
+// Endpoint 6: Cursor-based pagination for posts (with access control)
+//======================================================================
 createQueuedEndpoint({
   method: 'get',
   path: '/api/posts',
   queueName: 'posts',
   handler: async (req, db) => {
+    // 1. Validate Firestore availability
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
 
-    // Parse limit
+    // 2. Extract and verify token
+    const tokenId = req.headers.authorization?.split('Bearer ')[1] || req.query.tokenId;
+    if (!tokenId) throw new Error('UNAUTHORIZED: Missing token');
+
+    let userUId;
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(tokenId);
+      userUId = decodedToken.uid;
+    } catch (err) {
+      throw new Error('UNAUTHORIZED: Invalid or expired token');
+    }
+
+    // 3. Get required query parameters
+    const { classId, subjectId, tutorId } = req.query;
+    if (!classId || !subjectId || !tutorId) {
+      throw new Error('BAD_REQUEST: classId, subjectId, and tutorId are required');
+    }
+
+    // 4. Fetch student enrollment document
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1)
+      .get();
+
+    if (enrollmentSnapshot.empty) {
+      throw new Error('FORBIDDEN: No enrollment record found');
+    }
+
+    const enrollmentData = enrollmentSnapshot.docs[0].data();
+
+    // 5. Verify enrollment in the requested class, subject, and tutor
+    const enrolledClassMap = enrollmentData.enrolledClassId || {};
+    const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
+    const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
+
+    if (!enrolledClassMap[classId]) {
+      throw new Error('FORBIDDEN: Student not enrolled in this class');
+    }
+    if (!enrolledSubjectMap[subjectId]) {
+      throw new Error('FORBIDDEN: Student not enrolled in this subject');
+    }
+    if (!enrolledTutorMap[tutorId]) {
+      throw new Error('FORBIDDEN: Student not assigned to this tutor');
+    }
+
+    // 6. Check expiry for the given tutor
+    const expireAtMap = enrollmentData.expireAt || {};
+    const tutorExpiry = expireAtMap[tutorId];
+    if (!tutorExpiry) {
+      throw new Error('FORBIDDEN: No expiry date set for this tutor');
+    }
+
+    // Convert Firestore Timestamp to Date for comparison
+    let expiryDate;
+    if (tutorExpiry instanceof admin.firestore.Timestamp) {
+      expiryDate = tutorExpiry.toDate();
+    } else if (tutorExpiry && typeof tutorExpiry.toDate === 'function') {
+      expiryDate = tutorExpiry.toDate();
+    } else {
+      // Fallback: try to parse as number or string
+      expiryDate = new Date(tutorExpiry);
+    }
+
+    if (isNaN(expiryDate.getTime())) {
+      throw new Error('INTERNAL_ERROR: Invalid expiry timestamp format');
+    }
+
+    const now = new Date();
+    if (now >= expiryDate) {
+      throw new Error('FORBIDDEN: Access expired for this tutor');
+    }
+
+    // 7. Parse pagination parameters (limit, cursor)
     let limit = parseInt(req.query.limit) || 10;
     if (limit < 1) limit = 10;
     const MAX_LIMIT = 50;
     limit = Math.min(limit, MAX_LIMIT);
 
-    // Parse cursor
     let cursor = null;
     if (req.query.cursor) {
       try {
@@ -456,14 +531,20 @@ createQueuedEndpoint({
       }
     }
 
-    // Build query
-    let query = db.collection('posts')
+    // 8. Build posts query with filters
+    let postsQuery = db.collection('posts')
+      .where('classId', '==', classId)
+      .where('subjectId', '==', subjectId)
+      .where('tutorId', '==', tutorId)
       .orderBy('createdAt', 'desc')
       .orderBy(admin.firestore.FieldPath.documentId());
-    if (cursor) query = query.startAfter(cursor.createdAt, cursor.id);
-    query = query.limit(limit + 1);
 
-    const snapshot = await query.get();
+    if (cursor) {
+      postsQuery = postsQuery.startAfter(cursor.createdAt, cursor.id);
+    }
+    postsQuery = postsQuery.limit(limit + 1);
+
+    const snapshot = await postsQuery.get();
     const docs = snapshot.docs;
     const hasMore = docs.length > limit;
     const resultDocs = hasMore ? docs.slice(0, limit) : docs;
@@ -490,6 +571,7 @@ createQueuedEndpoint({
     return { data, nextCursor, hasMore };
   }
 });
+
 
 // -------------------------------
 // 8. Start Server
