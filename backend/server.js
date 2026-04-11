@@ -187,29 +187,106 @@ app.get('/queue-stats', (req, res) => {
 // 7. All Endpoints Defined Declaratively (ZERO BOILERPLATE)
 // -------------------------------
 
-// Endpoint 1: Filter posts
+//===================================================================
+// Endpoint 1: Filter posts (with access control and chapter filter)
+//===================================================================
 createQueuedEndpoint({
   method: 'get',
   path: '/filter-posts',
   queueName: 'filterPosts',
   handler: async (req, db) => {
+    // 1. Validate Firestore availability
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    // 2. Extract and verify token
+    const tokenId = req.headers.authorization?.split('Bearer ')[1] || req.query.tokenId;
+    if (!tokenId) throw new Error('UNAUTHORIZED: Missing token');
+
+    let userUId;
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(tokenId);
+      userUId = decodedToken.uid;
+    } catch (err) {
+      throw new Error('UNAUTHORIZED: Invalid or expired token');
+    }
+
+    // 3. Get required query parameters
     const { classId, subjectId, chapterId, tutorId } = req.query;
     if (!classId || !subjectId || !chapterId || !tutorId) {
       throw new Error('BAD_REQUEST: classId, subjectId, chapterId, and tutorId are required');
     }
-    let query = db.collection('posts')
+
+    // 4. Fetch student enrollment document
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1)
+      .get();
+
+    if (enrollmentSnapshot.empty) {
+      throw new Error('FORBIDDEN: No enrollment record found');
+    }
+
+    const enrollmentData = enrollmentSnapshot.docs[0].data();
+
+    // 5. Verify enrollment in the requested class, subject, and tutor
+    const enrolledClassMap = enrollmentData.enrolledClassId || {};
+    const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
+    const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
+
+    if (!enrolledClassMap[classId]) {
+      throw new Error('FORBIDDEN: Student not enrolled in this class');
+    }
+    if (!enrolledSubjectMap[subjectId]) {
+      throw new Error('FORBIDDEN: Student not enrolled in this subject');
+    }
+    if (!enrolledTutorMap[tutorId]) {
+      throw new Error('FORBIDDEN: Student not assigned to this tutor');
+    }
+
+    // 6. Check expiry for the given tutor
+    const expireAtMap = enrollmentData.expireAt || {};
+    const tutorExpiry = expireAtMap[tutorId];
+    if (!tutorExpiry) {
+      throw new Error('FORBIDDEN: No expiry date set for this tutor');
+    }
+
+    let expiryDate;
+    if (tutorExpiry instanceof admin.firestore.Timestamp) {
+      expiryDate = tutorExpiry.toDate();
+    } else if (tutorExpiry && typeof tutorExpiry.toDate === 'function') {
+      expiryDate = tutorExpiry.toDate();
+    } else {
+      expiryDate = new Date(tutorExpiry);
+    }
+
+    if (isNaN(expiryDate.getTime())) {
+      throw new Error('INTERNAL_ERROR: Invalid expiry timestamp format');
+    }
+
+    const now = new Date();
+    if (now >= expiryDate) {
+      throw new Error('FORBIDDEN: Access expired for this tutor');
+    }
+
+    // 7. Filter posts by classId, subjectId, chapterId, tutorId
+    let postsQuery = db.collection('posts')
       .where('classId', '==', classId)
       .where('subjectId', '==', subjectId)
       .where('chapterId', '==', chapterId)
       .where('tutorId', '==', tutorId)
       .orderBy('createdAt', 'asc');
-    const snapshot = await query.get();
+
+    const snapshot = await postsQuery.get();
     const posts = [];
     snapshot.forEach(doc => posts.push({ id: doc.id, ...doc.data() }));
+
+    // 8. Return posts array
     return posts;
   }
 });
+
+
 //======================================================
 // Endpoint 2: Get classes for authenticated student
 //======================================================
