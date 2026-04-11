@@ -210,33 +210,120 @@ createQueuedEndpoint({
     return posts;
   }
 });
-
-// Endpoint 2: Get all classes
+//======================================================
+// Endpoint 2: Get classes for authenticated student
+//======================================================
 createQueuedEndpoint({
   method: 'get',
   path: '/classes',
   queueName: 'classes',
   handler: async (req, db) => {
+    // 1. Validate Firestore availability
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-    const snapshot = await db.collection('classes').get();
+
+    // 2. Extract tokenId from request (supports Authorization header or body)
+    const tokenId =
+      req.headers.authorization?.split('Bearer ')[1] || req.body?.tokenId;
+
+    if (!tokenId) {
+      throw new Error('UNAUTHORIZED: Missing token');
+    }
+
+    let userUId;
+    try {
+      // 3. Verify the token using Firebase Admin SDK
+      const decodedToken = await admin.auth().verifyIdToken(tokenId);
+      userUId = decodedToken.uid;
+    } catch (err) {
+      throw new Error('UNAUTHORIZED: Invalid or expired token');
+    }
+
+    // 4. Query studentEnrollments where studentId == userUId
+    const enrollmentsSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .get();
+
+    if (enrollmentsSnapshot.empty) {
+      return []; // No enrollments found
+    }
+
+    // 5. Extract classId and className from the enrolledClassId map
     const classes = [];
-    snapshot.forEach(doc => classes.push({ id: doc.id, ...doc.data() }));
+    enrollmentsSnapshot.forEach(doc => {
+      const data = doc.data();
+      const enrolledClassIdMap = data.enrolledClassId || {};
+      for (const [classId, className] of Object.entries(enrolledClassIdMap)) {
+        classes.push({ classId, className });
+      }
+    });
+
+    // 6. Return as JSON
     return classes;
   }
 });
-
-// Endpoint 3: Filter subjects by classId
+//====================================================================
+// Endpoint 3: Filter subjects by classId (from student's enrollment)
+//====================================================================
 createQueuedEndpoint({
   method: 'get',
   path: '/subjects',
   queueName: 'subjects',
   handler: async (req, db) => {
+    // 1. Validate Firestore availability
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    // 2. Extract tokenId from request (Authorization header or body)
+    const tokenId =
+      req.headers.authorization?.split('Bearer ')[1] || req.body?.tokenId;
+
+    if (!tokenId) {
+      throw new Error('UNAUTHORIZED: Missing token');
+    }
+
+    let userUId;
+    try {
+      // 3. Verify token using Firebase Admin SDK
+      const decodedToken = await admin.auth().verifyIdToken(tokenId);
+      userUId = decodedToken.uid;
+    } catch (err) {
+      throw new Error('UNAUTHORIZED: Invalid or expired token');
+    }
+
+    // 4. Get classId from query parameters
     const { classId } = req.query;
-    if (!classId) throw new Error('BAD_REQUEST: classId is required');
-    const snapshot = await db.collection('subjects').where('classId', '==', classId).get();
+    if (!classId) {
+      throw new Error('BAD_REQUEST: classId is required');
+    }
+
+    // 5. Query studentEnrollments where studentId == userUId
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1) // Assuming one enrollment document per student
+      .get();
+
+    if (enrollmentSnapshot.empty) {
+      return []; // No enrollment found for this student
+    }
+
+    const enrollmentDoc = enrollmentSnapshot.docs[0];
+    const enrollmentData = enrollmentDoc.data();
+
+    // 6. Verify that the student is enrolled in the requested classId
+    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
+    if (!enrolledClassIdMap[classId]) {
+      return []; // Student not enrolled in this class → no subjects
+    }
+
+    // 7. Extract subjectId and subjectName from enrolledSubjectId map
+    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
     const subjects = [];
-    snapshot.forEach(doc => subjects.push({ id: doc.id, ...doc.data() }));
+    for (const [subjectId, subjectName] of Object.entries(enrolledSubjectIdMap)) {
+      subjects.push({ subjectId, subjectName });
+    }
+
+    // 8. Return as JSON
     return subjects;
   }
 });
@@ -261,25 +348,69 @@ createQueuedEndpoint({
     return chapters;
   }
 });
-
-// Endpoint 5: Filter tutors by classId + subjectId + chapterId
+//=============================================================================
+// Endpoint 5: Filter tutors by classId + subjectId (from student's enrollment)
+//=============================================================================
 createQueuedEndpoint({
   method: 'get',
   path: '/tutors',
   queueName: 'tutors',
   handler: async (req, db) => {
+    // 1. Validate Firestore availability
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-    const { classId, subjectId, chapterId } = req.query;
-    if (!classId || !subjectId || !chapterId) {
-      throw new Error('BAD_REQUEST: classId, subjectId, and chapterId are required');
+
+    // 2. Extract tokenId from request (Authorization header or body)
+    const tokenId =
+      req.headers.authorization?.split('Bearer ')[1] || req.body?.tokenId;
+
+    if (!tokenId) {
+      throw new Error('UNAUTHORIZED: Missing token');
     }
-    let query = db.collection('tutors')
-      .where('classId', '==', classId)
-      .where('subjectId', '==', subjectId)
-      .where('chapterId', '==', chapterId);
-    const snapshot = await query.get();
+
+    let userUId;
+    try {
+      // 3. Verify token using Firebase Admin SDK
+      const decodedToken = await admin.auth().verifyIdToken(tokenId);
+      userUId = decodedToken.uid;
+    } catch (err) {
+      throw new Error('UNAUTHORIZED: Invalid or expired token');
+    }
+
+    // 4. Get classId and subjectId from query parameters
+    const { classId, subjectId } = req.query;
+    if (!classId || !subjectId) {
+      throw new Error('BAD_REQUEST: classId and subjectId are required');
+    }
+
+    // 5. Query studentEnrollments where studentId == userUId
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1) // Assuming one enrollment document per student
+      .get();
+
+    if (enrollmentSnapshot.empty) {
+      return []; // No enrollment found for this student
+    }
+
+    const enrollmentData = enrollmentSnapshot.docs[0].data();
+
+    // 6. Verify that the student is enrolled in the requested classId and subjectId
+    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
+    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
+
+    if (!enrolledClassIdMap[classId] || !enrolledSubjectIdMap[subjectId]) {
+      return []; // Student not enrolled in this class or subject
+    }
+
+    // 7. Extract tutorId and tutorName from enrolledTutorId map
+    const enrolledTutorIdMap = enrollmentData.enrolledTutorId || {};
     const tutors = [];
-    snapshot.forEach(doc => tutors.push({ id: doc.id, ...doc.data() }));
+    for (const [tutorId, tutorName] of Object.entries(enrolledTutorIdMap)) {
+      tutors.push({ tutorId, tutorName });
+    }
+
+    // 8. Return as JSON
     return tutors;
   }
 });
