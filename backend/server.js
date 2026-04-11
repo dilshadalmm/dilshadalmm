@@ -469,7 +469,7 @@ createQueuedEndpoint({
     limit = Math.min(Math.max(1, limit), MAX_LIMIT);
     const data = classes.slice(0, limit);
 
-    return { data, total: classes.length };
+    return data;
   }
 });
 
