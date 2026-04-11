@@ -1,19 +1,125 @@
+// npm install express-rate-limit pino pino-pretty
+
 const express = require('express');
 const cors = require('cors');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
+const pino = require('pino');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
-app.use(cors());
+// -------------------------------
+// Logger setup
+// -------------------------------
+const logger = pino({
+  level: isProduction ? 'info' : 'debug',
+  transport: !isProduction ? { target: 'pino-pretty', options: { colorize: true } } : undefined,
+});
+
+// -------------------------------
+// Trust proxy for rate limiter (Fix 3)
+// -------------------------------
+app.set('trust proxy', 1);
+
+// -------------------------------
+// CORS configuration
+// -------------------------------
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+  : ['http://localhost:3000'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  allowedHeaders: ['Authorization', 'Content-Type'],
+}));
+
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ limit: '20mb', extended: true }));
 
 // -------------------------------
-// 1. Queue Class (unchanged, improved)
+// Rate limiters
+// -------------------------------
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many requests, please slow down.' });
+  },
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many requests, please slow down.' });
+  },
+});
+
+app.use(globalLimiter);
+
+// -------------------------------
+// Input validation helper
+// -------------------------------
+const ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+function validateIdParam(value, name) {
+  if (!value || typeof value !== 'string' || !ID_REGEX.test(value)) {
+    throw new Error(`BAD_REQUEST: Invalid ${name} format`);
+  }
+}
+
+// -------------------------------
+// Authentication middleware
+// -------------------------------
+async function verifyFirebaseToken(req, res, next) {
+  const authHeader = req.headers.authorization;
+  const tokenId = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null; // Fix 2: removed req.query fallback
+  if (!tokenId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const decodedToken = await admin.auth().verifyIdToken(tokenId);
+    req.user = decodedToken;
+    next();
+  } catch (err) {
+    logger.warn({ err }, 'Invalid or expired token');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+}
+
+// -------------------------------
+// Admin secret check for /queue-stats
+// -------------------------------
+function requireAdminSecret(req, res, next) {
+  const adminSecret = process.env.ADMIN_SECRET;
+  if (!adminSecret) {
+    logger.error('ADMIN_SECRET environment variable not set');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+  const provided = req.headers['x-admin-secret'];
+  if (provided !== adminSecret) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+}
+
+// -------------------------------
+// Queue Class (unchanged logic, logger integration)
 // -------------------------------
 class Queue {
   constructor(concurrency, maxSize, timeoutMs = 30000) {
@@ -76,27 +182,15 @@ class Queue {
   }
 
   _log(message) {
-    if (!isProduction) console.log(`[Queue] ${message}`);
+    logger.debug(message);
   }
 }
 
 // -------------------------------
-// 2. Factory Pattern: Zero Boilerplate
+// Factory Pattern: Zero Boilerplate
 // -------------------------------
-// Global registry for queue stats
 const QUEUE_REGISTRY = [];
 
-/**
- * Creates a queued endpoint with automatic queue management, error handling, and stats.
- * @param {Object} config
- * @param {string} config.method - HTTP method (get, post, put, delete)
- * @param {string} config.path - Express route path
- * @param {string} config.queueName - Unique name for this queue (used in stats)
- * @param {number} config.concurrency - Concurrent jobs allowed (default 50)
- * @param {number} config.maxSize - Max total requests (waiting + active) (default 5000)
- * @param {number} config.timeoutMs - Job timeout in ms (default 30000)
- * @param {Function} config.handler - Async function (req, db) => data (return value sent as JSON)
- */
 function createQueuedEndpoint({
   method,
   path,
@@ -106,27 +200,23 @@ function createQueuedEndpoint({
   timeoutMs = 30000,
   handler
 }) {
-  // 1. Create dedicated queue instance
   const queue = new Queue(concurrency, maxSize, timeoutMs);
-  
-  // 2. Register for stats endpoint
   QUEUE_REGISTRY.push({ name: queueName, queue });
   
-  // 3. Define Express route handler
+  // All endpoints except health and stats will have auth middleware applied separately.
+  // We define the route handler here; middleware will be attached at registration time.
   app[method](path, async (req, res) => {
     try {
-      // Pass req and db to the business logic
       const result = await queue.add(() => handler(req, db));
       res.json(result);
     } catch (err) {
-      // Reuse existing error handling logic
       handleError(err, res);
     }
   });
 }
 
 // -------------------------------
-// 3. Firebase Admin Initialization
+// Firebase Admin Initialization
 // -------------------------------
 let firebaseInitialized = false;
 const db = (() => {
@@ -137,20 +227,20 @@ const db = (() => {
         credential: admin.credential.cert(serviceAccount)
       });
       firebaseInitialized = true;
-      console.log('✅ Firebase Admin initialized');
+      logger.info('✅ Firebase Admin initialized');
       return admin.firestore();
     } else {
-      console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT not set');
+      logger.warn('⚠️ FIREBASE_SERVICE_ACCOUNT not set');
       return null;
     }
   } catch (err) {
-    console.error('Failed to initialize Firebase Admin:', err.message);
+    logger.error({ err }, 'Failed to initialize Firebase Admin');
     return null;
   }
 })();
 
 // -------------------------------
-// 4. Error Handler (unchanged)
+// Error Handler (updated with FORBIDDEN case)
 // -------------------------------
 const handleError = (err, res) => {
   if (err.message === 'QUEUE_FULL: Server is busy, please try again later.') {
@@ -163,19 +253,30 @@ const handleError = (err, res) => {
     const cleanMsg = err.message.replace('BAD_REQUEST:', '').trim();
     return res.status(400).json({ error: cleanMsg });
   }
-  console.error('Unhandled error in queued job:', err);
+  // Fix 1: handle FORBIDDEN errors
+  if (err.message.startsWith('FORBIDDEN:')) {
+    const cleanMsg = err.message.replace('FORBIDDEN:', '').trim();
+    return res.status(403).json({ error: cleanMsg });
+  }
+  logger.error({ err }, 'Unhandled error in queued job');
   res.status(500).json({ error: 'Internal server error' });
 };
 
 // -------------------------------
-// 5. Health Check (no queue)
+// Health Check (no auth)
 // -------------------------------
-app.get('/health', (req, res) => res.send('Active'));
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    firebase: firebaseInitialized,
+    uptime: process.uptime()
+  });
+});
 
 // -------------------------------
-// 6. Dynamic Queue Stats Endpoint
+// Dynamic Queue Stats Endpoint (admin protected)
 // -------------------------------
-app.get('/queue-stats', (req, res) => {
+app.get('/queue-stats', requireAdminSecret, (req, res) => {
   const stats = {};
   for (const { name, queue } of QUEUE_REGISTRY) {
     stats[name] = queue.getStats();
@@ -184,344 +285,45 @@ app.get('/queue-stats', (req, res) => {
 });
 
 // -------------------------------
-// 7. All Endpoints Defined Declaratively (ZERO BOILERPLATE)
+// Apply authentication middleware to all queued endpoints
+// We'll define a wrapper to attach middleware after routes are created.
+// Since createQueuedEndpoint registers the route immediately, we can apply a global
+// middleware that runs before route handlers, excluding /health and /queue-stats.
+// -------------------------------
+app.use((req, res, next) => {
+  if (req.path === '/health' || req.path === '/queue-stats') {
+    return next();
+  }
+  verifyFirebaseToken(req, res, next);
+});
+
+// Apply stricter rate limiting to specific endpoints
+app.use('/filter-posts', strictLimiter);
+app.use('/api/posts', strictLimiter);
+
+// -------------------------------
+// All Endpoints Defined Declaratively (ZERO BOILERPLATE)
 // -------------------------------
 
 //===================================================================
-// Endpoint 1: Filter posts (with access control and chapter filter)
+// Endpoint 1: Filter posts (with access control and chapter filter) - Paginated (Fix 4)
 //===================================================================
 createQueuedEndpoint({
   method: 'get',
   path: '/filter-posts',
   queueName: 'filterPosts',
   handler: async (req, db) => {
-    // 1. Validate Firestore availability
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-
-    // 2. Extract and verify token
-    const tokenId = req.headers.authorization?.split('Bearer ')[1] || req.query.tokenId;
-    if (!tokenId) throw new Error('UNAUTHORIZED: Missing token');
-
-    let userUId;
-    try {
-      const decodedToken = await admin.auth().verifyIdToken(tokenId);
-      userUId = decodedToken.uid;
-    } catch (err) {
-      throw new Error('UNAUTHORIZED: Invalid or expired token');
-    }
-
-    // 3. Get required query parameters
+    
+    const userUId = req.user.uid;
     const { classId, subjectId, chapterId, tutorId } = req.query;
-    if (!classId || !subjectId || !chapterId || !tutorId) {
-      throw new Error('BAD_REQUEST: classId, subjectId, chapterId, and tutorId are required');
-    }
-
-    // 4. Fetch student enrollment document
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
-      .limit(1)
-      .get();
-
-    if (enrollmentSnapshot.empty) {
-      throw new Error('FORBIDDEN: No enrollment record found');
-    }
-
-    const enrollmentData = enrollmentSnapshot.docs[0].data();
-
-    // 5. Verify enrollment in the requested class, subject, and tutor
-    const enrolledClassMap = enrollmentData.enrolledClassId || {};
-    const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
-    const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
-
-    if (!enrolledClassMap[classId]) {
-      throw new Error('FORBIDDEN: Student not enrolled in this class');
-    }
-    if (!enrolledSubjectMap[subjectId]) {
-      throw new Error('FORBIDDEN: Student not enrolled in this subject');
-    }
-    if (!enrolledTutorMap[tutorId]) {
-      throw new Error('FORBIDDEN: Student not assigned to this tutor');
-    }
-
-    // 6. Check expiry for the given tutor
-    const expireAtMap = enrollmentData.expireAt || {};
-    const tutorExpiry = expireAtMap[tutorId];
-    if (!tutorExpiry) {
-      throw new Error('FORBIDDEN: No expiry date set for this tutor');
-    }
-
-    let expiryDate;
-    if (tutorExpiry instanceof admin.firestore.Timestamp) {
-      expiryDate = tutorExpiry.toDate();
-    } else if (tutorExpiry && typeof tutorExpiry.toDate === 'function') {
-      expiryDate = tutorExpiry.toDate();
-    } else {
-      expiryDate = new Date(tutorExpiry);
-    }
-
-    if (isNaN(expiryDate.getTime())) {
-      throw new Error('INTERNAL_ERROR: Invalid expiry timestamp format');
-    }
-
-    const now = new Date();
-    if (now >= expiryDate) {
-      throw new Error('FORBIDDEN: Access expired for this tutor');
-    }
-
-    // 7. Filter posts by classId, subjectId, chapterId, tutorId
-    let postsQuery = db.collection('posts')
-      .where('classId', '==', classId)
-      .where('subjectId', '==', subjectId)
-      .where('chapterId', '==', chapterId)
-      .where('tutorId', '==', tutorId)
-      .orderBy('createdAt', 'asc');
-
-    const snapshot = await postsQuery.get();
-    const posts = [];
-    snapshot.forEach(doc => posts.push({ id: doc.id, ...doc.data() }));
-
-    // 8. Return posts array
-    return posts;
-  }
-});
-
-
-//======================================================
-// Endpoint 2: Get classes for authenticated student
-//======================================================
-createQueuedEndpoint({
-  method: 'get',
-  path: '/classes',
-  queueName: 'classes',
-  handler: async (req, db) => {
-    // 1. Validate Firestore availability
-    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-
-    // 2. Extract tokenId from request (supports Authorization header or body)
-    const tokenId =
-      req.headers.authorization?.split('Bearer ')[1] || req.body?.tokenId;
-
-    if (!tokenId) {
-      throw new Error('UNAUTHORIZED: Missing token');
-    }
-
-    let userUId;
-    try {
-      // 3. Verify the token using Firebase Admin SDK
-      const decodedToken = await admin.auth().verifyIdToken(tokenId);
-      userUId = decodedToken.uid;
-    } catch (err) {
-      throw new Error('UNAUTHORIZED: Invalid or expired token');
-    }
-
-    // 4. Query studentEnrollments where studentId == userUId
-    const enrollmentsSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
-      .get();
-
-    if (enrollmentsSnapshot.empty) {
-      return []; // No enrollments found
-    }
-
-    // 5. Extract classId and className from the enrolledClassId map
-    const classes = [];
-    enrollmentsSnapshot.forEach(doc => {
-      const data = doc.data();
-      const enrolledClassIdMap = data.enrolledClassId || {};
-      for (const [classId, className] of Object.entries(enrolledClassIdMap)) {
-        classes.push({ classId, className });
-      }
+    
+    // Validate input
+    [classId, subjectId, chapterId, tutorId].forEach(val => {
+      if (!val) throw new Error('BAD_REQUEST: classId, subjectId, chapterId, and tutorId are required');
+      validateIdParam(val, val === classId ? 'classId' : val === subjectId ? 'subjectId' : val === chapterId ? 'chapterId' : 'tutorId');
     });
 
-    // 6. Return as JSON
-    return classes;
-  }
-});
-//====================================================================
-// Endpoint 3: Filter subjects by classId (from student's enrollment)
-//====================================================================
-createQueuedEndpoint({
-  method: 'get',
-  path: '/subjects',
-  queueName: 'subjects',
-  handler: async (req, db) => {
-    // 1. Validate Firestore availability
-    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-
-    // 2. Extract tokenId from request (Authorization header or body)
-    const tokenId =
-      req.headers.authorization?.split('Bearer ')[1] || req.body?.tokenId;
-
-    if (!tokenId) {
-      throw new Error('UNAUTHORIZED: Missing token');
-    }
-
-    let userUId;
-    try {
-      // 3. Verify token using Firebase Admin SDK
-      const decodedToken = await admin.auth().verifyIdToken(tokenId);
-      userUId = decodedToken.uid;
-    } catch (err) {
-      throw new Error('UNAUTHORIZED: Invalid or expired token');
-    }
-
-    // 4. Get classId from query parameters
-    const { classId } = req.query;
-    if (!classId) {
-      throw new Error('BAD_REQUEST: classId is required');
-    }
-
-    // 5. Query studentEnrollments where studentId == userUId
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
-      .limit(1) // Assuming one enrollment document per student
-      .get();
-
-    if (enrollmentSnapshot.empty) {
-      return []; // No enrollment found for this student
-    }
-
-    const enrollmentDoc = enrollmentSnapshot.docs[0];
-    const enrollmentData = enrollmentDoc.data();
-
-    // 6. Verify that the student is enrolled in the requested classId
-    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
-    if (!enrolledClassIdMap[classId]) {
-      return []; // Student not enrolled in this class → no subjects
-    }
-
-    // 7. Extract subjectId and subjectName from enrolledSubjectId map
-    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
-    const subjects = [];
-    for (const [subjectId, subjectName] of Object.entries(enrolledSubjectIdMap)) {
-      subjects.push({ subjectId, subjectName });
-    }
-
-    // 8. Return as JSON
-    return subjects;
-  }
-});
-
-// Endpoint 4: Filter chapters by classId + subjectId
-createQueuedEndpoint({
-  method: 'get',
-  path: '/chapters',
-  queueName: 'chapters',
-  handler: async (req, db) => {
-    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-    const { classId, subjectId } = req.query;
-    if (!classId || !subjectId) {
-      throw new Error('BAD_REQUEST: classId and subjectId are required');
-    }
-    let query = db.collection('chapters')
-      .where('classId', '==', classId)
-      .where('subjectId', '==', subjectId);
-    const snapshot = await query.get();
-    const chapters = [];
-    snapshot.forEach(doc => chapters.push({ id: doc.id, ...doc.data() }));
-    return chapters;
-  }
-});
-//=============================================================================
-// Endpoint 5: Filter tutors by classId + subjectId (from student's enrollment)
-//=============================================================================
-createQueuedEndpoint({
-  method: 'get',
-  path: '/tutors',
-  queueName: 'tutors',
-  handler: async (req, db) => {
-    // 1. Validate Firestore availability
-    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-
-    // 2. Extract tokenId from request (Authorization header or body)
-    const tokenId =
-      req.headers.authorization?.split('Bearer ')[1] || req.body?.tokenId;
-
-    if (!tokenId) {
-      throw new Error('UNAUTHORIZED: Missing token');
-    }
-
-    let userUId;
-    try {
-      // 3. Verify token using Firebase Admin SDK
-      const decodedToken = await admin.auth().verifyIdToken(tokenId);
-      userUId = decodedToken.uid;
-    } catch (err) {
-      throw new Error('UNAUTHORIZED: Invalid or expired token');
-    }
-
-    // 4. Get classId and subjectId from query parameters
-    const { classId, subjectId } = req.query;
-    if (!classId || !subjectId) {
-      throw new Error('BAD_REQUEST: classId and subjectId are required');
-    }
-
-    // 5. Query studentEnrollments where studentId == userUId
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
-      .limit(1) // Assuming one enrollment document per student
-      .get();
-
-    if (enrollmentSnapshot.empty) {
-      return []; // No enrollment found for this student
-    }
-
-    const enrollmentData = enrollmentSnapshot.docs[0].data();
-
-    // 6. Verify that the student is enrolled in the requested classId and subjectId
-    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
-    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
-
-    if (!enrolledClassIdMap[classId] || !enrolledSubjectIdMap[subjectId]) {
-      return []; // Student not enrolled in this class or subject
-    }
-
-    // 7. Extract tutorId and tutorName from enrolledTutorId map
-    const enrolledTutorIdMap = enrollmentData.enrolledTutorId || {};
-    const tutors = [];
-    for (const [tutorId, tutorName] of Object.entries(enrolledTutorIdMap)) {
-      tutors.push({ tutorId, tutorName });
-    }
-
-    // 8. Return as JSON
-    return tutors;
-  }
-});
-
-//======================================================================
-// Endpoint 6: Cursor-based pagination for posts (with access control)
-//======================================================================
-createQueuedEndpoint({
-  method: 'get',
-  path: '/api/posts',
-  queueName: 'posts',
-  handler: async (req, db) => {
-    // 1. Validate Firestore availability
-    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
-
-    // 2. Extract and verify token
-    const tokenId = req.headers.authorization?.split('Bearer ')[1] || req.query.tokenId;
-    if (!tokenId) throw new Error('UNAUTHORIZED: Missing token');
-
-    let userUId;
-    try {
-      const decodedToken = await admin.auth().verifyIdToken(tokenId);
-      userUId = decodedToken.uid;
-    } catch (err) {
-      throw new Error('UNAUTHORIZED: Invalid or expired token');
-    }
-
-    // 3. Get required query parameters
-    const { classId, subjectId, tutorId } = req.query;
-    if (!classId || !subjectId || !tutorId) {
-      throw new Error('BAD_REQUEST: classId, subjectId, and tutorId are required');
-    }
-
-    // 4. Fetch student enrollment document
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
       .where('studentId', '==', userUId)
@@ -533,59 +335,40 @@ createQueuedEndpoint({
     }
 
     const enrollmentData = enrollmentSnapshot.docs[0].data();
-
-    // 5. Verify enrollment in the requested class, subject, and tutor
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
     const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
 
-    if (!enrolledClassMap[classId]) {
-      throw new Error('FORBIDDEN: Student not enrolled in this class');
-    }
-    if (!enrolledSubjectMap[subjectId]) {
-      throw new Error('FORBIDDEN: Student not enrolled in this subject');
-    }
-    if (!enrolledTutorMap[tutorId]) {
-      throw new Error('FORBIDDEN: Student not assigned to this tutor');
-    }
+    if (!enrolledClassMap[classId]) throw new Error('FORBIDDEN: Student not enrolled in this class');
+    if (!enrolledSubjectMap[subjectId]) throw new Error('FORBIDDEN: Student not enrolled in this subject');
+    if (!enrolledTutorMap[tutorId]) throw new Error('FORBIDDEN: Student not assigned to this tutor');
 
-    // 6. Check expiry for the given tutor
     const expireAtMap = enrollmentData.expireAt || {};
     const tutorExpiry = expireAtMap[tutorId];
-    if (!tutorExpiry) {
-      throw new Error('FORBIDDEN: No expiry date set for this tutor');
-    }
+    if (!tutorExpiry) throw new Error('FORBIDDEN: No expiry date set for this tutor');
 
-    // Convert Firestore Timestamp to Date for comparison
     let expiryDate;
     if (tutorExpiry instanceof admin.firestore.Timestamp) {
       expiryDate = tutorExpiry.toDate();
     } else if (tutorExpiry && typeof tutorExpiry.toDate === 'function') {
       expiryDate = tutorExpiry.toDate();
     } else {
-      // Fallback: try to parse as number or string
       expiryDate = new Date(tutorExpiry);
     }
 
-    if (isNaN(expiryDate.getTime())) {
-      throw new Error('INTERNAL_ERROR: Invalid expiry timestamp format');
-    }
+    if (isNaN(expiryDate.getTime())) throw new Error('INTERNAL_ERROR: Invalid expiry timestamp format');
+    if (new Date() >= expiryDate) throw new Error('FORBIDDEN: Access expired for this tutor');
 
-    const now = new Date();
-    if (now >= expiryDate) {
-      throw new Error('FORBIDDEN: Access expired for this tutor');
-    }
-
-    // 7. Parse pagination parameters (limit, cursor)
-    let limit = parseInt(req.query.limit) || 10;
-    if (limit < 1) limit = 10;
+    // --- Pagination (Fix 4) ---
+    let limit = parseInt(req.query.limit) || 20;
     const MAX_LIMIT = 50;
-    limit = Math.min(limit, MAX_LIMIT);
+    limit = Math.min(Math.max(1, limit), MAX_LIMIT);
 
     let cursor = null;
     if (req.query.cursor) {
       try {
-        const rawCursor = JSON.parse(req.query.cursor);
+        const decoded = Buffer.from(req.query.cursor, 'base64').toString('utf8');
+        const rawCursor = JSON.parse(decoded);
         if (!rawCursor.createdAt || !rawCursor.id) {
           throw new Error('BAD_REQUEST: Invalid cursor: missing createdAt or id');
         }
@@ -604,11 +387,278 @@ createQueuedEndpoint({
         }
         cursor = { createdAt: timestamp, id: rawCursor.id };
       } catch (e) {
-        throw new Error(`BAD_REQUEST: Invalid cursor JSON - ${e.message}`);
+        throw new Error(`BAD_REQUEST: Invalid cursor encoding - ${e.message}`);
       }
     }
 
-    // 8. Build posts query with filters
+    let postsQuery = db.collection('posts')
+      .where('classId', '==', classId)
+      .where('subjectId', '==', subjectId)
+      .where('chapterId', '==', chapterId)
+      .where('tutorId', '==', tutorId)
+      .orderBy('createdAt', 'asc')
+      .orderBy(admin.firestore.FieldPath.documentId());
+
+    if (cursor) {
+      postsQuery = postsQuery.startAfter(cursor.createdAt, cursor.id);
+    }
+    postsQuery = postsQuery.limit(limit + 1);
+
+    const snapshot = await postsQuery.get();
+    const docs = snapshot.docs;
+    const hasMore = docs.length > limit;
+    const resultDocs = hasMore ? docs.slice(0, limit) : docs;
+
+    const data = resultDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    let nextCursor = null;
+    if (hasMore) {
+      const lastDoc = resultDocs[resultDocs.length - 1];
+      const lastData = lastDoc.data();
+      const createdAt = lastData.createdAt;
+      if (!createdAt || !(createdAt instanceof admin.firestore.Timestamp)) {
+        throw new Error('Post document missing valid createdAt Timestamp');
+      }
+      const cursorObj = {
+        createdAt: {
+          _seconds: createdAt.seconds,
+          _nanoseconds: createdAt.nanoseconds
+        },
+        id: lastDoc.id
+      };
+      nextCursor = Buffer.from(JSON.stringify(cursorObj)).toString('base64');
+    }
+
+    return { data, nextCursor, hasMore };
+  }
+});
+
+//======================================================
+// Endpoint 2: Get classes for authenticated student (paginated)
+//======================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/classes',
+  queueName: 'classes',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+    
+    const userUId = req.user.uid;
+
+    const enrollmentsSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .get();
+
+    if (enrollmentsSnapshot.empty) {
+      return { data: [], total: 0 };
+    }
+
+    const classes = [];
+    enrollmentsSnapshot.forEach(doc => {
+      const data = doc.data();
+      const enrolledClassIdMap = data.enrolledClassId || {};
+      for (const [classId, className] of Object.entries(enrolledClassIdMap)) {
+        classes.push({ classId, className });
+      }
+    });
+
+    // Pagination
+    let limit = parseInt(req.query.limit) || 50;
+    const MAX_LIMIT = 100;
+    limit = Math.min(Math.max(1, limit), MAX_LIMIT);
+    const data = classes.slice(0, limit);
+
+    return { data, total: classes.length };
+  }
+});
+
+//====================================================================
+// Endpoint 3: Filter subjects by classId (from student's enrollment)
+//====================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/subjects',
+  queueName: 'subjects',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+    
+    const userUId = req.user.uid;
+    const { classId } = req.query;
+    if (!classId) throw new Error('BAD_REQUEST: classId is required');
+    validateIdParam(classId, 'classId');
+
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1)
+      .get();
+
+    if (enrollmentSnapshot.empty) return [];
+
+    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
+    if (!enrolledClassIdMap[classId]) return [];
+
+    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
+    const subjects = [];
+    for (const [subjectId, subjectName] of Object.entries(enrolledSubjectIdMap)) {
+      subjects.push({ subjectId, subjectName });
+    }
+    return subjects;
+  }
+});
+
+// Endpoint 4: Filter chapters by classId + subjectId
+createQueuedEndpoint({
+  method: 'get',
+  path: '/chapters',
+  queueName: 'chapters',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+    const { classId, subjectId } = req.query;
+    if (!classId || !subjectId) {
+      throw new Error('BAD_REQUEST: classId and subjectId are required');
+    }
+    validateIdParam(classId, 'classId');
+    validateIdParam(subjectId, 'subjectId');
+
+    let query = db.collection('chapters')
+      .where('classId', '==', classId)
+      .where('subjectId', '==', subjectId);
+    const snapshot = await query.get();
+    const chapters = [];
+    snapshot.forEach(doc => chapters.push({ id: doc.id, ...doc.data() }));
+    return chapters;
+  }
+});
+
+//=============================================================================
+// Endpoint 5: Filter tutors by classId + subjectId (from student's enrollment)
+//=============================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/tutors',
+  queueName: 'tutors',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+    
+    const userUId = req.user.uid;
+    const { classId, subjectId } = req.query;
+    if (!classId || !subjectId) {
+      throw new Error('BAD_REQUEST: classId and subjectId are required');
+    }
+    validateIdParam(classId, 'classId');
+    validateIdParam(subjectId, 'subjectId');
+
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1)
+      .get();
+
+    if (enrollmentSnapshot.empty) return [];
+
+    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
+    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
+
+    if (!enrolledClassIdMap[classId] || !enrolledSubjectIdMap[subjectId]) return [];
+
+    const enrolledTutorIdMap = enrollmentData.enrolledTutorId || {};
+    const tutors = [];
+    for (const [tutorId, tutorName] of Object.entries(enrolledTutorIdMap)) {
+      tutors.push({ tutorId, tutorName });
+    }
+    return tutors;
+  }
+});
+
+//======================================================================
+// Endpoint 6: Cursor-based pagination for posts (with access control)
+//======================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/api/posts',
+  queueName: 'posts',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+    
+    const userUId = req.user.uid;
+    const { classId, subjectId, tutorId } = req.query;
+    if (!classId || !subjectId || !tutorId) {
+      throw new Error('BAD_REQUEST: classId, subjectId, and tutorId are required');
+    }
+    validateIdParam(classId, 'classId');
+    validateIdParam(subjectId, 'subjectId');
+    validateIdParam(tutorId, 'tutorId');
+
+    const enrollmentSnapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userUId)
+      .limit(1)
+      .get();
+
+    if (enrollmentSnapshot.empty) {
+      throw new Error('FORBIDDEN: No enrollment record found');
+    }
+
+    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrolledClassMap = enrollmentData.enrolledClassId || {};
+    const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
+    const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
+
+    if (!enrolledClassMap[classId]) throw new Error('FORBIDDEN: Student not enrolled in this class');
+    if (!enrolledSubjectMap[subjectId]) throw new Error('FORBIDDEN: Student not enrolled in this subject');
+    if (!enrolledTutorMap[tutorId]) throw new Error('FORBIDDEN: Student not assigned to this tutor');
+
+    const expireAtMap = enrollmentData.expireAt || {};
+    const tutorExpiry = expireAtMap[tutorId];
+    if (!tutorExpiry) throw new Error('FORBIDDEN: No expiry date set for this tutor');
+
+    let expiryDate;
+    if (tutorExpiry instanceof admin.firestore.Timestamp) {
+      expiryDate = tutorExpiry.toDate();
+    } else if (tutorExpiry && typeof tutorExpiry.toDate === 'function') {
+      expiryDate = tutorExpiry.toDate();
+    } else {
+      expiryDate = new Date(tutorExpiry);
+    }
+
+    if (isNaN(expiryDate.getTime())) throw new Error('INTERNAL_ERROR: Invalid expiry timestamp format');
+    if (new Date() >= expiryDate) throw new Error('FORBIDDEN: Access expired for this tutor');
+
+    let limit = parseInt(req.query.limit) || 10;
+    const MAX_LIMIT = 50;
+    limit = Math.min(Math.max(1, limit), MAX_LIMIT);
+
+    let cursor = null;
+    if (req.query.cursor) {
+      try {
+        const decoded = Buffer.from(req.query.cursor, 'base64').toString('utf8');
+        const rawCursor = JSON.parse(decoded);
+        if (!rawCursor.createdAt || !rawCursor.id) {
+          throw new Error('BAD_REQUEST: Invalid cursor: missing createdAt or id');
+        }
+        let timestamp;
+        if (rawCursor.createdAt._seconds !== undefined) {
+          timestamp = new admin.firestore.Timestamp(
+            rawCursor.createdAt._seconds,
+            rawCursor.createdAt._nanoseconds || 0
+          );
+        } else {
+          const date = new Date(rawCursor.createdAt);
+          if (isNaN(date.getTime())) {
+            throw new Error('BAD_REQUEST: Invalid cursor: createdAt is not a valid date');
+          }
+          timestamp = admin.firestore.Timestamp.fromDate(date);
+        }
+        cursor = { createdAt: timestamp, id: rawCursor.id };
+      } catch (e) {
+        throw new Error(`BAD_REQUEST: Invalid cursor encoding - ${e.message}`);
+      }
+    }
+
     let postsQuery = db.collection('posts')
       .where('classId', '==', classId)
       .where('subjectId', '==', subjectId)
@@ -636,21 +686,21 @@ createQueuedEndpoint({
       if (!createdAt || !(createdAt instanceof admin.firestore.Timestamp)) {
         throw new Error('Post document missing valid createdAt Timestamp');
       }
-      nextCursor = {
+      const cursorObj = {
         createdAt: {
           _seconds: createdAt.seconds,
           _nanoseconds: createdAt.nanoseconds
         },
         id: lastDoc.id
       };
+      nextCursor = Buffer.from(JSON.stringify(cursorObj)).toString('base64');
     }
 
     return { data, nextCursor, hasMore };
   }
 });
 
-
 // -------------------------------
-// 8. Start Server
+// Start Server
 // -------------------------------
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
