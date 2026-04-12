@@ -741,6 +741,115 @@ createQueuedEndpoint({
   }
 });
 
+// Strict rate limit for create post endpoint
+app.use('/tutor/post/create', strictLimiter);
+
+//======================================================================
+// Endpoint 8 : Create post (tutor only, with full access validation)
+//======================================================================
+createQueuedEndpoint({
+  method: 'post',
+  path: '/tutor/post/create',
+  queueName: 'tutorPostCreate',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const userUId = req.user.uid;
+
+    // ── Extract & validate required fields ──
+    const {
+      classId,
+      subjectId,
+      chapterId,
+      tutorId,
+      tutorName,
+      postTitle,
+      postSubtle,
+      videoUrl,
+      thumbnailUrl
+    } = req.body;
+
+    // Required field checks
+    if (!classId)    throw new Error('BAD_REQUEST: classId is required');
+    if (!subjectId)  throw new Error('BAD_REQUEST: subjectId is required');
+    if (!chapterId)  throw new Error('BAD_REQUEST: chapterId is required');
+    if (!tutorId)    throw new Error('BAD_REQUEST: tutorId is required');
+    if (!postTitle)  throw new Error('BAD_REQUEST: postTitle is required');
+    if (!videoUrl)   throw new Error('BAD_REQUEST: videoUrl is required');
+
+    // Validate ID formats
+    validateIdParam(classId,   'classId');
+    validateIdParam(subjectId, 'subjectId');
+    validateIdParam(chapterId, 'chapterId');
+    validateIdParam(tutorId,   'tutorId');
+
+    // Validate string lengths
+    if (postTitle.length > 200)  throw new Error('BAD_REQUEST: postTitle too long (max 200 chars)');
+    if (postSubtle && postSubtle.length > 1000) throw new Error('BAD_REQUEST: postSubtle too long (max 1000 chars)');
+
+    // ── Security: tutorId must match authenticated user ──
+    if (tutorId !== userUId) {
+      throw new Error('FORBIDDEN: tutorId does not match authenticated user');
+    }
+
+    // ── Verify tutor document with all required parameters ──
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', userUId)
+      .where('status', '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    const tutorData = tutorSnapshot.docs[0].data();
+
+    // Verify classId is registered
+    const registeredClassId = tutorData.registeredClassId || {};
+    if (!registeredClassId[classId]) {
+      throw new Error('FORBIDDEN: Tutor not registered for this class');
+    }
+
+    // Verify subjectId is registered under classId
+    const registeredSubjectId = tutorData.registeredSubjectId || {};
+    const classSubjects = registeredSubjectId[classId] || {};
+    if (!classSubjects[subjectId]) {
+      throw new Error('FORBIDDEN: Tutor not registered for this subject under the given class');
+    }
+
+    // ── Create post document ──
+    const postsRef = db.collection('posts').doc(); // Firestore auto-generated ID
+    const postId = postsRef.id;
+
+    const postDocument = {
+      postId,
+      postTitle:   String(postTitle).trim(),
+      postSubtle:  postSubtle ? String(postSubtle).trim() : '',
+      createdAt:   admin.firestore.FieldValue.serverTimestamp(),
+      createdBy:   userUId,
+      tutorId:     String(tutorId),
+      tutorName:   tutorName ? String(tutorName).trim() : '',
+      videoUrl:    String(videoUrl).trim(),
+      thumbnailUrl: thumbnailUrl ? String(thumbnailUrl).trim() : '',
+      classId:     String(classId),
+      subjectId:   String(subjectId),
+      chapterId:   String(chapterId),
+    };
+
+    await postsRef.set(postDocument);
+
+    logger.info({ postId, tutorId, classId, subjectId, chapterId }, 'Post created successfully');
+
+    return {
+      success: true,
+      message: 'Post created successfully',
+      postId
+    };
+  }
+});
+
 // -------------------------------
 // Start Server
 // -------------------------------
