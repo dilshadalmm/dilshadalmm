@@ -700,6 +700,47 @@ createQueuedEndpoint({
   }
 });
 
+// Strict rate limit for tutor profile endpoint
+app.use('/tutor/profile', strictLimiter);
+
+//======================================================================
+// Endpoint 7 : Get tutor profile by verified token
+//======================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/tutor/profile',
+  queueName: 'tutorProfile',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const userUId = req.user.uid;
+
+    // Query tutors collection by tutorId == userUId and status == approved
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', userUId)
+      .where('status', '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    const tutorData = tutorSnapshot.docs[0].data();
+
+    // Sanitize and return only required fields
+    return {
+      tutorId: String(tutorData.tutorId || ''),
+      tutorName: String(tutorData.tutorName || ''),
+      registeredClassId: typeof tutorData.registeredClassId === 'object' && tutorData.registeredClassId !== null
+        ? tutorData.registeredClassId : {},
+      registeredSubjectId: typeof tutorData.registeredSubjectId === 'object' && tutorData.registeredSubjectId !== null
+        ? tutorData.registeredSubjectId : {}
+    };
+  }
+});
+
 // -------------------------------
 // Start Server
 // -------------------------------
