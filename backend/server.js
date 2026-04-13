@@ -850,6 +850,317 @@ createQueuedEndpoint({
   }
 });
 
+// ======================== VIDEO WATCH TIME TRACKING (PRODUCTION READY) ========================
+// In-Memory Cache & Helpers
+const sessionCache = new Map(); // key -> { data, timer, lastUpdated, retryCount }
+
+// Simple per-key locking to prevent race conditions on shared sessions
+const locks = new Map(); // key -> Promise chain
+
+function withLock(key, fn) {
+    if (!locks.has(key)) {
+        locks.set(key, Promise.resolve());
+    }
+    const prev = locks.get(key);
+    const next = prev.then(() => fn()).finally(() => {
+        // Clean up lock if no one else is waiting (optional)
+        if (locks.get(key) === next) {
+            locks.delete(key);
+        }
+    });
+    locks.set(key, next);
+    return next;
+}
+
+// Merge and consolidate segments (overlapping/adjacent)
+function consolidateSegments(segments) {
+    if (!segments || segments.length === 0) return [];
+    const sorted = [...segments].sort((a, b) => a.start - b.start);
+    const merged = [];
+    let current = { ...sorted[0] };
+    for (let i = 1; i < sorted.length; i++) {
+        const seg = sorted[i];
+        if (seg.start <= current.end) {
+            current.end = Math.max(current.end, seg.end);
+        } else {
+            merged.push(current);
+            current = { ...seg };
+        }
+    }
+    merged.push(current);
+    return merged;
+}
+
+// Compute total watched time from merged segments
+function computeTotalFromSegments(segments) {
+    if (!segments || segments.length === 0) return 0;
+    return segments.reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+}
+
+// Flush a cached session to Firestore with retry on failure
+async function flushSessionToFirestore(key) {
+    const entry = sessionCache.get(key);
+    if (!entry) return;
+
+    if (!db) {
+        logger.warn('Firestore not available, skipping flush for key: %s', key);
+        return;
+    }
+
+    try {
+        const docRef = db.collection('activityLog').doc(); // auto-generated ID
+        await docRef.set({
+            lessonId: entry.data.lessonId,
+            userUId: entry.data.userUId,
+            createdAt: entry.data.createdAt,
+            activityType: entry.data.activityType,
+            event_segments: entry.data.event_segments,
+            totalWatchedTime: entry.data.totalWatchedTime,
+            flushedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        // Success – remove from cache
+        sessionCache.delete(key);
+        logger.info(`Flushed session to Firestore: ${key}`);
+    } catch (err) {
+        logger.error(err, `Failed to flush session ${key}, will retry later`);
+        // Increment retry count, keep in cache for periodic retry
+        entry.retryCount = (entry.retryCount || 0) + 1;
+        entry.lastUpdated = Date.now(); // prevent immediate reaping
+        // Exponential backoff for next flush attempt (capped at 5 min)
+        const delay = Math.min(1000 * Math.pow(2, entry.retryCount), 300000);
+        if (entry.timer) clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => flushSessionToFirestore(key), delay);
+    }
+}
+
+// Schedule flush after delay (61 seconds)
+function scheduleFlush(key, delayMs = 61000) {
+    const entry = sessionCache.get(key);
+    if (entry && entry.timer) clearTimeout(entry.timer);
+    const timer = setTimeout(async () => {
+        await flushSessionToFirestore(key);
+    }, delayMs);
+    if (entry) entry.timer = timer;
+}
+
+// Periodic cleanup of stale sessions (older than 10 minutes)
+setInterval(async () => {
+    const now = Date.now();
+    const staleKeys = [];
+    for (const [key, entry] of sessionCache.entries()) {
+        if (now - entry.lastUpdated > 10 * 60 * 1000) {
+            staleKeys.push(key);
+        }
+    }
+    for (const key of staleKeys) {
+        logger.info(`Periodic cleanup flushing stale session: ${key}`);
+        await flushSessionToFirestore(key);
+    }
+}, 5 * 60 * 1000); // run every 5 minutes
+
+// ========================
+// Endpoint 1: Real-time Session Tracking (with strict rate limiting)
+// ========================
+app.post('/track-session', strictLimiter, verifyFirebaseToken, async (req, res) => {
+    try {
+        const { lessonId, userUId, createdAt, activityType, lessonDuration, event_segments } = req.body;
+
+        // Validate required fields
+        if (!lessonId || !userUId || !createdAt || !activityType) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        // Ownership check: authenticated user must match userUId
+        if (req.user.uid !== userUId) {
+            return res.status(403).json({ error: 'Forbidden: userUId does not match authenticated user' });
+        }
+
+        const cacheKey = `${userUId}_${lessonId}_${createdAt}_${activityType}`;
+        const now = Date.now();
+        const createdAtTimestamp = new Date(createdAt).getTime();
+        if (isNaN(createdAtTimestamp)) {
+            return res.status(400).json({ error: 'Invalid createdAt timestamp' });
+        }
+
+        // Use per-key lock to serialize updates for the same session
+        await withLock(cacheKey, async () => {
+            // Get existing cache entry if any (re-fetch inside lock to avoid stale reads)
+            const existingEntry = sessionCache.get(cacheKey);
+            const existingSegments = existingEntry?.data?.event_segments || [];
+            const existingTotal = existingEntry?.data?.totalWatchedTime || 0;
+            const lastUpdateTime = existingEntry?.lastUpdated || createdAtTimestamp;
+
+            // Merge incoming segments with existing segments
+            const allSegments = [...existingSegments, ...(event_segments || [])];
+            const mergedSegments = consolidateSegments(allSegments);
+
+            // Server-side recalculation of total watched time from merged segments
+            let verifiedTotal = computeTotalFromSegments(mergedSegments);
+
+            // Calculate net increase since last update
+            let netIncrease = verifiedTotal - existingTotal;
+            if (netIncrease < 0) netIncrease = 0;
+
+            // Physical possibility check: time elapsed since last update (or session start)
+            const elapsedSeconds = (now - lastUpdateTime) / 1000;
+            const tolerance = 1.0; // 1 second tolerance for network latency
+
+            if (netIncrease > elapsedSeconds + tolerance) {
+                logger.warn(`Cheat detected for ${cacheKey}: net increase ${netIncrease}s > elapsed ${elapsedSeconds}s. Capping.`);
+                netIncrease = elapsedSeconds;
+                verifiedTotal = existingTotal + netIncrease;
+            }
+
+            // Update cache entry (preserve any existing timer)
+            const previousEntry = sessionCache.get(cacheKey);
+            const timer = previousEntry?.timer || null;
+            const retryCount = previousEntry?.retryCount || 0;
+
+            sessionCache.set(cacheKey, {
+                data: {
+                    lessonId,
+                    userUId,
+                    createdAt,
+                    activityType,
+                    lessonDuration,
+                    event_segments: mergedSegments,
+                    totalWatchedTime: verifiedTotal,
+                    lastUpdated: now
+                },
+                lastUpdated: now,
+                timer,
+                retryCount
+            });
+
+            // Reset flush timer (outside lock to avoid deadlock, but fine here)
+            scheduleFlush(cacheKey, 61000);
+        });
+
+        // Force flush if requested (e.g., on page unload)
+        if (req.query.force === 'true') {
+            await flushSessionToFirestore(cacheKey);
+            return res.json({ status: 'flushed' });
+        }
+
+        res.json({ status: 'cached', key: cacheKey });
+    } catch (err) {
+        logger.error(err, 'Error in /track-session');
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// ========================
+// Endpoint 2: Daily Completion Reporting
+// ========================
+app.get('/daily-completion', verifyFirebaseToken, async (req, res) => {
+    try {
+        const { lessonId, createdAt, activityType } = req.query;
+
+        if (!lessonId || !createdAt || !activityType) {
+            return res.status(400).json({ error: 'Missing required query params: lessonId, createdAt, activityType' });
+        }
+
+        if (!db) {
+            return res.status(503).json({ error: 'Firestore not available' });
+        }
+
+        // Query all matching sessions from activityLog
+        const snapshot = await db.collection('activityLog')
+            .where('lessonId', '==', lessonId)
+            .where('createdAt', '==', createdAt)
+            .where('activityType', '==', activityType)
+            .get();
+
+        // Aggregate totalWatchedTime per userUId
+        const userTimeMap = new Map(); // userUId -> totalWatchedTime
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            const uid = data.userUId;
+            const watched = data.totalWatchedTime || 0;
+            userTimeMap.set(uid, (userTimeMap.get(uid) || 0) + watched);
+        });
+
+        if (userTimeMap.size === 0) {
+            return res.json({
+                date: createdAt,
+                lessonId,
+                completed: [],
+                incomplete: []
+            });
+        }
+
+        // Fetch lesson videoDuration for videoLesson (for threshold)
+        let videoDuration = null;
+        if (activityType === 'videoLesson') {
+            try {
+                const lessonDoc = await db.collection('lessons').doc(lessonId).get();
+                if (lessonDoc.exists) {
+                    videoDuration = lessonDoc.data().videoDuration;
+                } else {
+                    logger.warn(`Lesson ${lessonId} not found, using fallback?`);
+                }
+            } catch (err) {
+                logger.error(err, 'Failed to fetch lesson videoDuration');
+            }
+        }
+
+        // Fetch user names in batch
+        const userIds = Array.from(userTimeMap.keys());
+        const userNames = new Map();
+        const chunkSize = 10;
+        for (let i = 0; i < userIds.length; i += chunkSize) {
+            const chunk = userIds.slice(i, i + chunkSize);
+            const usersSnapshot = await db.collection('users')
+                .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
+                .get();
+            usersSnapshot.forEach(doc => {
+                userNames.set(doc.id, doc.data().userName || doc.id);
+            });
+        }
+        // Fill missing names with userUId
+        for (const uid of userIds) {
+            if (!userNames.has(uid)) userNames.set(uid, uid);
+        }
+
+        // Determine completion based on activityType
+        const completed = [];
+        const incomplete = [];
+
+        for (const [uid, totalTime] of userTimeMap.entries()) {
+            let isComplete = false;
+            if (activityType === 'videoLesson') {
+                if (videoDuration && totalTime >= videoDuration) isComplete = true;
+                else if (!videoDuration) isComplete = false;
+            } else {
+                isComplete = totalTime > 0;
+            }
+
+            const userEntry = {
+                userUId: uid,
+                userName: userNames.get(uid),
+                totalWatchedTime: totalTime
+            };
+
+            if (isComplete) {
+                completed.push(userEntry);
+            } else {
+                incomplete.push(userEntry);
+            }
+        }
+
+        res.json({
+            date: createdAt,
+            lessonId,
+            completed,
+            incomplete
+        });
+    } catch (err) {
+        logger.error(err, 'Error in /daily-completion');
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+
 // -------------------------------
 // Start Server
 // -------------------------------
