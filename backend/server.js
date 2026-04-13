@@ -849,8 +849,9 @@ createQueuedEndpoint({
     };
   }
 });
-
+//===============================================================================================
 // ======================== VIDEO WATCH TIME TRACKING (PRODUCTION READY) ========================
+//===============================================================================================
 // In-Memory Cache & Helpers
 const sessionCache = new Map(); // key -> { data, timer, lastUpdated, retryCount }
 
@@ -1159,6 +1160,33 @@ app.get('/daily-completion', verifyFirebaseToken, async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+// Graceful shutdown – flush all cached sessions before exit
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    
+    logger.info(`Received ${signal}. Flushing ${sessionCache.size} cached sessions...`);
+    
+    const flushPromises = [];
+    for (const key of sessionCache.keys()) {
+        flushPromises.push(flushSessionToFirestore(key));
+    }
+    
+    // Wait up to 5 seconds for flushes to complete
+    await Promise.race([
+        Promise.allSettled(flushPromises),
+        new Promise(resolve => setTimeout(resolve, 5000))
+    ]);
+    
+    logger.info('Shutdown complete.');
+    process.exit(0);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 
 // -------------------------------
