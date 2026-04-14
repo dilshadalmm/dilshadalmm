@@ -548,13 +548,12 @@ createQueuedEndpoint({
         return { data: [], total: 0 };
       }
       // Bug fix 3: Merge all enrollment documents for the student
-      const merged = {};
-      enrollmentsSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        Object.assign(merged, data.enrolledClassId || {});
-      });
-      enrollmentData = { enrolledClassId: merged };
-      setCache(enrollmentCacheKey, enrollmentData);
+      const mergedDoc = {};
+enrollmentsSnapshot.docs.forEach(doc => {
+  Object.assign(mergedDoc, doc.data());
+});
+enrollmentData = mergedDoc;
+setCache(enrollmentCacheKey, enrollmentData);
     }
 
     const classes = [];
