@@ -78,9 +78,14 @@ app.use(globalLimiter);
 //========== ONE-TIME MIGRATION ENDPOINT ==============//
 let migrationRan = false;
 
-app.post('/admin/migrate-tutor-id', async (req, res) => {
+app.get('/admin/migrate-tutor-id', async (req, res) => {
   if (migrationRan) {
     return res.status(403).json({ error: 'Migration already ran this session' });
+  }
+
+  const secret = req.query.secret;
+  if (!secret || secret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
   const secret = req.headers['x-admin-secret'];
