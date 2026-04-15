@@ -88,11 +88,6 @@ app.get('/admin/migrate-tutor-id', async (req, res) => {
     return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const secret = req.headers['x-admin-secret'];
-  if (!secret || secret !== process.env.ADMIN_SECRET) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-
   if (!db) {
     return res.status(500).json({ error: 'Firestore not initialized' });
   }
