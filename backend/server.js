@@ -336,17 +336,16 @@ createQueuedEndpoint({
 
     const enrollmentData = enrollmentSnapshot.docs[0].data();
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
-    const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
-    const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
-
+    const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
+    const enrolledTutorId = enrollmentData.enrolledTutorId || {};
+    const expireAt = enrollmentData.expireAt || {};
     if (!enrolledClassMap[classId]) throw new Error('FORBIDDEN: Student not enrolled in this class');
-    if (!enrolledSubjectMap[subjectId]) throw new Error('FORBIDDEN: Student not enrolled in this subject');
-    if (!enrolledTutorMap[tutorId]) throw new Error('FORBIDDEN: Student not assigned to this tutor');
-
-    const expireAtMap = enrollmentData.expireAt || {};
-    const tutorExpiry = expireAtMap[tutorId];
+    const subjectsForClass = enrolledSubjectId[classId];
+    if (!subjectsForClass || !subjectsForClass.hasOwnProperty(subjectId)) throw new Error('FORBIDDEN: Student not enrolled in this subject');
+    const tutorsForSubject = enrolledTutorId[classId]?.[subjectId];
+    if (!tutorsForSubject || !tutorsForSubject.hasOwnProperty(tutorId)) throw new Error('FORBIDDEN: Student not assigned to this tutor');
+    const tutorExpiry = expireAt[classId]?.[subjectId]?.[tutorId];
     if (!tutorExpiry) throw new Error('FORBIDDEN: No expiry date set for this tutor');
-
     let expiryDate;
     if (tutorExpiry instanceof admin.firestore.Timestamp) {
       expiryDate = tutorExpiry.toDate();
@@ -655,17 +654,16 @@ createQueuedEndpoint({
 
     const enrollmentData = enrollmentSnapshot.docs[0].data();
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
-    const enrolledSubjectMap = enrollmentData.enrolledSubjectId || {};
-    const enrolledTutorMap = enrollmentData.enrolledTutorId || {};
-
+    const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
+    const enrolledTutorId = enrollmentData.enrolledTutorId || {};
+    const expireAt = enrollmentData.expireAt || {};
     if (!enrolledClassMap[classId]) throw new Error('FORBIDDEN: Student not enrolled in this class');
-    if (!enrolledSubjectMap[subjectId]) throw new Error('FORBIDDEN: Student not enrolled in this subject');
-    if (!enrolledTutorMap[tutorId]) throw new Error('FORBIDDEN: Student not assigned to this tutor');
-
-    const expireAtMap = enrollmentData.expireAt || {};
-    const tutorExpiry = expireAtMap[tutorId];
+    const subjectsForClass = enrolledSubjectId[classId];
+    if (!subjectsForClass || !subjectsForClass.hasOwnProperty(subjectId)) throw new Error('FORBIDDEN: Student not enrolled in this subject');
+    const tutorsForSubject = enrolledTutorId[classId]?.[subjectId];
+    if (!tutorsForSubject || !tutorsForSubject.hasOwnProperty(tutorId)) throw new Error('FORBIDDEN: Student not assigned to this tutor');
+    const tutorExpiry = expireAt[classId]?.[subjectId]?.[tutorId];
     if (!tutorExpiry) throw new Error('FORBIDDEN: No expiry date set for this tutor');
-
     let expiryDate;
     if (tutorExpiry instanceof admin.firestore.Timestamp) {
       expiryDate = tutorExpiry.toDate();
