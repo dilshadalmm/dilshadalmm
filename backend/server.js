@@ -98,10 +98,10 @@ app.post('/enroll', strictLimiter, async (req, res) => {
       throw error; // rethrow unexpected auth errors
     }
 
-    const userUId = userRecord.uid;
+    const userUId = userRecord.email;
 
     // 2. Check existing enrollment
-    const enrollmentRef = db.collection('studentEnrollments').doc(userUId);
+    const enrollmentRef = db.collection('studentEnrollments').doc(userEmail);
     const enrollmentDoc = await enrollmentRef.get();
     if (enrollmentDoc.exists) {
       return res.json({ message: 'User has already enrolled for this course. Thank You!' });
@@ -114,7 +114,7 @@ app.post('/enroll', strictLimiter, async (req, res) => {
 
     // 4. Create enrollment document
     const enrollmentData = {
-      studentId: userUId,
+      studentId: userEmail,
 
       enrolledClassId: {
         class_CEE: "CEE"
@@ -403,7 +403,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.uid;
+    const userUId = req.user.email;
     const { classId, subjectId, chapterId, tutorId } = req.query;
     
     // Validate input
@@ -414,7 +414,7 @@ createQueuedEndpoint({
 
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
+      .where('studentId', '==', userEmail)
       .limit(1)
       .get();
 
@@ -530,11 +530,11 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.uid;
+    const userUId = req.user.email;
 
     const enrollmentsSnapshot = await db
       .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
+      .where('studentId', '==', userEmail)
       .get();
 
     if (enrollmentsSnapshot.empty) {
@@ -570,14 +570,14 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.uid;
+    const userUId = req.user.email;
     const { classId } = req.query;
     if (!classId) throw new Error('BAD_REQUEST: classId is required');
     validateIdParam(classId, 'classId');
 
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
+      .where('studentId', '==', userEmail)
       .limit(1)
       .get();
 
@@ -642,7 +642,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.uid;
+    const userUId = req.user.email;
     const { classId, subjectId } = req.query;
     if (!classId || !subjectId) {
       throw new Error('BAD_REQUEST: classId and subjectId are required');
@@ -653,7 +653,7 @@ createQueuedEndpoint({
     // Single Firestore read
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
+      .where('studentId', '==', userEmail)
       .limit(1)
       .get();
 
@@ -721,7 +721,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.uid;
+    const userUId = req.user.email;
     const { classId, subjectId, tutorId } = req.query;
     if (!classId || !subjectId || !tutorId) {
       throw new Error('BAD_REQUEST: classId, subjectId, and tutorId are required');
@@ -732,7 +732,7 @@ createQueuedEndpoint({
 
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
-      .where('studentId', '==', userUId)
+      .where('studentId', '==', userEmail)
       .limit(1)
       .get();
 
@@ -849,15 +849,15 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
 
-    const userUId = req.user.uid;
+    const userEmail = req.user.email;
 
-    // Query tutors collection by tutorId == userUId and status == approved
-    const tutorSnapshot = await db
-      .collection('tutors')
-      .where('tutorId', '==', userUId)
-      .where('status', '==', 'approved')
-      .limit(1)
-      .get();
+// Query tutors collection by tutorId == userEmail and status == approved
+const tutorSnapshot = await db
+  .collection('tutors')
+  .where('tutorId', '==', userEmail)
+  .where('status', '==', 'approved')
+  .limit(1)
+  .get();
 
     if (tutorSnapshot.empty) {
       throw new Error('FORBIDDEN: No approved tutor found for this account');
@@ -890,7 +890,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
 
-    const userUId = req.user.uid;
+    const userUId = req.user.email;
 
     // ── Extract & validate required fields ──
     const {
@@ -924,14 +924,14 @@ createQueuedEndpoint({
     if (postSubtle && postSubtle.length > 1000) throw new Error('BAD_REQUEST: postSubtle too long (max 1000 chars)');
 
     // ── Security: tutorId must match authenticated user ──
-    if (tutorId !== userUId) {
+    if (tutorId !== userEmail) {
       throw new Error('FORBIDDEN: tutorId does not match authenticated user');
     }
 
     // ── Verify tutor document with all required parameters ──
     const tutorSnapshot = await db
       .collection('tutors')
-      .where('tutorId', '==', userUId)
+      .where('tutorId', '==', userEmail)
       .where('status', '==', 'approved')
       .limit(1)
       .get();
@@ -964,7 +964,7 @@ createQueuedEndpoint({
       postTitle:   String(postTitle).trim(),
       postSubtle:  postSubtle ? String(postSubtle).trim() : '',
       createdAt:   admin.firestore.FieldValue.serverTimestamp(),
-      createdBy:   userUId,
+      createdBy:   userEmail,
       tutorId:     String(tutorId),
       tutorName:   tutorName ? String(tutorName).trim() : '',
       videoUrl:    String(videoUrl).trim(),
