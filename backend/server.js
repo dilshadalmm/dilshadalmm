@@ -73,6 +73,94 @@ const strictLimiter = rateLimit({
 
 app.use(globalLimiter);
 
+//========== Temporary Endpoint ==============//
+// -------------------------------------------------------------------
+// Public Enrollment Endpoint (no auth required – defined before auth middleware)
+// -------------------------------------------------------------------
+const VALID_PROMO_CODE = "CEE 2026";  // Hardcoded for MVP
+
+app.post('/enroll', strictLimiter, async (req, res) => {
+  try {
+    const { email, promoCode } = req.body;
+    if (!email || !promoCode) {
+      return res.status(400).json({ error: 'Email and promo code are required' });
+    }
+
+    // 1. Get user from Firebase Auth
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByEmail(email);
+    } catch (error) {
+      if (error.code === 'auth/user-not-found') {
+        // Redirect to auth page if user doesn't exist
+        return res.redirect('https://tutoriom.github.io/auth/');
+      }
+      throw error; // rethrow unexpected auth errors
+    }
+
+    const userUId = userRecord.uid;
+
+    // 2. Check existing enrollment
+    const enrollmentRef = db.collection('studentEnrollments').doc(userUId);
+    const enrollmentDoc = await enrollmentRef.get();
+    if (enrollmentDoc.exists) {
+      return res.json({ message: 'User has already enrolled for this course. Thank You!' });
+    }
+
+    // 3. Validate promo code
+    if (promoCode !== VALID_PROMO_CODE) {
+      return res.status(400).json({ error: 'Invalid promo code' });
+    }
+
+    // 4. Create enrollment document
+    const enrollmentData = {
+      studentId: userUId,
+
+      enrolledClassId: {
+        class_CEE: "CEE"
+      },
+
+      enrolledSubjectId: {
+        class_CEE: {
+          subject_Chemistry: "Chemistry"
+        }
+      },
+
+      enrolledTutorId: {
+        class_CEE: {
+          subject_Chemistry: {
+            "wGDFlA75p2RdRhO6eVTC5UEdwA23": "General"
+          }
+        }
+      },
+
+      expireAt: {
+        class_CEE: {
+          subject_Chemistry: {
+            "wGDFlA75p2RdRhO6eVTC5UEdwA23": "2026-12-31"
+          }
+        }
+      },
+
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdBy: "admin",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await enrollmentRef.set(enrollmentData);
+
+    // 5. Success response
+    return res.status(201).json({
+      success: true,
+      message: "Enrollment successful"
+    });
+
+  } catch (error) {
+    logger.error({ err: error }, 'Enrollment endpoint error');
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // -------------------------------
 // Input validation helper
 // -------------------------------
