@@ -74,6 +74,133 @@ const strictLimiter = rateLimit({
 app.use(globalLimiter);
 
 //========== Temporary Endpoint ==============//
+
+//==============================================================================
+// TEMPORARY Admin Endpoint: Migrate studentEnrollments (GET version)
+// WARNING: Remove this endpoint immediately after migration is complete!
+//==============================================================================
+createQueuedEndpoint({
+  method: 'get', // <-- Changed to GET for browser access
+  path: '/admin/migrate-enrollments',
+  queueName: 'admin-migration',
+  handler: async (req, db) => {
+    // ── Security: Read secret from query parameter ?secret=... ──
+    const ADMIN_SECRET = process.env.ADMIN_MIGRATION_SECRET || 'change-me-in-production';
+    const providedSecret = req.query.secret;
+
+    if (!providedSecret || providedSecret !== ADMIN_SECRET) {
+      throw new Error('UNAUTHORIZED: Invalid or missing secret parameter');
+    }
+
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const BATCH_SIZE = 400; // Firestore batch limit is 500
+    const studentEnrollmentsRef = db.collection('studentEnrollments');
+
+    // Fetch all existing enrollment documents (old format)
+    const oldDocsSnapshot = await studentEnrollmentsRef.get();
+    const oldDocs = oldDocsSnapshot.docs;
+
+    let totalProcessed = 0;
+    let totalCreated = 0;
+    let totalSkipped = 0;
+    let errors = [];
+
+    // Process in batches
+    for (let i = 0; i < oldDocs.length; i += BATCH_SIZE) {
+      const batch = db.batch();
+      const chunk = oldDocs.slice(i, i + BATCH_SIZE);
+      let batchOperations = 0;
+
+      for (const oldDoc of chunk) {
+        const oldData = oldDoc.data();
+        const studentId = oldData.studentId;
+
+        if (!studentId || typeof studentId !== 'string') {
+          totalSkipped++;
+          continue;
+        }
+
+        const enrolledClassId = oldData.enrolledClassId || {};
+        const enrolledSubjectId = oldData.enrolledSubjectId || {};
+        const enrolledTutorId = oldData.enrolledTutorId || {};
+        const expireAt = oldData.expireAt || {};
+
+        for (const [classId, className] of Object.entries(enrolledClassId)) {
+          const subjectsForClass = enrolledSubjectId[classId] || {};
+          const tutorsForClass = enrolledTutorId[classId] || {};
+
+          for (const [subjectId, subjectName] of Object.entries(subjectsForClass)) {
+            const tutorsForSubject = tutorsForClass[subjectId] || {};
+            const expiryForSubject = expireAt[classId]?.[subjectId] || {};
+
+            for (const [tutorId, tutorName] of Object.entries(tutorsForSubject)) {
+              const expiryValue = expiryForSubject[tutorId];
+              if (expiryValue === undefined) continue;
+
+              let expiryTimestamp = null;
+              if (expiryValue && typeof expiryValue.toDate === 'function') {
+                expiryTimestamp = expiryValue;
+              } else if (expiryValue instanceof Date) {
+                expiryTimestamp = expiryValue;
+              } else if (typeof expiryValue === 'string') {
+                const d = new Date(expiryValue);
+                if (!isNaN(d.getTime())) expiryTimestamp = d;
+              } else if (typeof expiryValue === 'number') {
+                expiryTimestamp = new Date(expiryValue);
+              }
+
+              if (!expiryTimestamp) continue;
+
+              const compositeId = `${studentId}_${classId}_${subjectId}_${tutorId}`
+                .replace(/[\/#?\[\]@$&+,:;=]/g, '_');
+
+              const newDocRef = studentEnrollmentsRef.doc(compositeId);
+
+              batch.set(newDocRef, {
+                studentId,
+                classId,
+                className: className || '',
+                subjectId,
+                subjectName: subjectName || '',
+                tutorId,
+                tutorName: tutorName || '',
+                expireAt: expiryTimestamp,
+                _migratedFrom: oldDoc.id,
+                _migratedAt: new Date()
+              }, { merge: true });
+
+              batchOperations++;
+              totalCreated++;
+            }
+          }
+        }
+
+        totalProcessed++;
+      }
+
+      if (batchOperations > 0) {
+        try {
+          await batch.commit();
+        } catch (err) {
+          errors.push(`Batch commit failed at offset ${i}: ${err.message}`);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      message: 'Migration completed',
+      stats: {
+        oldDocumentsScanned: totalProcessed,
+        newDocumentsCreated: totalCreated,
+        skippedDocuments: totalSkipped,
+        errors: errors.length > 0 ? errors : null
+      }
+    };
+  }
+});
+
 // -------------------------------------------------------------------
 // Public Enrollment Endpoint (no auth required – defined before auth middleware)
 // -------------------------------------------------------------------
@@ -708,6 +835,114 @@ createQueuedEndpoint({
     }
 
     return tutors;
+  }
+});
+
+
+//======================================================================
+// Endpoint 5b: GET /student-access
+// Returns all classes → subjects → tutors for the authenticated student.
+// Single Firestore read. Filters expired enrollments. No query params.
+//======================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/student-access',
+  queueName: 'student-access',
+  handler: async (req, db) => {
+    // ── Guard: Firestore must be initialized ──
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    // ── Auth: email must be present on verified token ──
+    const userEmail = req.user?.email;
+    if (!userEmail) throw new Error('BAD_REQUEST: Authenticated user email is missing');
+
+    // ── Single Firestore read: all enrollment rows for this student ──
+    const snapshot = await db
+      .collection('studentEnrollments')
+      .where('studentId', '==', userEmail)
+      .get();
+
+    // ── Empty guard: no enrollments → return empty classes array ──
+    if (snapshot.empty) return { classes: [] };
+
+    // ── Expiry helper: converts Firestore Timestamp / ISO string / Date → Date ──
+    // Returns null for any value that is missing or cannot be parsed.
+    function toExpiryDate(value) {
+      if (!value) return null;
+      if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+      if (value instanceof Date) return value; // Date object
+      const d = new Date(value); // ISO string fallback
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    const now = Date.now();
+
+    // ── Build hierarchical structure using Maps for O(1) deduplication ──
+    // classMap: classId → { classId, className, subjectMap }
+    const classMap = new Map();
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+
+      // Defensive: skip documents with missing or non-string key IDs
+      const classId = data.classId;
+      const subjectId = data.subjectId;
+      const tutorId = data.tutorId;
+
+      if (!classId || typeof classId !== 'string') return;
+      if (!subjectId || typeof subjectId !== 'string') return;
+      if (!tutorId || typeof tutorId !== 'string') return;
+
+      // ── Expiry validation ──
+      const expiryDate = toExpiryDate(data.expireAt);
+      if (!expiryDate) return; // invalid / missing timestamp → skip
+      if (expiryDate.getTime() <= now) return; // expired → skip
+
+      // Safe string coercion for display fields (fallback to empty string)
+      const className = typeof data.className === 'string' ? data.className : '';
+      const subjectName = typeof data.subjectName === 'string' ? data.subjectName : '';
+      const tutorName = typeof data.tutorName === 'string' ? data.tutorName : '';
+
+      // ── Get or create class entry ──
+      if (!classMap.has(classId)) {
+        classMap.set(classId, {
+          classId,
+          className,
+          subjectMap: new Map()
+        });
+      }
+      const classEntry = classMap.get(classId);
+
+      // ── Get or create subject entry inside the class ──
+      if (!classEntry.subjectMap.has(subjectId)) {
+        classEntry.subjectMap.set(subjectId, {
+          subjectId,
+          subjectName,
+          tutors: []
+        });
+      }
+      const subjectEntry = classEntry.subjectMap.get(subjectId);
+
+      // ── Append tutor ──
+      subjectEntry.tutors.push({
+        tutorId,
+        tutorName,
+        expireAt: expiryDate.toISOString()
+      });
+    });
+
+    // ── Serialize Maps → plain arrays for JSON response ──
+    const classes = [...classMap.values()].map(cls => ({
+      classId: cls.classId,
+      className: cls.className,
+      subjects: [...cls.subjectMap.values()].map(sub => ({
+        subjectId: sub.subjectId,
+        subjectName: sub.subjectName,
+        tutors: sub.tutors
+      }))
+    }));
+
+    return { classes };
   }
 });
 
