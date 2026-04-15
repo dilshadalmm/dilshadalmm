@@ -74,6 +74,92 @@ const strictLimiter = rateLimit({
 app.use(globalLimiter);
 
 //========== Temporary Endpoint ==============//
+
+//========== ONE-TIME MIGRATION ENDPOINT ==============//
+let migrationRan = false;
+
+app.post('/admin/migrate-tutor-id', async (req, res) => {
+  if (migrationRan) {
+    return res.status(403).json({ error: 'Migration already ran this session' });
+  }
+
+  const secret = req.headers['x-admin-secret'];
+  if (!secret || secret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  if (!db) {
+    return res.status(500).json({ error: 'Firestore not initialized' });
+  }
+
+  const OLD_ID = 'wGDFlA75p2RdRhO6eVTC5UEdwA23';
+  const NEW_ID = 'dilshad17600@gmail.com';
+  const results = { studentEnrollments: 0, tutors: 0, posts: 0, errors: [] };
+
+  try {
+    // --- 1. studentEnrollments: update nested tutorId keys and expireAt keys ---
+    const enrollmentSnap = await db.collection('studentEnrollments').get();
+    for (const doc of enrollmentSnap.docs) {
+      const data = doc.data();
+      let changed = false;
+      const enrolledTutorId = data.enrolledTutorId || {};
+      const expireAt = data.expireAt || {};
+
+      // Replace tutorId key inside enrolledTutorId
+      for (const classId of Object.keys(enrolledTutorId)) {
+        for (const subjectId of Object.keys(enrolledTutorId[classId] || {})) {
+          if (enrolledTutorId[classId][subjectId].hasOwnProperty(OLD_ID)) {
+            enrolledTutorId[classId][subjectId][NEW_ID] = enrolledTutorId[classId][subjectId][OLD_ID];
+            delete enrolledTutorId[classId][subjectId][OLD_ID];
+            changed = true;
+          }
+        }
+      }
+
+      // Replace tutorId key inside expireAt
+      for (const classId of Object.keys(expireAt)) {
+        for (const subjectId of Object.keys(expireAt[classId] || {})) {
+          if (expireAt[classId][subjectId].hasOwnProperty(OLD_ID)) {
+            expireAt[classId][subjectId][NEW_ID] = expireAt[classId][subjectId][OLD_ID];
+            delete expireAt[classId][subjectId][OLD_ID];
+            changed = true;
+          }
+        }
+      }
+
+      if (changed) {
+        await doc.ref.update({ enrolledTutorId, expireAt });
+        results.studentEnrollments++;
+      }
+    }
+
+    // --- 2. tutors: update tutorId field ---
+    const tutorSnap = await db.collection('tutors')
+      .where('tutorId', '==', OLD_ID)
+      .get();
+    for (const doc of tutorSnap.docs) {
+      await doc.ref.update({ tutorId: NEW_ID });
+      results.tutors++;
+    }
+
+    // --- 3. posts: update tutorId field ---
+    const postsSnap = await db.collection('posts')
+      .where('tutorId', '==', OLD_ID)
+      .get();
+    for (const doc of postsSnap.docs) {
+      await doc.ref.update({ tutorId: NEW_ID, createdBy: NEW_ID });
+      results.posts++;
+    }
+
+    migrationRan = true;
+    logger.info({ results }, 'Migration completed');
+    return res.status(200).json({ success: true, results });
+
+  } catch (err) {
+    logger.error({ err }, 'Migration failed');
+    return res.status(500).json({ error: 'Migration failed', detail: err.message });
+  }
+});
 // -------------------------------------------------------------------
 // Public Enrollment Endpoint (no auth required – defined before auth middleware)
 // -------------------------------------------------------------------
