@@ -551,6 +551,7 @@ createQueuedEndpoint({
     validateIdParam(classId, 'classId');
     validateIdParam(subjectId, 'subjectId');
 
+    // Single Firestore read for enrollment document
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
       .where('studentId', '==', userUId)
@@ -560,14 +561,24 @@ createQueuedEndpoint({
     if (enrollmentSnapshot.empty) return [];
 
     const enrollmentData = enrollmentSnapshot.docs[0].data();
-    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
-    const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
+    const enrolledClassId = enrollmentData.enrolledClassId || {};
+    const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
+    const enrolledTutorId = enrollmentData.enrolledTutorId || {};
 
-    if (!enrolledClassIdMap[classId] || !enrolledSubjectIdMap[subjectId]) return [];
+    // 1. Validate classId exists in enrolledClassId
+    if (!enrolledClassId.hasOwnProperty(classId)) return [];
 
-    const enrolledTutorIdMap = enrollmentData.enrolledTutorId || {};
+    // 2. Validate subjectId exists under that specific classId in enrolledSubjectId
+    const subjectsForClass = enrolledSubjectId[classId];
+    if (!subjectsForClass || !subjectsForClass.hasOwnProperty(subjectId)) return [];
+
+    // 3. Retrieve tutors for the specific class and subject
+    const tutorsForSubject = enrolledTutorId[classId]?.[subjectId];
+    if (!tutorsForSubject || typeof tutorsForSubject !== 'object') return [];
+
+    // 4. Format output
     const tutors = [];
-    for (const [tutorId, tutorName] of Object.entries(enrolledTutorIdMap)) {
+    for (const [tutorId, tutorName] of Object.entries(tutorsForSubject)) {
       tutors.push({ tutorId, tutorName });
     }
     return tutors;
