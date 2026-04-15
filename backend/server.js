@@ -535,6 +535,7 @@ createQueuedEndpoint({
 
 //=============================================================================
 // Endpoint 5: Filter tutors by classId + subjectId (from student's enrollment)
+// with expiration validation
 //=============================================================================
 createQueuedEndpoint({
   method: 'get',
@@ -551,7 +552,7 @@ createQueuedEndpoint({
     validateIdParam(classId, 'classId');
     validateIdParam(subjectId, 'subjectId');
 
-    // Single Firestore read for enrollment document
+    // Single Firestore read
     const enrollmentSnapshot = await db
       .collection('studentEnrollments')
       .where('studentId', '==', userUId)
@@ -564,11 +565,12 @@ createQueuedEndpoint({
     const enrolledClassId = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
+    const expireAt = enrollmentData.expireAt || {};
 
-    // 1. Validate classId exists in enrolledClassId
+    // 1. Validate classId exists
     if (!enrolledClassId.hasOwnProperty(classId)) return [];
 
-    // 2. Validate subjectId exists under that specific classId in enrolledSubjectId
+    // 2. Validate subjectId exists under that classId
     const subjectsForClass = enrolledSubjectId[classId];
     if (!subjectsForClass || !subjectsForClass.hasOwnProperty(subjectId)) return [];
 
@@ -576,11 +578,37 @@ createQueuedEndpoint({
     const tutorsForSubject = enrolledTutorId[classId]?.[subjectId];
     if (!tutorsForSubject || typeof tutorsForSubject !== 'object') return [];
 
-    // 4. Format output
+    // 4. Retrieve expiry information for the same class/subject
+    const expiryForSubject = expireAt[classId]?.[subjectId] || {};
+
+    // Helper to convert expiry to milliseconds
+    const getExpiryTime = (expiry) => {
+      if (!expiry) return null;
+      // Firestore Timestamp
+      if (expiry.toMillis && typeof expiry.toMillis === 'function') {
+        return expiry.toMillis();
+      }
+      // ISO string or Date
+      return new Date(expiry).getTime();
+    };
+
+    const now = Date.now();
     const tutors = [];
+
     for (const [tutorId, tutorName] of Object.entries(tutorsForSubject)) {
+      const expiryValue = expiryForSubject[tutorId];
+      
+      // Skip if expiry doesn't exist
+      if (expiryValue === undefined) continue;
+
+      const expiryTime = getExpiryTime(expiryValue);
+      
+      // Skip if expiry time is invalid or expired
+      if (expiryTime === null || isNaN(expiryTime) || expiryTime <= now) continue;
+
       tutors.push({ tutorId, tutorName });
     }
+
     return tutors;
   }
 });
