@@ -498,16 +498,27 @@ createQueuedEndpoint({
 
     const enrollmentData = enrollmentSnapshot.docs[0].data();
     const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
-    if (!enrolledClassIdMap[classId]) return [];
+    
+    // Validate classId exists in enrolledClassId
+    if (!enrolledClassIdMap.hasOwnProperty(classId)) return [];
 
     const enrolledSubjectIdMap = enrollmentData.enrolledSubjectId || {};
+    
+    // Retrieve subjects only for the specific classId
+    const subjectsForClass = enrolledSubjectIdMap[classId];
+    
+    // Validate subjectsForClass exists and is an object
+    if (!subjectsForClass || typeof subjectsForClass !== 'object') return [];
+
+    // Convert map to array of {subjectId, subjectName}
     const subjects = [];
-    for (const [subjectId, subjectName] of Object.entries(enrolledSubjectIdMap)) {
+    for (const [subjectId, subjectName] of Object.entries(subjectsForClass)) {
       subjects.push({ subjectId, subjectName });
     }
     return subjects;
   }
 });
+
 
 // Endpoint 4: Filter chapters by classId + subjectId
 createQueuedEndpoint({
