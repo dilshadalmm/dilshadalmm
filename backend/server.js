@@ -98,7 +98,7 @@ app.post('/enroll', strictLimiter, async (req, res) => {
       throw error; // rethrow unexpected auth errors
     }
 
-    const userUId = userRecord.email;
+    const userEmail = userRecord.email;
 
     // 2. Check existing enrollment
     const enrollmentRef = db.collection('studentEnrollments').doc(userEmail);
@@ -403,7 +403,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.email;
+    const userEmail = req.user.email;
     const { classId, subjectId, chapterId, tutorId } = req.query;
     
     // Validate input
@@ -530,7 +530,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.email;
+    const userEmail = req.user.email;
 
     const enrollmentsSnapshot = await db
       .collection('studentEnrollments')
@@ -570,7 +570,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.email;
+    const userEmail = req.user.email;
     const { classId } = req.query;
     if (!classId) throw new Error('BAD_REQUEST: classId is required');
     validateIdParam(classId, 'classId');
@@ -642,7 +642,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.email;
+    const userEmail = req.user.email;
     const { classId, subjectId } = req.query;
     if (!classId || !subjectId) {
       throw new Error('BAD_REQUEST: classId and subjectId are required');
@@ -721,7 +721,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
     
-    const userUId = req.user.email;
+    const userEmail = req.user.email;
     const { classId, subjectId, tutorId } = req.query;
     if (!classId || !subjectId || !tutorId) {
       throw new Error('BAD_REQUEST: classId, subjectId, and tutorId are required');
@@ -890,7 +890,7 @@ createQueuedEndpoint({
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
 
-    const userUId = req.user.email;
+    const userEmail = req.user.email;
 
     // ── Extract & validate required fields ──
     const {
