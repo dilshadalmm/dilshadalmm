@@ -230,6 +230,19 @@ function unflattenFirestoreData(flatData) {
   return result;
         }
 // -------------------------------
+// Shared enrollment loader — reads studentEnrollments once per request
+// -------------------------------
+async function getEnrollmentData(db, userEmail) {
+  const snapshot = await db
+    .collection('studentEnrollments')
+    .where('studentId', '==', userEmail)
+    .limit(1)
+    .get();
+  if (snapshot.empty) return null;
+  return unflattenFirestoreData(snapshot.docs[0].data());
+}
+
+// -------------------------------
 // Authentication middleware
 // -------------------------------
 async function verifyFirebaseToken(req, res, next) {
@@ -328,7 +341,7 @@ class Queue {
   }
 
   _log(message) {
-    logger.debug(message);
+    if (!isProduction) logger.debug(message);
   }
 }
 
@@ -409,6 +422,18 @@ const handleError = (err, res) => {
 };
 
 // -------------------------------
+// Auth + rate limit middleware — must be before ALL route definitions
+// -------------------------------
+app.use((req, res, next) => {
+  if (req.path === '/health' || req.path === '/queue-stats' || req.path === '/enroll') {
+    return next();
+  }
+  verifyFirebaseToken(req, res, next);
+});
+app.use('/filter-posts', strictLimiter);
+app.use('/api/posts', strictLimiter);
+
+// -------------------------------
 // Health Check (no auth)
 // -------------------------------
 app.get('/health', (req, res) => {
@@ -430,22 +455,7 @@ app.get('/queue-stats', requireAdminSecret, (req, res) => {
   res.json(stats);
 });
 
-// -------------------------------
-// Apply authentication middleware to all queued endpoints
-// We'll define a wrapper to attach middleware after routes are created.
-// Since createQueuedEndpoint registers the route immediately, we can apply a global
-// middleware that runs before route handlers, excluding /health and /queue-stats.
-// -------------------------------
-app.use((req, res, next) => {
-  if (req.path === '/health' || req.path === '/queue-stats') {
-    return next();
-  }
-  verifyFirebaseToken(req, res, next);
-});
 
-// Apply stricter rate limiting to specific endpoints
-app.use('/filter-posts', strictLimiter);
-app.use('/api/posts', strictLimiter);
 
 // -------------------------------
 // All Endpoints Defined Declaratively (ZERO BOILERPLATE)
@@ -470,17 +480,9 @@ createQueuedEndpoint({
       validateIdParam(val, val === classId ? 'classId' : val === subjectId ? 'subjectId' : val === chapterId ? 'chapterId' : 'tutorId');
     });
 
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userEmail)
-      .limit(1)
-      .get();
+    const enrollmentData = await getEnrollmentData(db, userEmail);
+    if (!enrollmentData) throw new Error('FORBIDDEN: No enrollment record found');
 
-    if (enrollmentSnapshot.empty) {
-      throw new Error('FORBIDDEN: No enrollment record found');
-    }
-
-    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
@@ -590,23 +592,14 @@ createQueuedEndpoint({
     
     const userEmail = req.user.email;
 
-    const enrollmentsSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userEmail)
-      .get();
-
-    if (enrollmentsSnapshot.empty) {
-      return { data: [], total: 0 };
-    }
+    const enrollmentData = await getEnrollmentData(db, userEmail);
+    if (!enrollmentData) return { data: [], total: 0 };
 
     const classes = [];
-    enrollmentsSnapshot.forEach(doc => {
-      const data = unflattenFirestoreData(doc.data());
-      const enrolledClassIdMap = data.enrolledClassId || {};
-      for (const [classId, className] of Object.entries(enrolledClassIdMap)) {
-        classes.push({ classId, className });
-      }
-    });
+    const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
+    for (const [classId, className] of Object.entries(enrolledClassIdMap)) {
+      classes.push({ classId, className });
+    }
 
     // Pagination
     let limit = parseInt(req.query.limit) || 50;
@@ -633,15 +626,9 @@ createQueuedEndpoint({
     if (!classId) throw new Error('BAD_REQUEST: classId is required');
     validateIdParam(classId, 'classId');
 
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userEmail)
-      .limit(1)
-      .get();
-
-    if (enrollmentSnapshot.empty) return [];
-
-    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
+    const enrollmentData = await getEnrollmentData(db, userEmail);
+    if (!enrollmentData) return [];
+    
     const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
     
     // Validate classId exists in enrolledClassId
@@ -709,15 +696,9 @@ createQueuedEndpoint({
     validateIdParam(subjectId, 'subjectId');
 
     // Single Firestore read
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userEmail)
-      .limit(1)
-      .get();
-
-    if (enrollmentSnapshot.empty) return [];
-
-    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
+    const enrollmentData = await getEnrollmentData(db, userEmail);
+    if (!enrollmentData) return [];
+    
     const enrolledClassId = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
@@ -790,17 +771,9 @@ createQueuedEndpoint({
     validateIdParam(subjectId, 'subjectId');
     validateIdParam(tutorId, 'tutorId');
 
-    const enrollmentSnapshot = await db
-      .collection('studentEnrollments')
-      .where('studentId', '==', userEmail)
-      .limit(1)
-      .get();
-
-    if (enrollmentSnapshot.empty) {
-      throw new Error('FORBIDDEN: No enrollment record found');
-    }
-
-    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
+    const enrollmentData = await getEnrollmentData(db, userEmail);
+    if (!enrollmentData) throw new Error('FORBIDDEN: No enrollment record found');
+  
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
