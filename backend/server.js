@@ -171,7 +171,25 @@ function validateIdParam(value, name) {
     throw new Error(`BAD_REQUEST: Invalid ${name} format`);
   }
 }
-
+// -------------------------------
+// Unflatten dot-notation Firestore fields into nested objects
+// e.g. { "a.b.c": 1 } → { a: { b: { c: 1 } } }
+// -------------------------------
+function unflattenFirestoreData(flatData) {
+  const result = {};
+  for (const [key, value] of Object.entries(flatData)) {
+    const parts = key.split('.');
+    let cursor = result;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (cursor[parts[i]] === undefined || typeof cursor[parts[i]] !== 'object') {
+        cursor[parts[i]] = {};
+      }
+      cursor = cursor[parts[i]];
+    }
+    cursor[parts[parts.length - 1]] = value;
+  }
+  return result;
+}
 // -------------------------------
 // Authentication middleware
 // -------------------------------
@@ -423,7 +441,7 @@ createQueuedEndpoint({
       throw new Error('FORBIDDEN: No enrollment record found');
     }
 
-    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
@@ -544,7 +562,7 @@ createQueuedEndpoint({
 
     const classes = [];
     enrollmentsSnapshot.forEach(doc => {
-      const data = doc.data();
+      const data = unflattenFirestoreData(doc.data());
       const enrolledClassIdMap = data.enrolledClassId || {};
       for (const [classId, className] of Object.entries(enrolledClassIdMap)) {
         classes.push({ classId, className });
@@ -584,7 +602,7 @@ createQueuedEndpoint({
 
     if (enrollmentSnapshot.empty) return [];
 
-    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
     const enrolledClassIdMap = enrollmentData.enrolledClassId || {};
     
     // Validate classId exists in enrolledClassId
@@ -660,7 +678,7 @@ createQueuedEndpoint({
 
     if (enrollmentSnapshot.empty) return [];
 
-    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
     const enrolledClassId = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
@@ -743,7 +761,7 @@ createQueuedEndpoint({
       throw new Error('FORBIDDEN: No enrollment record found');
     }
 
-    const enrollmentData = enrollmentSnapshot.docs[0].data();
+    const enrollmentData = unflattenFirestoreData(enrollmentSnapshot.docs[0].data());
     const enrolledClassMap = enrollmentData.enrolledClassId || {};
     const enrolledSubjectId = enrollmentData.enrolledSubjectId || {};
     const enrolledTutorId = enrollmentData.enrolledTutorId || {};
