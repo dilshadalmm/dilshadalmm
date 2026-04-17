@@ -176,9 +176,48 @@ function validateIdParam(value, name) {
 // e.g. { "a.b.c": 1 } → { a: { b: { c: 1 } } }
 // -------------------------------
 function unflattenFirestoreData(flatData) {
+  // Known structural depths for dot-notation fields written by Endpoint 9.
+  // Depth = number of dot-separated segments BEFORE the leaf value.
+  // e.g. "enrolledClassId.class_CEE" → depth 1 (split into 2 parts, nest 1 level)
+  // e.g. "expireAt.class_CEE.subject_Chemistry.tutor@email.com" → depth 3 (nest 3 levels,
+  //      but the leaf key is everything after the 3rd dot, preserving the email intact)
+  const FIELD_DEPTHS = {
+    enrolledClassId:  1,  // enrolledClassId.<classId>
+    enrolledSubjectId: 2, // enrolledSubjectId.<classId>.<subjectId>
+    enrolledTutorId:  3,  // enrolledTutorId.<classId>.<subjectId>.<tutorEmail>
+    expireAt:         3,  // expireAt.<classId>.<subjectId>.<tutorEmail>
+  };
+
   const result = {};
   for (const [key, value] of Object.entries(flatData)) {
-    const parts = key.split('.');
+    const dotIndex = key.indexOf('.');
+    if (dotIndex === -1) {
+      // No dot → top-level field, copy as-is (handles studentId, createdAt, etc.)
+      result[key] = value;
+      continue;
+    }
+
+    const topField = key.substring(0, dotIndex);
+    const depth = FIELD_DEPTHS[topField];
+
+    if (depth === undefined) {
+      // Unknown field with dots → copy as-is under its full key
+      result[key] = value;
+      continue;
+    }
+
+    // Split only up to `depth` dots, preserving the rest of the key as the final segment.
+    // This keeps tutor emails (e.g. "a@b.com") intact as a single key.
+    let parts = [];
+    let remaining = key;
+    for (let i = 0; i < depth; i++) {
+      const idx = remaining.indexOf('.');
+      if (idx === -1) break;
+      parts.push(remaining.substring(0, idx));
+      remaining = remaining.substring(idx + 1);
+    }
+    parts.push(remaining); // final segment (may contain dots, e.g. an email)
+
     let cursor = result;
     for (let i = 0; i < parts.length - 1; i++) {
       if (cursor[parts[i]] === undefined || typeof cursor[parts[i]] !== 'object') {
@@ -189,7 +228,7 @@ function unflattenFirestoreData(flatData) {
     cursor[parts[parts.length - 1]] = value;
   }
   return result;
-}
+        }
 // -------------------------------
 // Authentication middleware
 // -------------------------------
