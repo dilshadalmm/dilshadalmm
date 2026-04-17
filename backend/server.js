@@ -989,6 +989,213 @@ createQueuedEndpoint({
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Endpoint 9: Enroll a student into a tutor's class/subject (tutor-initiated)
+// POST /tutor/student/enroll
+//
+// Body params:
+//   classId    – ID of the class     (e.g. "class_CEE")
+//   subjectId  – ID of the subject   (e.g. "subject_Chemistry")
+//   studentId  – student's email address
+//   expireAt   – ISO-8601 string or Unix-ms timestamp for enrollment expiry
+//
+// Flow:
+//   1. Validate all body params.
+//   2. Confirm studentId exists in Firebase Auth.
+//   3. Verify tutor (req.user.email) is approved and registered for the
+//      requested classId + subjectId with a non-expired registration.
+//   4. If no valid tutor record → 403.
+//   5. Check studentEnrollments for an existing active enrollment for this
+//      (classId, subjectId, tutorEmail) combination.
+//      If found and active → return "Student is already enrolled."
+//   6. Upsert the studentEnrollments document via dot-notation merge.
+//   7. Return success.
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.use('/tutor/student/enroll', strictLimiter);
+
+//======================================================================
+// Endpoint 9: Enroll student (tutor-initiated, with full validation)
+//======================================================================
+createQueuedEndpoint({
+  method: 'post',
+  path: '/tutor/student/enroll',
+  queueName: 'tutorStudentEnroll',
+  handler: async (req, db) => {
+    // ── Guard: Firestore must be initialized ──────────────────────────
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    // ── 1. Extract & validate body params ────────────────────────────
+    const { classId, subjectId, studentId, expireAt } = req.body;
+
+    if (!classId)   throw new Error('BAD_REQUEST: classId is required');
+    if (!subjectId) throw new Error('BAD_REQUEST: subjectId is required');
+    if (!studentId) throw new Error('BAD_REQUEST: studentId is required');
+    if (!expireAt)  throw new Error('BAD_REQUEST: expireAt is required');
+
+    validateIdParam(classId,   'classId');
+    validateIdParam(subjectId, 'subjectId');
+    validateIdParam(studentId, 'studentId');
+
+    // ── 2. Confirm student exists in Firebase Auth ────────────────────
+    let studentEmail;
+    try {
+      const studentRecord = await admin.auth().getUserByEmail(studentId);
+      studentEmail = studentRecord.email;
+    } catch (err) {
+      if (err.code === 'auth/user-not-found') {
+        throw new Error('BAD_REQUEST: No student account found for this studentId');
+      }
+      logger.error({ err }, 'Endpoint 9: Firebase Auth lookup failed');
+      throw new Error('INTERNAL_ERROR: Failed to verify student account');
+    }
+
+    // ── 3. Resolve tutor identity from the authenticated request ──────
+    const tutorEmail = req.user?.email;
+    if (!tutorEmail) throw new Error('BAD_REQUEST: Authenticated tutor email is missing');
+
+    // ── 4. Fetch and verify the tutor document ────────────────────────
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', tutorEmail)
+      .where('status',  '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor record found for this account');
+    }
+
+    const tutorData = tutorSnapshot.docs[0].data();
+
+    // Verify classId is registered to this tutor
+    const registeredClassId = tutorData.registeredClassId || {};
+    if (!Object.prototype.hasOwnProperty.call(registeredClassId, classId)) {
+      throw new Error('FORBIDDEN: Tutor is not registered for this class');
+    }
+
+    // Verify subjectId is registered under classId
+    const registeredSubjectId = tutorData.registeredSubjectId || {};
+    const classSubjects = registeredSubjectId[classId] || {};
+    if (!Object.prototype.hasOwnProperty.call(classSubjects, subjectId)) {
+      throw new Error('FORBIDDEN: Tutor is not registered for this subject under the given class');
+    }
+
+    // Verify tutor's own registration has not expired for this class/subject
+    const tutorExpireAt = tutorData.expireAt || {};
+    const tutorSubjectExpiry = tutorExpireAt[classId]?.[subjectId];
+    if (!tutorSubjectExpiry) {
+      throw new Error('FORBIDDEN: No expiry date found for tutor registration in this subject');
+    }
+
+    // Normalise Firestore Timestamp | Date | ISO string → Date
+    const toDate = (value) => {
+      if (!value) return null;
+      if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+      if (value instanceof Date) return value;
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    const tutorExpiryDate = toDate(tutorSubjectExpiry);
+    if (!tutorExpiryDate) {
+      throw new Error('INTERNAL_ERROR: Tutor expiry timestamp is in an unrecognised format');
+    }
+    if (tutorExpiryDate <= new Date()) {
+      throw new Error('FORBIDDEN: Tutor registration has expired for this class/subject');
+    }
+
+    // ── 5. Parse & validate the requested enrollment expiry ───────────
+    const enrollmentExpiryDate = toDate(expireAt);
+    if (!enrollmentExpiryDate) {
+      throw new Error('BAD_REQUEST: expireAt is not a valid date/timestamp');
+    }
+    if (enrollmentExpiryDate <= new Date()) {
+      throw new Error('BAD_REQUEST: expireAt must be a future date');
+    }
+    // Enrollment cannot outlive the tutor's own registration
+    if (enrollmentExpiryDate > tutorExpiryDate) {
+      throw new Error("BAD_REQUEST: expireAt cannot exceed the tutor's own registration expiry");
+    }
+
+    // ── 6. Resolve display names for the enrollment document ──────────
+    const className   = String(registeredClassId[classId]  || '');
+    const subjectName = String(classSubjects[subjectId]     || '');
+    const tutorName   = String(tutorData.tutorName          || '');
+
+    // ── 7. Check for an existing active enrollment ────────────────────
+    const enrollmentRef = db.collection('studentEnrollments').doc(studentEmail);
+    const enrollmentDoc = await enrollmentRef.get();
+
+    if (enrollmentDoc.exists) {
+      const existingData = enrollmentDoc.data();
+      const existingTutorMap = existingData.enrolledTutorId?.[classId]?.[subjectId] || {};
+      const existingExpiry   = existingData.expireAt?.[classId]?.[subjectId]?.[tutorEmail];
+
+      if (Object.prototype.hasOwnProperty.call(existingTutorMap, tutorEmail)) {
+        const existingExpiryDate = toDate(existingExpiry);
+        if (existingExpiryDate && existingExpiryDate > new Date()) {
+          // Active enrollment already exists — return friendly message
+          return {
+            success: false,
+            message: 'Student is already enrolled for this course/subject.'
+          };
+        }
+        // Expired enrollment found — fall through to re-enroll
+      }
+    }
+
+    // ── 8. Upsert enrollment using dot-notation merge ─────────────────
+    // set({ merge: true }) with dot-notation keys writes only the targeted
+    // nested fields, leaving all sibling enrollments completely untouched.
+    const expiryTimestamp = admin.firestore.Timestamp.fromDate(enrollmentExpiryDate);
+
+    const enrollmentPayload = {
+      studentId: studentEmail,
+
+      // enrolledClassId   → classId: className
+      [`enrolledClassId.${classId}`]: className,
+
+      // enrolledSubjectId → classId.subjectId: subjectName
+      [`enrolledSubjectId.${classId}.${subjectId}`]: subjectName,
+
+      // enrolledTutorId   → classId.subjectId.tutorEmail: tutorName
+      [`enrolledTutorId.${classId}.${subjectId}.${tutorEmail}`]: tutorName,
+
+      // expireAt          → classId.subjectId.tutorEmail: Timestamp
+      [`expireAt.${classId}.${subjectId}.${tutorEmail}`]: expiryTimestamp,
+
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Write createdAt / createdBy only on first-time document creation
+    if (!enrollmentDoc.exists) {
+      enrollmentPayload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      enrollmentPayload.createdBy = tutorEmail;
+    }
+
+    await enrollmentRef.set(enrollmentPayload, { merge: true });
+
+    logger.info(
+      { tutorEmail, studentEmail, classId, subjectId },
+      'Endpoint 9: Student enrolled successfully'
+    );
+
+    return {
+      success: true,
+      message: 'Student enrolled successfully',
+      data: {
+        studentId: studentEmail,
+        classId,
+        subjectId,
+        tutorId:   tutorEmail,
+        expireAt:  enrollmentExpiryDate.toISOString(),
+      }
+    };
+  }
+});
+
+
 // -------------------------------
 // Start Server
 // -------------------------------
