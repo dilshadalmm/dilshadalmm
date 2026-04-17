@@ -417,6 +417,12 @@ const handleError = (err, res) => {
     const cleanMsg = err.message.replace('FORBIDDEN:', '').trim();
     return res.status(403).json({ error: cleanMsg });
   }
+
+  if (err.message.startsWith('NOT_FOUND:')) {
+    const cleanMsg = err.message.replace('NOT_FOUND:', '').trim();
+    return res.status(404).json({ error: cleanMsg });
+  }
+  
   logger.error({ err }, 'Unhandled error in queued job');
   res.status(500).json({ error: 'Internal server error' });
 };
@@ -432,7 +438,7 @@ app.use((req, res, next) => {
 });
 app.use('/filter-posts', strictLimiter);
 app.use('/api/posts', strictLimiter);
-
+app.use('/student/verify-enrollment', strictLimiter);
 // -------------------------------
 // Health Check (no auth)
 // -------------------------------
@@ -1221,6 +1227,301 @@ createQueuedEndpoint({
         tutorId:   tutorEmail,
         expireAt:  enrollmentExpiryDate.toISOString(),
       }
+    };
+  }
+});
+
+// =============================================================================
+// PATCH 1 — handleError: add NOT_FOUND (404) support
+// -----------------------------------------------------------------------------
+// Replace the existing handleError function in server.js with this version.
+// The only addition is the NOT_FOUND branch; everything else is unchanged.
+// =============================================================================
+
+const handleError = (err, res) => {
+  if (err.message === 'QUEUE_FULL: Server is busy, please try again later.') {
+    return res.status(503).json({ error: err.message });
+  }
+  if (err.message.startsWith('JOB_TIMEOUT:')) {
+    return res.status(504).json({ error: 'Request timeout, please try again.' });
+  }
+  if (err.message.startsWith('BAD_REQUEST:')) {
+    const cleanMsg = err.message.replace('BAD_REQUEST:', '').trim();
+    return res.status(400).json({ error: cleanMsg });
+  }
+  if (err.message.startsWith('FORBIDDEN:')) {
+    const cleanMsg = err.message.replace('FORBIDDEN:', '').trim();
+    return res.status(403).json({ error: cleanMsg });
+  }
+  // ── NEW ──
+  if (err.message.startsWith('NOT_FOUND:')) {
+    const cleanMsg = err.message.replace('NOT_FOUND:', '').trim();
+    return res.status(404).json({ error: cleanMsg });
+  }
+  if (err.message.startsWith('UNAUTHORIZED:')) {
+    const cleanMsg = err.message.replace('UNAUTHORIZED:', '').trim();
+    return res.status(401).json({ error: cleanMsg });
+  }
+  logger.error({ err }, 'Unhandled error in queued job');
+  res.status(500).json({ error: 'Internal server error' });
+};
+
+
+// =============================================================================
+// PATCH 2 — Auth bypass: add '/student/verify-enrollment' to the public-route
+//           exemption list inside the existing auth middleware block.
+// -----------------------------------------------------------------------------
+// Locate this block in server.js and add the new path:
+//
+//   app.use((req, res, next) => {
+//     if (
+//       req.path === '/health'   ||
+//       req.path === '/queue-stats' ||
+//       req.path === '/enroll'   ||
+//       req.path === '/student/verify-enrollment'   // ← ADD THIS LINE
+//     ) {
+//       return next();
+//     }
+//     verifyFirebaseToken(req, res, next);
+//   });
+// =============================================================================
+
+
+// =============================================================================
+// PATCH 3 — Rate-limit: apply strictLimiter to the new endpoint.
+// -----------------------------------------------------------------------------
+// Add this line alongside the other strictLimiter registrations:
+//
+//   app.use('/student/verify-enrollment', strictLimiter);
+// =============================================================================
+
+
+// =============================================================================
+// Endpoint 10 — POST /student/verify-enrollment
+// -----------------------------------------------------------------------------
+// Receives : tokenId, domain  (application/json body)
+// Returns  : { enrollment: <studentEnrollments document data>, tutorId: string }
+//
+// Flow:
+//   1. Validate body params (tokenId, domain).
+//   2. Verify tokenId with Firebase Auth → extract userEmail.
+//   3. Query tutors collection WHERE tutorDomain == domain AND status == 'approved'.
+//      → If not found  → 404 NOT_FOUND.
+//      → Extract tutorId from the matched tutor document.
+//   4. Query studentEnrollments collection WHERE studentId == userEmail.
+//      → If not found  → 404 NOT_FOUND.
+//   5. Unflatten the raw Firestore document (dot-notation support).
+//   6. Walk enrolledTutorId to verify the student has an active, non-expired
+//      enrollment under this tutorId.
+//      → If not found  → 404 NOT_FOUND.
+//      → If expired    → 403 FORBIDDEN.
+//   7. Return the full enrollment document + resolved tutorId.
+//
+// Collection schemas inferred from server.js:
+//
+//   tutors/{docId}
+//     tutorId        : string  (tutor's email / unique identifier)
+//     tutorDomain    : string  (e.g. "chemistry.tutoriom.com")
+//     tutorName      : string
+//     status         : string  ("approved" | "pending" | ...)
+//     registeredClassId   : { [classId]: className }
+//     registeredSubjectId : { [classId]: { [subjectId]: subjectName } }
+//     expireAt            : { [classId]: { [subjectId]: Timestamp|ISO } }
+//
+//   studentEnrollments/{studentEmail}
+//     studentId      : string  (student's email)
+//     enrolledClassId     : { [classId]: className }
+//     enrolledSubjectId   : { [classId]: { [subjectId]: subjectName } }
+//     enrolledTutorId     : { [classId]: { [subjectId]: { [tutorId]: tutorName } } }
+//     expireAt            : { [classId]: { [subjectId]: { [tutorId]: Timestamp|ISO } } }
+//     createdAt      : Timestamp
+//     updatedAt      : Timestamp
+// =============================================================================
+
+// ── Domain validation ──────────────────────────────────────────────────────
+// Accepts standard hostname / subdomain strings.
+// Rejects anything with whitespace, path separators, or query characters.
+const DOMAIN_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9\-\.]{0,252}[a-zA-Z0-9]$/;
+
+function validateDomain(value) {
+  if (!value || typeof value !== 'string' || !DOMAIN_REGEX.test(value)) {
+    throw new Error('BAD_REQUEST: Invalid domain format');
+  }
+}
+
+// ── Shared timestamp normaliser (mirrors the one in Endpoint 9) ────────────
+function toDate(value) {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') return value.toDate(); // Firestore Timestamp
+  if (value instanceof Date) return value;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// ── Endpoint registration ──────────────────────────────────────────────────
+createQueuedEndpoint({
+  method: 'post',
+  path: '/student/verify-enrollment',
+  queueName: 'studentVerifyEnrollment',
+  handler: async (req, db) => {
+
+    // ── Guard ──────────────────────────────────────────────────────────────
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    // ── 1. Extract & validate body params ─────────────────────────────────
+    const { tokenId, domain } = req.body;
+
+    if (!tokenId || typeof tokenId !== 'string' || tokenId.trim() === '') {
+      throw new Error('BAD_REQUEST: tokenId is required');
+    }
+    if (!domain) {
+      throw new Error('BAD_REQUEST: domain is required');
+    }
+    validateDomain(domain.trim());
+
+    const normalizedDomain = domain.trim().toLowerCase();
+
+    // ── 2. Verify Firebase ID token → extract userEmail ───────────────────
+    let userEmail;
+    try {
+      const decodedToken = await admin.auth().verifyIdToken(tokenId.trim());
+      userEmail = decodedToken.email;
+    } catch (err) {
+      logger.warn({ err }, 'Endpoint 10: Invalid or expired tokenId');
+      throw new Error('UNAUTHORIZED: Invalid or expired token');
+    }
+
+    if (!userEmail) {
+      throw new Error('UNAUTHORIZED: Token does not contain a valid email');
+    }
+
+    // ── 3. Resolve tutorId from the tutors collection via domain ──────────
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorDomain', '==', normalizedDomain)
+      .where('status', '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      logger.info({ domain: normalizedDomain }, 'Endpoint 10: No approved tutor found for domain');
+      throw new Error('NOT_FOUND: No approved tutor found for this domain');
+    }
+
+    const tutorData = tutorSnapshot.docs[0].data();
+    const tutorId   = tutorData.tutorId;
+
+    if (!tutorId || typeof tutorId !== 'string') {
+      logger.error({ domain: normalizedDomain }, 'Endpoint 10: tutorId missing in tutor document');
+      throw new Error('INTERNAL_ERROR: Tutor document is missing tutorId field');
+    }
+
+    // ── 4. Fetch the student's enrollment document ─────────────────────────
+    // studentEnrollments uses studentEmail as the document ID (see /enroll endpoint).
+    // We first try a direct doc lookup (O(1)), then fall back to a query for
+    // legacy documents that may not follow the email-as-docId convention.
+    let rawEnrollmentData = null;
+
+    const directRef = db.collection('studentEnrollments').doc(userEmail);
+    const directDoc = await directRef.get();
+
+    if (directDoc.exists) {
+      rawEnrollmentData = directDoc.data();
+    } else {
+      // Fallback: query by studentId field
+      const enrollmentSnapshot = await db
+        .collection('studentEnrollments')
+        .where('studentId', '==', userEmail)
+        .limit(1)
+        .get();
+
+      if (!enrollmentSnapshot.empty) {
+        rawEnrollmentData = enrollmentSnapshot.docs[0].data();
+      }
+    }
+
+    if (!rawEnrollmentData) {
+      logger.info({ userEmail }, 'Endpoint 10: No enrollment record found for student');
+      throw new Error('NOT_FOUND: No enrollment record found for this student');
+    }
+
+    // ── 5. Unflatten dot-notation Firestore fields ─────────────────────────
+    const enrollmentData = unflattenFirestoreData(rawEnrollmentData);
+
+    // ── 6. Verify an active, non-expired enrollment exists for this tutor ──
+    const enrolledTutorId = enrollmentData.enrolledTutorId || {};
+    const expireAt        = enrollmentData.expireAt        || {};
+
+    // Locate the tutorId inside the nested enrolledTutorId map:
+    //   enrolledTutorId[classId][subjectId][tutorId] = tutorName
+    let found       = false;
+    let isExpired   = false;
+
+    outerLoop:
+    for (const classId of Object.keys(enrolledTutorId)) {
+      const subjectsMap = enrolledTutorId[classId];
+      if (!subjectsMap || typeof subjectsMap !== 'object') continue;
+
+      for (const subjectId of Object.keys(subjectsMap)) {
+        const tutorsMap = subjectsMap[subjectId];
+        if (!tutorsMap || typeof tutorsMap !== 'object') continue;
+
+        if (!Object.prototype.hasOwnProperty.call(tutorsMap, tutorId)) continue;
+
+        // Tutor is enrolled — now check expiry
+        const expiryValue = expireAt[classId]?.[subjectId]?.[tutorId];
+
+        if (!expiryValue) {
+          // Enrollment record exists but has no expiry — treat as expired
+          isExpired = true;
+          found     = true;
+          break outerLoop;
+        }
+
+        const expiryDate = toDate(expiryValue);
+
+        if (!expiryDate) {
+          logger.error(
+            { userEmail, tutorId, classId, subjectId },
+            'Endpoint 10: Unparseable expiry timestamp in enrollment'
+          );
+          throw new Error('INTERNAL_ERROR: Enrollment expiry timestamp is in an unrecognised format');
+        }
+
+        found = true;
+        if (expiryDate <= new Date()) {
+          isExpired = true;
+        }
+        break outerLoop;
+      }
+    }
+
+    if (!found) {
+      logger.info(
+        { userEmail, tutorId },
+        'Endpoint 10: No enrollment entry found for this tutor'
+      );
+      throw new Error('NOT_FOUND: No enrollment found for this student and tutor');
+    }
+
+    if (isExpired) {
+      logger.info(
+        { userEmail, tutorId },
+        'Endpoint 10: Enrollment has expired'
+      );
+      throw new Error('FORBIDDEN: Enrollment has expired for this tutor');
+    }
+
+    // ── 7. Return enrollment data + resolved tutorId ───────────────────────
+    logger.info(
+      { userEmail, tutorId, domain: normalizedDomain },
+      'Endpoint 10: Enrollment verified successfully'
+    );
+
+    return {
+      success: true,
+      tutorId,
+      enrollment: enrollmentData,
     };
   }
 });
