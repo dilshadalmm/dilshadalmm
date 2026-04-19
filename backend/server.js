@@ -1528,6 +1528,7 @@ createQueuedEndpoint({
       // expireAt          → classId.subjectId.tutorEmail: Timestamp
       [`expireAt.${classId}.${subjectId}.${tutorEmail}`]: expiryTimestamp,
 
+      enrollmentKeys: admin.firestore.FieldValue.arrayUnion(`${classId}|${subjectId}|${tutorEmail}`),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
@@ -1558,6 +1559,234 @@ createQueuedEndpoint({
   }
 });
 
+// Strict rate limit for enrollment endpoints
+app.use('/tutor/enrollments', strictLimiter);
+app.use('/tutor/enrollment/delete', strictLimiter);
+
+//======================================================================
+// Endpoint 9a: Get enrolled students (tutor only)
+// GET /tutor/enrollments?classId=...&subjectId=...
+//
+// Query params:
+//   classId   – required
+//   subjectId – required
+//
+// Flow:
+//   1. Validate params.
+//   2. Verify tutor is approved.
+//   3. Query studentEnrollments where enrollmentKeys array-contains
+//      "{classId}|{subjectId}|{tutorEmail}".
+//   4. Map each document to a clean response shape.
+//   5. Return list.
+//======================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/tutor/enrollments',
+  queueName: 'tutorEnrollments',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const tutorEmail = req.user?.email;
+    if (!tutorEmail) throw new Error('BAD_REQUEST: Authenticated tutor email is missing');
+
+    // ── 1. Validate query params ──
+    const { classId, subjectId } = req.query;
+
+    if (!classId)   throw new Error('BAD_REQUEST: classId is required');
+    if (!subjectId) throw new Error('BAD_REQUEST: subjectId is required');
+
+    validateIdParam(classId,   'classId');
+    validateIdParam(subjectId, 'subjectId');
+
+    // ── 2. Verify tutor is approved ──
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', tutorEmail)
+      .where('status',  '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    const tutorData = tutorSnapshot.docs[0].data();
+
+    // Verify classId is registered to this tutor
+    const registeredClassId = tutorData.registeredClassId || {};
+    if (!Object.prototype.hasOwnProperty.call(registeredClassId, classId)) {
+      throw new Error('FORBIDDEN: Tutor is not registered for this class');
+    }
+
+    // Verify subjectId is registered under classId
+    const registeredSubjectId = tutorData.registeredSubjectId || {};
+    const classSubjects = registeredSubjectId[classId] || {};
+    if (!Object.prototype.hasOwnProperty.call(classSubjects, subjectId)) {
+      throw new Error('FORBIDDEN: Tutor is not registered for this subject under the given class');
+    }
+
+    // ── 3. Query studentEnrollments ──
+    const enrollmentKey = `${classId}|${subjectId}|${tutorEmail}`;
+
+    const snapshot = await db
+      .collection('studentEnrollments')
+      .where('enrollmentKeys', 'array-contains', enrollmentKey)
+      .get();
+
+    if (snapshot.empty) {
+      return { success: true, data: [] };
+    }
+
+    // ── 4. Map to clean response shape ──
+    const toDate = (value) => {
+      if (!value) return null;
+      if (typeof value.toDate === 'function') return value.toDate();
+      if (value instanceof Date) return value;
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    const data = snapshot.docs.map(doc => {
+      const d = doc.data();
+
+      const expiryRaw  = d.expireAt?.[classId]?.[subjectId]?.[tutorEmail];
+      const expiryDate = toDate(expiryRaw);
+
+      const joinedRaw  = d.createdAt;
+      const joinedDate = toDate(joinedRaw);
+
+      const className   = d.enrolledClassId?.[classId]   || '';
+      const subjectName = d.enrolledSubjectId?.[classId]?.[subjectId] || '';
+
+      return {
+        studentEmail: d.studentId,
+        joinedAt:     joinedDate  ? joinedDate.toISOString()  : null,
+        expireAt:     expiryDate  ? expiryDate.toISOString()  : null,
+        className,
+        subjectName,
+      };
+    });
+
+    logger.info(
+      { tutorEmail, classId, subjectId, count: data.length },
+      'Endpoint 9a: Enrolled students fetched'
+    );
+
+    return { success: true, data };
+  }
+});
+
+//======================================================================
+// Endpoint 9b: Delete a specific enrollment combination (tutor only)
+// DELETE /tutor/enrollment/delete
+//
+// Body params:
+//   studentId – student email (required)
+//   classId   – required
+//   subjectId – required
+//
+// Flow:
+//   1. Validate params.
+//   2. Verify tutor is approved.
+//   3. Fetch the studentEnrollments document.
+//   4. Confirm the enrollment under this tutor actually exists.
+//   5. Remove all nested fields for this classId+subjectId+tutorEmail
+//      combination using FieldValue.delete().
+//   6. Remove the enrollmentKey from the enrollmentKeys array.
+//   7. Return success.
+//======================================================================
+createQueuedEndpoint({
+  method: 'delete',
+  path: '/tutor/enrollment/delete',
+  queueName: 'tutorEnrollmentDelete',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const tutorEmail = req.user?.email;
+    if (!tutorEmail) throw new Error('BAD_REQUEST: Authenticated tutor email is missing');
+
+    // ── 1. Validate body params ──
+    const studentId = req.body?.studentId || req.query?.studentId;
+    const { classId, subjectId } = req.body || {};
+
+    if (!studentId) throw new Error('BAD_REQUEST: studentId is required');
+    if (!classId)   throw new Error('BAD_REQUEST: classId is required');
+    if (!subjectId) throw new Error('BAD_REQUEST: subjectId is required');
+
+    validateIdParam(studentId, 'studentId');
+    validateIdParam(classId,   'classId');
+    validateIdParam(subjectId, 'subjectId');
+
+    // ── 2. Verify tutor is approved ──
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', tutorEmail)
+      .where('status',  '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    // ── 3. Fetch the enrollment document ──
+    const enrollmentRef = db.collection('studentEnrollments').doc(studentId);
+    const enrollmentDoc = await enrollmentRef.get();
+
+    if (!enrollmentDoc.exists) {
+      throw new Error('BAD_REQUEST: No enrollment found for this student');
+    }
+
+    const enrollmentData = enrollmentDoc.data();
+
+    // ── 4. Confirm this specific combination exists under this tutor ──
+    const existingTutorMap = enrollmentData.enrolledTutorId?.[classId]?.[subjectId] || {};
+    if (!Object.prototype.hasOwnProperty.call(existingTutorMap, tutorEmail)) {
+      throw new Error('FORBIDDEN: No enrollment found for this tutor/class/subject combination');
+    }
+
+    // ── 5. Remove all nested fields for this combination ──
+    // Using dot-notation FieldValue.delete() to surgically remove only
+    // this tutor's entry, leaving all other enrollments untouched.
+    const deletePayload = {
+      [`enrolledTutorId.${classId}.${subjectId}.${tutorEmail}`]: admin.firestore.FieldValue.delete(),
+      [`expireAt.${classId}.${subjectId}.${tutorEmail}`]:        admin.firestore.FieldValue.delete(),
+      enrollmentKeys: admin.firestore.FieldValue.arrayRemove(`${classId}|${subjectId}|${tutorEmail}`),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // If this was the only tutor under this subject, also clean up
+    // the subject-level and class-level entries to avoid empty maps.
+    const remainingTutors = Object.keys(existingTutorMap).filter(k => k !== tutorEmail);
+
+    if (remainingTutors.length === 0) {
+      // No other tutors for this subject — remove subject entry too
+      deletePayload[`enrolledSubjectId.${classId}.${subjectId}`] = admin.firestore.FieldValue.delete();
+
+      // Check if this was the only subject under this class
+      const subjectsUnderClass = enrollmentData.enrolledSubjectId?.[classId] || {};
+      const remainingSubjects  = Object.keys(subjectsUnderClass).filter(k => k !== subjectId);
+
+      if (remainingSubjects.length === 0) {
+        // No other subjects for this class — remove class entry too
+        deletePayload[`enrolledClassId.${classId}`] = admin.firestore.FieldValue.delete();
+      }
+    }
+
+    await enrollmentRef.update(deletePayload);
+
+    logger.info(
+      { tutorEmail, studentId, classId, subjectId },
+      'Endpoint 9b: Enrollment deleted successfully'
+    );
+
+    return {
+      success: true,
+      message: 'Enrollment removed successfully',
+      data: { studentId, classId, subjectId, tutorId: tutorEmail }
+    };
+  }
+});
 
 // -------------------------------
 // Start Server
