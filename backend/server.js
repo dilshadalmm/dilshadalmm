@@ -942,17 +942,40 @@ app.use('/tutor/post/create', strictLimiter);
 
 //======================================================================
 // Endpoint 8 : Create post (tutor only, with full access validation)
+//
+// Body (existing post fields – unchanged):
+//   classId, subjectId, chapterId, tutorId, tutorName,
+//   postTitle, postSubtle, videoUrl, thumbnailUrl
+//
+// NEW optional activity – bulk question upload:
+//   questions  – Array of question objects to write into the
+//                `questions` collection. Each element must contain:
+//     questionNo    (integer ≥ 1)
+//     questionType  ("Objective" | "Subjective")
+//     questionText  (non-empty string, max 2000 chars)
+//     options       (array of 2-6 strings; only required for Objective)
+//     correctIndex  (integer index into options; only for Objective)
+//     solutionText  (string, optional)
+//   NOTE: lectureId is NOT required from the frontend – it is derived
+//         from postId automatically by the backend.
+//
+// Writes:
+//   1. posts/{autoId}            – post document (unchanged)
+//   2. questions/{autoId} × N   – one document per question, in
+//                                  Firestore batch commits of ≤ 500
 //======================================================================
 createQueuedEndpoint({
   method: 'post',
   path: '/tutor/post/create',
   queueName: 'tutorPostCreate',
+  // Give extra headroom for large question batches (200 questions × Firestore write)
+  timeoutMs: 60000,
   handler: async (req, db) => {
     if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
 
     const userEmail = req.user.email;
 
-    // ── Extract & validate required fields ──
+    // ── Extract & validate required post fields ──────────────────────
     const {
       classId,
       subjectId,
@@ -962,33 +985,110 @@ createQueuedEndpoint({
       postTitle,
       postSubtle,
       videoUrl,
-      thumbnailUrl
+      thumbnailUrl,
+      questions,   // NEW – optional array
     } = req.body;
 
-    // Required field checks
-    if (!classId)    throw new Error('BAD_REQUEST: classId is required');
-    if (!subjectId)  throw new Error('BAD_REQUEST: subjectId is required');
-    if (!chapterId)  throw new Error('BAD_REQUEST: chapterId is required');
-    if (!tutorId)    throw new Error('BAD_REQUEST: tutorId is required');
-    if (!postTitle)  throw new Error('BAD_REQUEST: postTitle is required');
-    if (!videoUrl)   throw new Error('BAD_REQUEST: videoUrl is required');
+    if (!classId)   throw new Error('BAD_REQUEST: classId is required');
+    if (!subjectId) throw new Error('BAD_REQUEST: subjectId is required');
+    if (!chapterId) throw new Error('BAD_REQUEST: chapterId is required');
+    if (!tutorId)   throw new Error('BAD_REQUEST: tutorId is required');
+    if (!postTitle) throw new Error('BAD_REQUEST: postTitle is required');
+    if (!videoUrl)  throw new Error('BAD_REQUEST: videoUrl is required');
 
-    // Validate ID formats
     validateIdParam(classId,   'classId');
     validateIdParam(subjectId, 'subjectId');
     validateIdParam(chapterId, 'chapterId');
     validateIdParam(tutorId,   'tutorId');
 
-    // Validate string lengths
-    if (postTitle.length > 200)  throw new Error('BAD_REQUEST: postTitle too long (max 200 chars)');
-    if (postSubtle && postSubtle.length > 1000) throw new Error('BAD_REQUEST: postSubtle too long (max 1000 chars)');
+    if (postTitle.length > 200)
+      throw new Error('BAD_REQUEST: postTitle too long (max 200 chars)');
+    if (postSubtle && postSubtle.length > 1000)
+      throw new Error('BAD_REQUEST: postSubtle too long (max 1000 chars)');
 
-    // ── Security: tutorId must match authenticated user ──
-    if (tutorId !== userEmail) {
+    // ── Security: tutorId must match authenticated user ───────────────
+    if (tutorId !== userEmail)
       throw new Error('FORBIDDEN: tutorId does not match authenticated user');
+
+    // ── Validate questions array when present ─────────────────────────
+    const VALID_QUESTION_TYPES = new Set(['Objective', 'Subjective']);
+    const MAX_QUESTIONS        = 500;  // hard cap per request
+    const MAX_QUESTION_TEXT    = 2000;
+    const MAX_OPTIONS          = 6;
+    const MIN_OPTIONS          = 2;
+
+    let sanitisedQuestions = null;
+
+    if (questions !== undefined) {
+
+      if (!Array.isArray(questions) || questions.length === 0)
+        throw new Error('BAD_REQUEST: questions must be a non-empty array');
+
+      if (questions.length > MAX_QUESTIONS)
+        throw new Error(`BAD_REQUEST: questions array exceeds the maximum of ${MAX_QUESTIONS} items`);
+
+      // Track duplicate questionNo values within this request
+      const seenQuestionNos = new Set();
+
+      sanitisedQuestions = questions.map((q, idx) => {
+        const pos = `questions[${idx}]`;
+
+        // questionNo
+        if (!Number.isInteger(q.questionNo) || q.questionNo < 1)
+          throw new Error(`BAD_REQUEST: ${pos}.questionNo must be a positive integer`);
+        if (seenQuestionNos.has(q.questionNo))
+          throw new Error(`BAD_REQUEST: ${pos}.questionNo ${q.questionNo} is duplicated in this request`);
+        seenQuestionNos.add(q.questionNo);
+
+        // questionType
+        if (!q.questionType || !VALID_QUESTION_TYPES.has(q.questionType))
+          throw new Error(`BAD_REQUEST: ${pos}.questionType must be one of: ${[...VALID_QUESTION_TYPES].join(', ')}`);
+
+        // questionText
+        if (!q.questionText || typeof q.questionText !== 'string' || q.questionText.trim().length === 0)
+          throw new Error(`BAD_REQUEST: ${pos}.questionText is required and must be a non-empty string`);
+        if (q.questionText.trim().length > MAX_QUESTION_TEXT)
+          throw new Error(`BAD_REQUEST: ${pos}.questionText too long (max ${MAX_QUESTION_TEXT} chars)`);
+
+        // options + correctIndex (required for Objective)
+        let sanitisedOptions   = [];
+        let sanitisedCorrectIndex = null;
+
+        if (q.questionType === 'Objective') {
+          if (!Array.isArray(q.options) || q.options.length < MIN_OPTIONS)
+            throw new Error(`BAD_REQUEST: ${pos}.options must be an array with at least ${MIN_OPTIONS} items for Objective questions`);
+          if (q.options.length > MAX_OPTIONS)
+            throw new Error(`BAD_REQUEST: ${pos}.options exceeds the maximum of ${MAX_OPTIONS} items`);
+
+          sanitisedOptions = q.options.map((opt, oIdx) => {
+            if (typeof opt !== 'string' || opt.trim().length === 0)
+              throw new Error(`BAD_REQUEST: ${pos}.options[${oIdx}] must be a non-empty string`);
+            return String(opt).trim();
+          });
+
+          if (!Number.isInteger(q.correctIndex) || q.correctIndex < 0 || q.correctIndex >= sanitisedOptions.length)
+            throw new Error(`BAD_REQUEST: ${pos}.correctIndex must be a valid index into options (0–${sanitisedOptions.length - 1})`);
+
+          sanitisedCorrectIndex = q.correctIndex;
+        }
+
+        // solutionText (optional)
+        const solutionText = q.solutionText
+          ? String(q.solutionText).trim()
+          : '';
+
+        return {
+          questionNo:    q.questionNo,
+          questionType:  q.questionType,
+          questionText:  q.questionText.trim(),
+          options:       sanitisedOptions,
+          correctIndex:  sanitisedCorrectIndex,
+          solutionText,
+        };
+      });
     }
 
-    // ── Verify tutor document with all required parameters ──
+    // ── Verify tutor is approved and registered ───────────────────────
     const tutorSnapshot = await db
       .collection('tutors')
       .where('tutorId', '==', userEmail)
@@ -996,55 +1096,108 @@ createQueuedEndpoint({
       .limit(1)
       .get();
 
-    if (tutorSnapshot.empty) {
+    if (tutorSnapshot.empty)
       throw new Error('FORBIDDEN: No approved tutor found for this account');
-    }
 
     const tutorData = tutorSnapshot.docs[0].data();
 
-    // Verify classId is registered
     const registeredClassId = tutorData.registeredClassId || {};
-    if (!registeredClassId[classId]) {
+    if (!registeredClassId[classId])
       throw new Error('FORBIDDEN: Tutor not registered for this class');
-    }
 
-    // Verify subjectId is registered under classId
     const registeredSubjectId = tutorData.registeredSubjectId || {};
     const classSubjects = registeredSubjectId[classId] || {};
-    if (!classSubjects[subjectId]) {
+    if (!classSubjects[subjectId])
       throw new Error('FORBIDDEN: Tutor not registered for this subject under the given class');
-    }
 
-    // ── Create post document ──
-    const postsRef = db.collection('posts').doc(); // Firestore auto-generated ID
-    const postId = postsRef.id;
+    // ── Build post document ───────────────────────────────────────────
+    const postsRef = db.collection('posts').doc();
+    const postId   = postsRef.id;
 
     const postDocument = {
       postId,
-      postTitle:   String(postTitle).trim(),
-      postSubtle:  postSubtle ? String(postSubtle).trim() : '',
-      createdAt:   admin.firestore.FieldValue.serverTimestamp(),
-      createdBy:   userEmail,
-      tutorId:     String(tutorId),
-      tutorName:   tutorName ? String(tutorName).trim() : '',
-      videoUrl:    String(videoUrl).trim(),
+      postTitle:    String(postTitle).trim(),
+      postSubtle:   postSubtle ? String(postSubtle).trim() : '',
+      createdAt:    admin.firestore.FieldValue.serverTimestamp(),
+      createdBy:    userEmail,
+      tutorId:      String(tutorId),
+      tutorName:    tutorName ? String(tutorName).trim() : '',
+      videoUrl:     String(videoUrl).trim(),
       thumbnailUrl: thumbnailUrl ? String(thumbnailUrl).trim() : '',
-      classId:     String(classId),
-      subjectId:   String(subjectId),
-      chapterId:   String(chapterId),
+      classId:      String(classId),
+      subjectId:    String(subjectId),
+      chapterId:    String(chapterId),
+      questionCount: sanitisedQuestions ? sanitisedQuestions.length : 0,
     };
 
+    // ── Write post + questions atomically where possible ─────────────
+    // Firestore batch limit = 500 ops. We commit the post doc first,
+    // then flush questions in batches of 499 (1 slot reserved per
+    // batch for safety).
+    const BATCH_SIZE = 499;
+
+    // Commit the post document
     await postsRef.set(postDocument);
+
+    let questionIds = [];
+
+    if (sanitisedQuestions && sanitisedQuestions.length > 0) {
+      const serverTs = admin.firestore.FieldValue.serverTimestamp();
+
+      // Shared context fields stamped on every question document
+      const questionContext = {
+        classId:   String(classId),
+        subjectId: String(subjectId),
+        chapterId: String(chapterId),
+        postId,
+        tutorId:   String(tutorId),
+        createdAt: serverTs,
+        createdBy: userEmail,
+      };
+
+      // Split into chunks and commit each batch
+      for (let offset = 0; offset < sanitisedQuestions.length; offset += BATCH_SIZE) {
+        const chunk = sanitisedQuestions.slice(offset, offset + BATCH_SIZE);
+        const batch = db.batch();
+
+        for (const q of chunk) {
+          const qRef = db.collection('questions').doc();
+          questionIds.push(qRef.id);
+
+          batch.set(qRef, {
+            questionId:    qRef.id,
+            questionNo:    q.questionNo,
+            questionType:  q.questionType,
+            questionText:  q.questionText,
+            options:       q.options,
+            correctIndex:  q.correctIndex,
+            solutionText:  q.solutionText,
+            ...questionContext,
+          });
+        }
+
+        await batch.commit();
+      }
+
+      logger.info(
+        { postId, tutorId, classId, subjectId, chapterId, questionCount: sanitisedQuestions.length },
+        'Endpoint 8: Questions bulk-written successfully'
+      );
+    }
 
     logger.info({ postId, tutorId, classId, subjectId, chapterId }, 'Post created successfully');
 
     return {
       success: true,
-      message: 'Post created successfully',
-      postId
+      message: sanitisedQuestions
+        ? `Post created successfully with ${sanitisedQuestions.length} question(s)`
+        : 'Post created successfully',
+      postId,
+      ...(sanitisedQuestions ? { questionCount: sanitisedQuestions.length, questionIds } : {}),
     };
   }
 });
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Endpoint 9: Enroll a student into a tutor's class/subject (tutor-initiated)
