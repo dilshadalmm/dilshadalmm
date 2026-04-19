@@ -1046,6 +1046,312 @@ createQueuedEndpoint({
   }
 });
 
+// Strict rate limit for update/delete post endpoints
+app.use('/tutor/post/update', strictLimiter);
+app.use('/tutor/post/delete', strictLimiter);
+
+//======================================================================
+// Endpoint 8a: Update post (tutor only, owner-only)
+// PATCH /tutor/post/update
+//
+// Body params:
+//   postId       – ID of the post to update (required)
+//   postTitle    – New title           (optional)
+//   postSubtle   – New subtitle        (optional)
+//   videoUrl     – New video URL       (optional)
+//   thumbnailUrl – New thumbnail URL   (optional)
+//
+// Flow:
+//   1. Validate postId and at least one updatable field is present.
+//   2. Verify tutor is approved in Firestore.
+//   3. Fetch the post and confirm it belongs to the authenticated tutor.
+//   4. Apply partial update (only provided fields).
+//   5. Return success.
+//======================================================================
+createQueuedEndpoint({
+  method: 'patch',
+  path: '/tutor/post/update',
+  queueName: 'tutorPostUpdate',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const userEmail = req.user.email;
+
+    // ── 1. Extract & validate params ──
+    const { postId, postTitle, postSubtle, videoUrl, thumbnailUrl } = req.body;
+
+    if (!postId) throw new Error('BAD_REQUEST: postId is required');
+    validateIdParam(postId, 'postId');
+
+    // At least one updatable field must be provided
+    const hasUpdate = postTitle !== undefined
+      || postSubtle !== undefined
+      || videoUrl !== undefined
+      || thumbnailUrl !== undefined;
+
+    if (!hasUpdate) {
+      throw new Error('BAD_REQUEST: At least one field to update must be provided (postTitle, postSubtle, videoUrl, thumbnailUrl)');
+    }
+
+    // Validate lengths if provided
+    if (postTitle !== undefined) {
+      if (typeof postTitle !== 'string' || postTitle.trim().length === 0) {
+        throw new Error('BAD_REQUEST: postTitle cannot be empty');
+      }
+      if (postTitle.length > 200) {
+        throw new Error('BAD_REQUEST: postTitle too long (max 200 chars)');
+      }
+    }
+    if (postSubtle !== undefined && postSubtle.length > 1000) {
+      throw new Error('BAD_REQUEST: postSubtle too long (max 1000 chars)');
+    }
+
+    // ── 2. Verify tutor is approved ──
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', userEmail)
+      .where('status', '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    // ── 3. Fetch post and verify ownership ──
+    const postRef = db.collection('posts').doc(postId);
+    const postSnap = await postRef.get();
+
+    if (!postSnap.exists) {
+      throw new Error('BAD_REQUEST: Post not found');
+    }
+
+    const postData = postSnap.data();
+
+    if (postData.tutorId !== userEmail) {
+      throw new Error('FORBIDDEN: You are not the owner of this post');
+    }
+
+    // ── 4. Build partial update payload ──
+    const updatePayload = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: userEmail,
+    };
+
+    if (postTitle   !== undefined) updatePayload.postTitle    = String(postTitle).trim();
+    if (postSubtle  !== undefined) updatePayload.postSubtle   = String(postSubtle).trim();
+    if (videoUrl    !== undefined) updatePayload.videoUrl     = String(videoUrl).trim();
+    if (thumbnailUrl !== undefined) updatePayload.thumbnailUrl = String(thumbnailUrl).trim();
+
+    await postRef.update(updatePayload);
+
+    logger.info({ postId, userEmail }, 'Post updated successfully');
+
+    return {
+      success: true,
+      message: 'Post updated successfully',
+      postId,
+    };
+  }
+});
+
+//======================================================================
+// Endpoint 8b: Delete post (tutor only, owner-only)
+// DELETE /tutor/post/delete
+//
+// Body params:
+//   postId – ID of the post to delete (required)
+//
+// Flow:
+//   1. Validate postId.
+//   2. Verify tutor is approved in Firestore.
+//   3. Fetch the post and confirm it belongs to the authenticated tutor.
+//   4. Hard-delete the document.
+//   5. Return success.
+//======================================================================
+createQueuedEndpoint({
+  method: 'delete',
+  path: '/tutor/post/delete',
+  queueName: 'tutorPostDelete',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const userEmail = req.user.email;
+
+    // ── 1. Extract & validate params ──
+    // DELETE bodies are less conventional; we support both body and query param
+    const postId = req.body?.postId || req.query?.postId;
+
+    if (!postId) throw new Error('BAD_REQUEST: postId is required');
+    validateIdParam(postId, 'postId');
+
+    // ── 2. Verify tutor is approved ──
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', userEmail)
+      .where('status', '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    // ── 3. Fetch post and verify ownership ──
+    const postRef = db.collection('posts').doc(postId);
+    const postSnap = await postRef.get();
+
+    if (!postSnap.exists) {
+      throw new Error('BAD_REQUEST: Post not found');
+    }
+
+    const postData = postSnap.data();
+
+    if (postData.tutorId !== userEmail) {
+      throw new Error('FORBIDDEN: You are not the owner of this post');
+    }
+
+    // ── 4. Hard-delete ──
+    await postRef.delete();
+
+    logger.info({ postId, userEmail }, 'Post deleted successfully');
+
+    return {
+      success: true,
+      message: 'Post deleted successfully',
+      postId,
+    };
+  }
+});
+
+
+// Strict rate limit for tutor posts endpoint
+app.use('/tutor/posts', strictLimiter);
+
+//======================================================================
+// Endpoint 8c: Get tutor's own posts (paginated)
+// GET /tutor/posts?classId=...&subjectId=...&chapterId=...&limit=10&cursor=...
+//
+// Query params:
+//   classId   – filter by class    (required)
+//   subjectId – filter by subject  (required)
+//   chapterId – filter by chapter  (optional)
+//   limit     – page size, max 50  (optional, default 10)
+//   cursor    – pagination token   (optional)
+//======================================================================
+createQueuedEndpoint({
+  method: 'get',
+  path: '/tutor/posts',
+  queueName: 'tutorOwnPosts',
+  handler: async (req, db) => {
+    if (!db) throw new Error('BAD_REQUEST: Firestore not initialized');
+
+    const userEmail = req.user.email;
+
+    // ── 1. Validate required query params ──
+    const { classId, subjectId, chapterId } = req.query;
+
+    if (!classId)   throw new Error('BAD_REQUEST: classId is required');
+    if (!subjectId) throw new Error('BAD_REQUEST: subjectId is required');
+
+    validateIdParam(classId,   'classId');
+    validateIdParam(subjectId, 'subjectId');
+    if (chapterId) validateIdParam(chapterId, 'chapterId');
+
+    // ── 2. Verify tutor is approved ──
+    const tutorSnapshot = await db
+      .collection('tutors')
+      .where('tutorId', '==', userEmail)
+      .where('status', '==', 'approved')
+      .limit(1)
+      .get();
+
+    if (tutorSnapshot.empty) {
+      throw new Error('FORBIDDEN: No approved tutor found for this account');
+    }
+
+    // ── 3. Pagination ──
+    let limit = parseInt(req.query.limit) || 10;
+    const MAX_LIMIT = 50;
+    limit = Math.min(Math.max(1, limit), MAX_LIMIT);
+
+    let cursor = null;
+    if (req.query.cursor) {
+      try {
+        const decoded = Buffer.from(req.query.cursor, 'base64').toString('utf8');
+        const rawCursor = JSON.parse(decoded);
+        if (!rawCursor.createdAt || !rawCursor.id) {
+          throw new Error('BAD_REQUEST: Invalid cursor: missing createdAt or id');
+        }
+        let timestamp;
+        if (rawCursor.createdAt._seconds !== undefined) {
+          timestamp = new admin.firestore.Timestamp(
+            rawCursor.createdAt._seconds,
+            rawCursor.createdAt._nanoseconds || 0
+          );
+        } else {
+          const date = new Date(rawCursor.createdAt);
+          if (isNaN(date.getTime())) {
+            throw new Error('BAD_REQUEST: Invalid cursor: createdAt is not a valid date');
+          }
+          timestamp = admin.firestore.Timestamp.fromDate(date);
+        }
+        cursor = { createdAt: timestamp, id: rawCursor.id };
+      } catch (e) {
+        throw new Error(`BAD_REQUEST: Invalid cursor encoding - ${e.message}`);
+      }
+    }
+
+    // ── 4. Build query ──
+    let postsQuery = db.collection('posts')
+      .where('tutorId',   '==', userEmail)
+      .where('classId',   '==', classId)
+      .where('subjectId', '==', subjectId);
+
+    if (chapterId) {
+      postsQuery = postsQuery.where('chapterId', '==', chapterId);
+    }
+
+    postsQuery = postsQuery
+      .orderBy('createdAt', 'desc')
+      .orderBy(admin.firestore.FieldPath.documentId());
+
+    if (cursor) {
+      postsQuery = postsQuery.startAfter(cursor.createdAt, cursor.id);
+    }
+
+    postsQuery = postsQuery.limit(limit + 1);
+
+    // ── 5. Execute & paginate ──
+    const snapshot = await postsQuery.get();
+    const docs = snapshot.docs;
+    const hasMore = docs.length > limit;
+    const resultDocs = hasMore ? docs.slice(0, limit) : docs;
+
+    const data = resultDocs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    let nextCursor = null;
+    if (hasMore) {
+      const lastDoc = resultDocs[resultDocs.length - 1];
+      const lastData = lastDoc.data();
+      const createdAt = lastData.createdAt;
+      if (!createdAt || !(createdAt instanceof admin.firestore.Timestamp)) {
+        throw new Error('Post document missing valid createdAt Timestamp');
+      }
+      const cursorObj = {
+        createdAt: {
+          _seconds: createdAt.seconds,
+          _nanoseconds: createdAt.nanoseconds
+        },
+        id: lastDoc.id
+      };
+      nextCursor = Buffer.from(JSON.stringify(cursorObj)).toString('base64');
+    }
+
+    return { data, nextCursor, hasMore };
+  }
+});
+        
 // ─────────────────────────────────────────────────────────────────────────────
 // Endpoint 9: Enroll a student into a tutor's class/subject (tutor-initiated)
 // POST /tutor/student/enroll
