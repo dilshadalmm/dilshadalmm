@@ -1528,7 +1528,6 @@ createQueuedEndpoint({
       // expireAt          → classId.subjectId.tutorEmail: Timestamp
       [`expireAt.${classId}.${subjectId}.${tutorEmail}`]: expiryTimestamp,
 
-      enrollmentKeys: admin.firestore.FieldValue.arrayUnion(`${classId}|${subjectId}|${tutorEmail}`),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
